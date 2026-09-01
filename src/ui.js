@@ -223,17 +223,10 @@ const UI = {
     b.textContent = line;
     box.classList.add('talk');
     clearTimeout(this._sayTimer);
-    /* 早送り中は間を詰める。0にすると読めないので下限は置く */
-    const ms = hold ? 2600 : Math.max(1400, (this.speed || 520) * 3);
-    /* 喋り終わるまでは立ち絵を動かさない。
-       ここを押さえないと、次の手番の顔に差し替わったのに
-       吹き出しだけ前の人のまま残り、誰の発言か分からなくなる */
-    this._talkUntil = Date.now() + ms;
-    this._sayTimer = setTimeout(() => {
-      box.classList.remove('talk');
-      this._talkUntil = 0;
-      this.renderTachie();
-    }, ms);
+    /* 吹き出しは自分からは消さない。次の誰かが喋るまで出しっぱなしにする。
+       消してしまうと、狭い画面ではほとんどの時間ただの顔になり、
+       セリフがあることに気づけない（スマホで「何も出ない」と見える） */
+    this._talkUntil = Date.now() + (hold ? 2600 : Math.max(1600, (this.speed || 520) * 3));
   },
 
   /* ---- 立ち絵 ----
@@ -248,6 +241,11 @@ const UI = {
     if (!p) return;
     if (this._tachieSeat !== seat) {
       this._tachieSeat = seat;
+      /* 映す人が変わったら吹き出しは畳む。
+         残すと「顔は次の人・セリフは前の人」になる。
+         say() はこのあとで新しい一言を入れるので、消えるのは一瞬 */
+      box.classList.remove('talk');
+      box.querySelector('.tcBubble').textContent = '';
       const art = box.querySelector('.tcArt');
       const img = p.face || '';
       art.style.backgroundImage = img ? `url("${img}")` : 'none';
@@ -262,28 +260,48 @@ const UI = {
     box.classList.toggle('me', seat === 0);
   },
 
+  /* 立ち絵（横の広い画面）か、顔と吹き出しの帯（それ以外）か。
+     CSS の切り替え条件と同じにしておくこと */
+  bigArt() {
+    try {
+      return window.matchMedia('(orientation:landscape)').matches
+        && window.innerWidth >= 900;
+    } catch (e) { return false; }
+  },
+
   renderTachie() {
     const g = this.game;
     if (!g || !$('#tachie')) return;
-    /* 誰かが喋っている最中は、その人を映したままにする */
-    if (this._talkUntil && Date.now() < this._talkUntil) return;
-    /* setTimeout は遅れて発火することがある。待っているあいだにここへ来ると、
-       吹き出しは前の人のまま顔だけ次の人に変わってしまう。
-       期限が切れていたら、タイマーを待たずにここで確実に消す */
-    if (this._talkUntil) {
-      this._talkUntil = 0;
-      clearTimeout(this._sayTimer);
-      $('#tachie').classList.remove('talk');
+    /* 帯のときは手番を追いかけない。
+       追うと顔だけ次の人に変わり、吹き出しが前の人のまま残って
+       誰の発言か分からなくなる。帯は「最後に喋った人」を映しておく */
+    if (!this.bigArt()) {
+      if (this._tachieSeat === null || this._tachieSeat === undefined) {
+        this.showTachie(g.dealer);
+      }
+      this.maybeIdle();
+      return;
     }
+    /* 立ち絵のときは手番を追う。ただし喋っている最中は動かさない */
+    if (this._talkUntil && Date.now() < this._talkUntil) return;
     const seat = g.currentDraw ? g.currentDraw.seat
       : (g.lastDiscard ? g.lastDiscard.seat : g.dealer);
     const before = this._tachieSeat;
     this.showTachie(seat);
-    /* 手番がまわってきたときだけ、たまに雑談させる。
-       毎回だと喋りっぱなしでうるさい */
-    if (before !== seat && typeof SERIFU !== 'undefined' && Math.random() < 0.12) {
-      this.say(seat, 'idle');
-    }
+    if (before !== seat) this.maybeIdle(seat);
+  },
+
+  /* 手番がまわってきたときだけ、たまに雑談させる。
+     毎回だと喋りっぱなしでうるさい */
+  maybeIdle(seat) {
+    const g = this.game;
+    if (!g || typeof SERIFU === 'undefined') return;
+    const now = g.currentDraw ? g.currentDraw.seat
+      : (g.lastDiscard ? g.lastDiscard.seat : g.dealer);
+    const s = seat === undefined ? now : seat;
+    if (this._idleSeat === s && this._idleKyoku === g.kyoku) return;   // 同じ手番で二度言わない
+    this._idleSeat = s; this._idleKyoku = g.kyoku;
+    if (Math.random() < 0.18) this.say(s, 'idle');
   },
 
   resolve(action) {

@@ -371,47 +371,78 @@ body.inMatch .river,body.inMatch .river.side{
    捨て牌と一緒にスクロールして流れていってしまう。
    ============================================================ */
 
-/* ---------- 縦持ち・狭い画面：顔と吹き出しの帯 ---------- */
+/* ---------- 縦持ち・狭い画面：卓の下の余りに絵とセリフ ----------
+   卓（#table）は捨て牌が増えるぶんだけ縦に伸びる。
+   そこで #table を「中身なりの高さ」にして、余った高さを
+   こちらが flex:1 で全部もらう。序盤は絵が大きく出て、
+   河が埋まってくると自然に縮む。
+
+   #table の中には入れないこと。#table は overflow-y:auto なので、
+   中に置くと捨て牌と一緒にスクロールして流れていってしまう。 */
+body.inMatch #table{flex:0 1 auto}
 body.inMatch #tachie{
-  flex:none;display:flex;align-items:center;gap:8px;
-  margin:4px 2px 0;padding:4px 8px;min-height:44px;
-  background:linear-gradient(rgba(10,18,16,.55),rgba(6,12,10,.7));
+  flex:1 1 auto;min-height:92px;max-height:42dvh;
+  display:grid;grid-template-columns:minmax(0,1fr);grid-template-rows:auto 1fr;
+  gap:2px 8px;align-items:start;
+  margin:5px 2px 0;padding:6px 8px;
+  background:
+    radial-gradient(120% 80% at 80% 100%,rgba(201,162,74,.10),transparent 62%),
+    linear-gradient(rgba(10,18,16,.5),rgba(6,12,10,.72));
   border:1px solid rgba(201,162,74,.28);border-radius:8px;
   position:relative;overflow:hidden;
 }
+/* 絵は右下に立たせる。
+   グリッドの中で aspect-ratio と stretch を併用すると、
+   高さと幅がお互いを参照して決まらず、min-width まで潰れる。
+   絶対配置にして幅を割合で決めること。 */
 body.inMatch .tcArt{
-  width:36px;height:36px;flex:none;border-radius:50%;
-  background-position:center 14%;background-size:cover;background-repeat:no-repeat;
-  border:1px solid var(--gold-dim);
-  background-color:var(--urushi-2);
+  position:absolute;right:0;top:0;bottom:0;width:64%;
+  grid-column:auto;grid-row:auto;
+  height:auto;min-width:0;aspect-ratio:auto;
+  background-position:right bottom;background-size:contain;background-repeat:no-repeat;
+  background-color:transparent;border:0;border-radius:0;
+  /* 下と左を透かして枠に溶かす */
+  -webkit-mask-image:linear-gradient(to bottom,transparent 0,#000 9%,#000 86%,transparent 100%),
+                     linear-gradient(to right,transparent 0,#000 22%);
+          mask-image:linear-gradient(to bottom,transparent 0,#000 9%,#000 86%,transparent 100%),
+                     linear-gradient(to right,transparent 0,#000 22%);
+  -webkit-mask-composite:source-in;mask-composite:intersect;
+  pointer-events:none;
 }
 body.inMatch .tcPlate{
-  display:flex;flex-direction:column;gap:0;flex:none;max-width:7.5em;
+  grid-column:1;grid-row:1;position:relative;z-index:1;
+  display:flex;align-items:baseline;gap:7px;max-width:64%;min-width:0;
 }
 body.inMatch .tcName{
-  font-family:var(--maru);font-weight:800;font-size:11.5px;letter-spacing:.02em;
+  font-family:var(--maru);font-weight:800;font-size:12.5px;letter-spacing:.02em;
   color:var(--gold-hi);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
 }
 body.inMatch .tcStyle{
-  font-size:9.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  font-size:10px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
 }
-/* 吹き出し。喋っていないときは場所だけ取って空にしておく。
-   出したり消したりで高さが変わると、卓が上下に跳ねる */
+/* 吹き出しは左下。次の誰かが喋るまで出したままにする（ui.js の say を参照）。
+   高さが変わると卓が上下に跳ねるので、空のときも場所は取っておく */
 body.inMatch .tcBubble{
-  flex:1;min-width:0;order:3;
-  font-size:12.5px;line-height:1.4;color:var(--ivory);
-  padding:5px 10px;border-radius:10px 10px 10px 3px;
-  background:rgba(255,255,255,.07);border:1px solid rgba(201,162,74,.3);
-  opacity:0;transform:translateX(6px);
+  grid-column:1;grid-row:2;align-self:end;justify-self:start;
+  position:relative;z-index:1;max-width:72%;min-width:0;
+  font-size:14.5px;line-height:1.55;color:var(--ivory);
+  padding:9px 14px;border-radius:13px 13px 13px 3px;
+  background:linear-gradient(rgba(255,255,255,.10),rgba(255,255,255,.05));
+  border:1px solid rgba(201,162,74,.34);
+  box-shadow:0 3px 10px rgba(0,0,0,.4);
+  opacity:0;transform:translateY(4px);
   transition:opacity .18s,transform .18s;
-  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
 }
 body.inMatch #tachie.talk .tcBubble{opacity:1;transform:none}
-body.inMatch #tachie.riichi{border-color:rgba(192,57,43,.55)}
-body.inMatch #tachie.riichi .tcArt{border-color:var(--vermilion)}
-body.inMatch #tachie.me .tcArt{border-color:var(--gold)}
+body.inMatch #tachie.riichi{border-color:rgba(192,57,43,.5)}
+body.inMatch #tachie.riichi .tcBubble{border-color:rgba(192,57,43,.6)}
+body.inMatch #tachie.riichi .tcStyle{color:var(--vermilion)}
 @media(prefers-reduced-motion:reduce){
   body.inMatch .tcBubble{transition:none}
+}
+/* 卓が伸びて余りが無くなったら、顔だけの細い帯に戻る */
+@media(max-height:560px){
+  body.inMatch #tachie{max-height:34dvh}
 }
 
 /* ---------- 横持ち・広い画面：右の余白に立ち絵 ----------
@@ -420,14 +451,20 @@ body.inMatch #tachie.me .tcArt{border-color:var(--gold)}
    position:fixed なので、帯として取っていた高さは返る。 */
 @media(orientation:landscape) and (min-width:900px){
   body.inMatch #app{margin-right:min(300px,26vw)}
+  /* 立ち絵は画面に貼り付けるので、卓は元どおり余りを全部使う */
+  body.inMatch #table{flex:1}
   body.inMatch #tachie{
     position:fixed;right:0;bottom:0;z-index:2;
     display:block;width:min(300px,26vw);height:94dvh;
-    margin:0;padding:0;min-height:0;
+    margin:0;padding:0;
+    /* 縦持ち用の上限をここで外す。残すと絵が 42dvh に潰れる */
+    min-height:0;max-height:none;
     background:none;border:0;border-radius:0;pointer-events:none;
   }
   body.inMatch .tcArt{
-    position:absolute;inset:0 0 26px 0;width:auto;height:auto;
+    /* 縦持ちでは右に寄せた 64% 幅。横持ちでは全幅に戻す。
+       left と right と width を同時に指定すると right が無視される */
+    position:absolute;inset:0 0 26px 0;left:0;right:0;width:100%;height:auto;
     border:0;border-radius:0;background-color:transparent;
     background-position:center bottom;background-size:contain;
     /* 下と左を透かして、卓との境目を消す */
