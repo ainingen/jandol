@@ -1,0 +1,35 @@
+/* ============================================================
+   maru.css — 表紙とプレイヤー設定で使う丸ゴシック
+   ※ tools/make-font.py が生成する。直接編集しないこと
+
+   M PLUS Rounded 1c（SIL Open Font License 1.1）
+   Copyright 2016 The Rounded M+ Project Authors
+   https://github.com/coz-m/MPLUS_FONTS
+
+   日本語の丸ゴシックはApple系にしか標準で入っていないため、
+   使う文字だけを切り出して fonts/ に置いてある。外部通信は不要。
+
+   CSSに埋め込まないのは、PLiCyの index.html に容量の上限があるため。
+   埋め込むと index.html だけで1MB近くになる。
+   パスは src/ から見た ../fonts/ と書いてある。
+   CSSのurl()はCSSファイルの位置から解決されるため、単体ページ（直下のhtml）から
+   src/maru.css を読んだときにこれで正しく届く。
+   build.py は index.html に取り込むときに fonts/ へ書き換える。
+
+   題字や副題の文言を変えたら make-font.py を実行し直すこと。
+   ============================================================ */
+
+@font-face{
+  font-family:'Maru';font-style:normal;font-weight:700;font-display:swap;
+  src:url(../fonts/maru-ui.woff2) format('woff2');
+}
+@font-face{
+  font-family:'Maru';font-style:normal;font-weight:800;font-display:swap;
+  src:url(../fonts/maru-title.woff2) format('woff2');
+}
+
+:root{
+  --maru:'Maru',"Hiragino Maru Gothic ProN","ヒラギノ丸ゴ ProN W4",
+         "M PLUS Rounded 1c",var(--sans);
+  --neon:#ff3a8c;
+}

@@ -1,0 +1,163 @@
+/* ============================================================
+   theme.css — 全画面に効く「華」の層
+   読み込み順は style.css → theme.css → 各画面のCSS
+
+   方針：彩度を上げるのではなく、雀荘の金を効かせる。
+   写真の背景がもともと金の傘ランプのボケなので、
+   金箔の細線・漆の黒・朱の判子を強めるのが一番写真が映える。
+   ============================================================ */
+
+:root{
+  --gold-hi:#f4e2a4;        /* 金の照り */
+  --gold-lo:#7d6222;        /* 金の陰 */
+  --urushi-3:#0e1a17;       /* 一番深い漆。真っ黒だと沈むので少し起こす */
+  --shu:#c0392b;            /* 朱（契約印・S級） */
+  --kin:linear-gradient(150deg,var(--gold-hi),var(--gold) 42%,var(--gold-lo));
+
+  /* 明るさの調整。写真が暗いので、地の面と字は思い切って上げる */
+  --urushi:#13201c;
+  --urushi-2:#1a2a25;
+  --gold:#d9b45e;
+  --gold-dim:#8a7338;
+  --text:#f2eee4;
+  --ivory:#fbf7ec;
+  --ivory-2:#e6ddc9;
+  --muted:#aebbb4;          /* 補助文字。以前は暗すぎて読みにくかった */
+  --panel:rgba(255,255,255,.05);   /* 卓の上に置く面 */
+  --panel-2:rgba(255,255,255,.08);
+}
+
+/* ---------- 字体 ----------
+   本文まで丸ゴにする。明朝のままだと硬く、表紙の丸ゴとも噛み合わない。
+   常用漢字まで埋め込んであるので、入力された名前もそのまま丸ゴで出る。 */
+body,button,input,select,textarea{
+  font-family:var(--maru);
+  font-weight:700;
+  -webkit-font-smoothing:antialiased;
+}
+/* 見出しも丸ゴに寄せる（色は金のまま） */
+.mkTitle,.tmTitle,.tkTitle,.scTitle,.ttSetupT,
+.mkSecT,.tmSecT,.tkSecT,.scSecT,.tkRoundT,.tkGroupT,
+.mkBigName,.mkName,.tmSeatName,.tmCandName,.scName,
+.tkTierName,.tkChampion,.mkCopy,.tmVerdictLine,.scAgencyName{
+  font-family:var(--maru);font-weight:800;
+}
+/* 字間は明朝向けに広げてあったので、丸ゴでは詰める */
+.mkTitle,.tmTitle,.tkTitle,.scTitle{letter-spacing:.06em}
+.mkSecT,.tmSecT,.tkSecT,.scSecT,.tkRoundT,.tkGroupT{letter-spacing:.05em}
+
+/* 卓の羅紗の上に、傘ランプの灯りが落ちているような下地。
+   以前は真っ黒に近くて全体が沈んでいたので、緑を残したまま持ち上げる */
+body{
+  background:
+    radial-gradient(42% 30% at 12% 4%, rgba(217,180,94,.16), transparent 70%),
+    radial-gradient(34% 26% at 90% 0%, rgba(217,180,94,.12), transparent 72%),
+    radial-gradient(130% 100% at 50% 0%, #22352e, var(--urushi-3) 78%);
+  background-attachment:fixed;
+  color:var(--text);
+}
+
+/* 金箔の文字。見出しにだけ使う */
+.kinji{
+  background:var(--kin);
+  -webkit-background-clip:text;background-clip:text;
+  color:transparent;
+}
+
+/* 金の細線。仕切りに使う */
+.kinsen{
+  height:1px;border:0;margin:14px 0;
+  background:linear-gradient(90deg,transparent,var(--gold-dim) 12%,var(--gold) 50%,var(--gold-dim) 88%,transparent);
+}
+
+/* ---------- 見出しを金にする ---------- */
+.mkTitle,.tmTitle,.tkTitle,.scTitle{
+  background:var(--kin);
+  -webkit-background-clip:text;background-clip:text;
+  color:transparent;
+}
+
+/* ---------- ランク章を石らしくする ---------- */
+.mkRank{
+  border:1px solid rgba(0,0,0,.45);
+  box-shadow:0 1px 3px rgba(0,0,0,.6), inset 0 1px 0 rgba(255,255,255,.35);
+}
+.rk-S{background:linear-gradient(150deg,var(--gold-hi),var(--gold) 45%,var(--gold-lo));color:#2a1f06}
+.rk-A{background:linear-gradient(150deg,#d97363,var(--shu) 55%,#8e2318);color:#fdeeeb}
+.rk-B{background:linear-gradient(150deg,#4a82bd,var(--indigo) 55%,#1b3c63);color:#eaf1f9}
+.rk-C{background:linear-gradient(150deg,#4aa87c,var(--bamboo) 55%,#1c5540);color:#e9f6f0}
+.rk-D{background:linear-gradient(150deg,#6f7b74,#4a5551 55%,#2e3633);color:#e4e9e6}
+
+/* ---------- ボタンを箔押しにする ---------- */
+.tmGo,.tkGo,.scGo,.scSign{
+  background:var(--kin);border-color:var(--gold-lo);
+  box-shadow:0 1px 0 rgba(255,255,255,.28) inset, 0 2px 8px rgba(0,0,0,.45);
+}
+.tmGo[disabled],.tkGo[disabled],.scGo[disabled],.scSign[disabled]{
+  background:transparent;box-shadow:none;
+}
+
+/* ---------- 見出しの罫を金線にする ---------- */
+.mkSecT,.tmSecT,.tkSecT,.scSecT,.tkRoundT,.tkGroupT{
+  border-bottom:0;
+  padding-bottom:5px;
+  background:linear-gradient(90deg,transparent,var(--gold-dim) 6%,var(--gold) 40%,transparent) bottom left/100% 1px no-repeat;
+}
+
+/* ============================================================
+   ポップアップ（表紙の顔選び・チーム編成の入所希望者で共用）
+   小さい札のままでは顔が分からないので、押したら大きく見せてから決める
+   ============================================================ */
+.popup{
+  position:fixed;inset:0;z-index:70;display:flex;align-items:center;justify-content:center;
+  background:rgba(4,8,7,.86);padding:16px;
+}
+.popupBox{
+  width:100%;max-width:360px;position:relative;
+  border:1px solid var(--gold);border-radius:8px;overflow:hidden;
+  background:var(--urushi-2);
+  box-shadow:0 0 0 1px var(--gold-lo),0 10px 40px rgba(0,0,0,.7);
+}
+@media(prefers-reduced-motion:no-preference){
+  .popupBox{animation:popupIn .2s cubic-bezier(.2,.9,.3,1.15) both}
+}
+@keyframes popupIn{from{transform:scale(.94);opacity:0}to{transform:none;opacity:1}}
+
+.popupClose{
+  position:absolute;top:8px;right:8px;z-index:4;width:32px;height:32px;border-radius:50%;
+  border:1px solid var(--gold-dim);background:rgba(12,21,18,.72);color:var(--ivory);
+  font-size:15px;cursor:pointer;
+}
+.popupClose:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
+
+.popupPhoto{position:relative;aspect-ratio:3/4;max-height:58dvh;overflow:hidden;z-index:0}
+.popupPhoto .mkFace{position:absolute;inset:0;z-index:0}
+.popupPhoto::after{
+  content:"";position:absolute;left:0;right:0;bottom:0;height:34%;z-index:1;
+  background:linear-gradient(transparent,var(--urushi-2) 94%);
+}
+.popupBody{padding:2px 14px 14px;text-align:center}
+.popupNote{
+  font-family:var(--maru);font-weight:700;font-size:13px;color:var(--ivory-2);
+  letter-spacing:.04em;margin-bottom:11px;
+}
+
+
+/* ---------- 面を起こす ----------
+   黒を重ねる作りだと、暗い写真の上でカードの輪郭が消えてしまう。
+   白をうっすら乗せる形に変えて、卓と面の差をはっきりさせる */
+.mkCount,.tkStat,.scStat,.ttStateItem,
+.tkTable,.tkTier,.scAgency,.scCard,.tmCand,.mkCard,
+.tkName,.tmMini,.mkTag,.tkBand{
+  background-color:var(--panel);
+}
+.tkTier,.scAgency,.tmTable{
+  background-image:linear-gradient(var(--panel-2),transparent);
+}
+.mkSheet,.popupBox,.scRevealBox{
+  background:linear-gradient(var(--urushi-2),var(--urushi));
+}
+.mkOverlay,.popup,.scReveal{background:rgba(8,14,12,.80)}
+
+/* 補助文字が細くて読めなかったので、少しだけ太らせる */
+.mkStyle,.tmSeatStyle,.tkSeatStyle,.scSalary,.tkTierSize,.mkKana{font-weight:700}

@@ -1,0 +1,225 @@
+/* ============================================================
+   雀ドル名鑑 — meikan.css
+   カラートークンは style.css の :root を使う。
+   読み込み順は style.css → meikan.css。
+   状態の意味：
+     未発見  … 牌の背と同じ緑のシルエット
+     発見済み … 生成り縁の肖像カード（顔＋ランク＋打ち筋）
+     契約済み … 金の二重縁＋朱の契約印
+   ============================================================ */
+
+.mkRoot{
+  width:100%;max-width:760px;margin:0 auto;padding:10px 8px 40px;
+  font-family:var(--sans);color:var(--text);
+}
+
+/* ---------- 見出し ---------- */
+.mkHead{display:flex;align-items:baseline;gap:14px;flex-wrap:wrap;margin:4px 2px 10px}
+.mkTitle{
+  font-family:var(--maru);font-weight:800;font-size:26px;letter-spacing:.07em;
+  color:var(--ivory);margin:0;
+}
+.mkTitle small{font-size:12px;letter-spacing:.10em;color:var(--gold);margin-left:8px}
+.mkCounts{display:flex;gap:8px;margin-left:auto}
+.mkCount{
+  font-size:12px;color:var(--muted);
+  border:1px solid var(--gold-dim);border-radius:3px;padding:3px 8px;
+  background:rgba(0,0,0,.25);
+}
+.mkCount b{color:var(--ivory);font-family:var(--maru);font-weight:800;font-size:14px;margin:0 1px}
+
+/* ---------- 絞り込み ---------- */
+.mkFilters{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:12px}
+.mkChip{
+  font-size:12px;padding:5px 10px;border-radius:3px;cursor:pointer;user-select:none;
+  border:1px solid var(--gold-dim);background:transparent;color:var(--muted);
+  font-family:var(--sans);
+}
+.mkChip[aria-pressed="true"]{
+  background:var(--felt);color:var(--ivory);border-color:var(--gold);
+}
+.mkChip:focus-visible{outline:2px solid var(--gold);outline-offset:1px}
+.mkSelect{
+  font-size:12px;padding:5px 6px;border-radius:3px;
+  border:1px solid var(--gold-dim);background:var(--urushi-2);color:var(--text);
+}
+.mkSelect:focus-visible{outline:2px solid var(--gold);outline-offset:1px}
+.mkSep{width:1px;height:18px;background:var(--gold-dim);margin:0 2px}
+
+/* ---------- 一覧 ---------- */
+/* 2列。3列だと顔が親指の爪ほどになり、73枚の写真が活きない */
+.mkGrid{
+  display:grid;gap:9px;
+  grid-template-columns:repeat(2,1fr);
+}
+@media(min-width:560px){.mkGrid{grid-template-columns:repeat(3,1fr)}}
+@media(min-width:760px){.mkGrid{grid-template-columns:repeat(4,1fr)}}
+.mkEmpty{
+  grid-column:1/-1;text-align:center;color:var(--muted);font-size:13px;
+  padding:40px 0;border:1px dashed var(--gold-dim);border-radius:6px;
+}
+
+.mkCard{
+  position:relative;border-radius:4px;overflow:hidden;cursor:pointer;
+  aspect-ratio:3/4;background:var(--urushi-2);
+  border:1px solid var(--gold-dim);
+  padding:0;text-align:inherit;color:inherit;font:inherit;display:block;width:100%;
+}
+.mkCard:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
+
+/* 肖像。画像が読めない環境ではシルエット背景が残る */
+.mkFace{position:absolute;inset:0;z-index:0} /* imgのz-indexを内側に閉じ込める */
+.mkFace img{
+  width:100%;height:100%;object-fit:cover;object-position:50% 8%;display:block;
+  position:relative;z-index:1; /* シルエット(::after)より上に描く。読めないときはonerrorで消える */
+}
+.mkFace.sil{
+  background:
+    radial-gradient(90% 60% at 50% 20%,rgba(255,255,255,.06),transparent 60%),
+    linear-gradient(165deg,var(--back),var(--back-2));
+}
+.mkFace.sil::after{
+  content:"";position:absolute;inset:0;
+  background:var(--sil-img) center 62%/78% no-repeat;
+  opacity:.9;
+}
+
+/* 未発見 */
+.mkCard.unknown{border-color:#233530}
+.mkCard.unknown .mkFace.sil{filter:brightness(.55) saturate(.6)}
+.mkCard.unknown .mkNo{color:#5c6d66}
+.mkQ{
+  position:absolute;top:34%;left:0;right:0;text-align:center;
+  font-family:var(--mincho);font-size:30px;color:rgba(242,236,224,.28);
+}
+
+/* 番号（右上）とランク（左上） */
+.mkNo{
+  position:absolute;top:4px;right:4px;z-index:2;font-family:var(--maru);font-weight:800;
+  font-size:10.5px;letter-spacing:.03em;color:var(--gold-hi);
+  padding:1px 5px;border-radius:2px;
+  background:rgba(8,16,16,.62);border:1px solid rgba(201,162,74,.4);
+}
+.mkRank{
+  position:absolute;top:4px;left:4px;z-index:2;
+  min-width:21px;height:21px;line-height:21px;text-align:center;
+  font-family:var(--maru);font-weight:800;font-size:13px;border-radius:2px;
+  padding:0 4px;color:var(--ink);
+  box-shadow:0 1px 2px rgba(0,0,0,.5);
+}
+.rk-S{background:linear-gradient(160deg,#e7c76a,var(--gold));}
+.rk-A{background:#c05a4c;color:var(--ivory)}
+.rk-B{background:var(--indigo);color:var(--ivory)}
+.rk-C{background:var(--bamboo);color:var(--ivory)}
+.rk-D{background:#525d57;color:var(--ivory)}
+
+/* 名前帯（下） */
+.mkBar{
+  position:absolute;left:0;right:0;bottom:0;z-index:2;padding:22px 8px 7px;
+  background:linear-gradient(transparent,rgba(6,10,9,.55) 38%,rgba(6,10,9,.95) 80%);
+}
+.mkBar::before{
+  content:"";position:absolute;left:8px;right:8px;top:14px;height:1px;
+  background:linear-gradient(90deg,transparent,rgba(201,162,74,.55),transparent);
+}
+.mkName{
+  display:block;font-family:var(--maru);font-weight:800;font-size:14px;color:var(--ivory);
+  letter-spacing:.02em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+.mkStyle{
+  display:block;font-size:10.5px;color:var(--muted);margin-top:1px;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+
+/* 契約済み：金の二重縁＋契約印 */
+.mkCard.signed{
+  border:1px solid var(--gold);
+  box-shadow:inset 0 0 0 1px rgba(12,21,18,.9),inset 0 0 0 2px var(--gold);
+}
+.mkSeal{
+  position:absolute;right:7px;bottom:44px;z-index:2;width:32px;height:32px;border-radius:50%;
+  border:2px solid var(--shu);color:var(--shu);
+  font-family:var(--mincho);font-size:11.5px;line-height:1.05;font-weight:700;
+  display:flex;align-items:center;justify-content:center;text-align:center;
+  transform:rotate(-8deg);
+  background:rgba(12,21,18,.55);
+  letter-spacing:.02em;
+}
+
+/* ---------- 詳細 ---------- */
+.mkOverlay{
+  position:fixed;inset:0;z-index:60;background:rgba(4,8,7,.72);
+  display:flex;align-items:flex-end;justify-content:center;
+}
+@media(min-width:560px){.mkOverlay{align-items:center}}
+.mkSheet{
+  width:100%;max-width:520px;max-height:92dvh;overflow-y:auto;
+  background:linear-gradient(var(--urushi-2),var(--urushi));
+  border:1px solid var(--gold-dim);border-radius:10px 10px 0 0;
+  position:relative;
+}
+@media(min-width:560px){.mkSheet{border-radius:10px}}
+.mkSheet.signed{border-color:var(--gold);box-shadow:0 0 0 1px var(--gold-dim)}
+@media(prefers-reduced-motion:no-preference){
+  .mkSheet{animation:mkUp .18s ease-out}
+  @keyframes mkUp{from{transform:translateY(14px);opacity:.6}to{transform:none;opacity:1}}
+}
+.mkClose{
+  position:absolute;top:8px;right:8px;z-index:2;width:32px;height:32px;border-radius:50%;
+  border:1px solid var(--gold-dim);background:rgba(12,21,18,.7);color:var(--ivory);
+  font-size:15px;cursor:pointer;
+}
+.mkClose:focus-visible{outline:2px solid var(--gold)}
+
+.mkPortrait{position:relative;width:100%;height:clamp(240px,46dvh,430px);overflow:hidden;background:var(--urushi-2)}
+.mkPortrait .mkFace img{object-position:50% 10%}
+.mkPortrait .mkQ{top:40%;font-size:44px}
+.mkPortrait::after{
+  content:"";position:absolute;left:0;right:0;bottom:0;height:70px;
+  background:linear-gradient(transparent,var(--urushi-2));
+}
+.mkSealBig{
+  position:absolute;right:14px;bottom:14px;width:52px;height:52px;border-radius:50%;
+  border:2.5px solid var(--vermilion);color:var(--vermilion);
+  font-family:var(--mincho);font-size:15px;font-weight:700;letter-spacing:.05em;
+  display:flex;align-items:center;justify-content:center;transform:rotate(-8deg);
+  background:rgba(12,21,18,.4);
+}
+
+.mkBody{padding:2px 16px 18px}
+.mkNameRow{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-top:6px}
+.mkBigNo{font-family:var(--maru);font-weight:800;font-size:13px;color:var(--gold)}
+.mkBigName{font-family:var(--maru);font-weight:800;font-size:24px;color:var(--ivory);letter-spacing:.04em}
+.mkKana{font-size:11px;color:var(--muted)}
+.mkCopy{
+  font-family:var(--maru);font-weight:800;font-size:13.5px;color:var(--gold);
+  margin:6px 0 10px;letter-spacing:.03em;
+}
+.mkTags{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px}
+.mkTag{
+  font-size:11.5px;padding:3px 8px;border-radius:3px;
+  border:1px solid var(--gold-dim);color:var(--ivory-2);background:rgba(0,0,0,.25);
+}
+.mkTag.rank{font-family:var(--maru);font-weight:800}
+
+.mkSecT{
+  font-family:var(--maru);font-weight:800;font-size:13px;color:var(--ivory);
+  border-bottom:1px solid var(--gold-dim);padding-bottom:3px;margin:14px 0 8px;
+  letter-spacing:.05em;
+}
+.mkRow{display:flex;justify-content:space-between;gap:10px;font-size:12.5px;margin:5px 0}
+.mkRow dt{color:var(--muted)}
+.mkRow dd{margin:0;color:var(--text)}
+.mkQuiet{font-size:12px;color:var(--muted);line-height:1.7}
+
+/* 打ち筋の係数バー */
+.mkBars{display:grid;grid-template-columns:repeat(2,1fr);gap:5px 16px}
+.mkBarRow{display:grid;grid-template-columns:3.2em 1fr;align-items:center;gap:8px;font-size:11px;color:var(--muted)}
+.mkTrack{display:block;height:5px;border-radius:3px;background:rgba(255,255,255,.08);overflow:hidden}
+.mkFill{display:block;height:100%;background:linear-gradient(90deg,var(--bamboo),var(--gold));border-radius:3px}
+
+/* 完成度 */
+.mkComp{display:grid;grid-template-columns:auto 1fr auto;gap:10px;align-items:center;font-size:12.5px}
+.mkComp .mkTrack{height:8px}
+.mkComp .mkFill{background:linear-gradient(90deg,var(--gold-dim),var(--gold))}
+.mkGrade{font-family:var(--maru);font-weight:800;color:var(--ivory)}

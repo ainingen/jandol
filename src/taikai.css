@@ -1,0 +1,170 @@
+/* ============================================================
+   大会 — taikai.css
+   読み込み順は style.css → meikan.css → taikai.css
+   ============================================================ */
+
+.tkRoot{
+  width:100%;max-width:760px;margin:0 auto;padding:10px 8px 40px;
+  font-family:var(--sans);color:var(--text);
+}
+
+/* ---------- 見出し ---------- */
+.tkHead{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;margin:4px 2px 12px}
+.tkTitle{
+  font-family:var(--maru);font-weight:800;font-size:24px;letter-spacing:.06em;
+  color:var(--ivory);margin:0;
+}
+.tkStatus{display:flex;gap:8px;margin-left:auto;flex-wrap:wrap}
+.tkStat{
+  font-size:12px;color:var(--muted);
+  border:1px solid var(--gold-dim);border-radius:3px;padding:3px 8px;
+  background:rgba(0,0,0,.25);
+}
+.tkStat b{color:var(--ivory);font-family:var(--maru);font-weight:800;font-size:13px;margin-left:2px}
+
+.tkWarn{
+  font-size:12.5px;color:var(--ivory-2);line-height:1.7;margin:0 0 10px;
+  border:1px dashed var(--vermilion);border-radius:4px;padding:8px 10px;
+}
+.tkHint{font-size:11.5px;color:var(--muted);margin:10px 2px 0;line-height:1.7}
+.tkQuiet{font-size:12px;color:var(--muted);line-height:1.7;margin:6px 0}
+.tkLoading{text-align:center;padding:40px 0}
+
+.tkRoster{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:12px}
+.tkChip{
+  font-size:11.5px;padding:3px 9px;border-radius:3px;
+  border:1px solid var(--gold-dim);color:var(--ivory-2);background:rgba(0,0,0,.25);
+}
+
+/* ---------- 大会一覧 ---------- */
+.tkTiers{display:grid;gap:8px}
+.tkTier{
+  display:block;width:100%;text-align:left;padding:11px 12px;
+  border:1px solid var(--gold-dim);border-radius:5px;cursor:pointer;
+  background:linear-gradient(var(--urushi-2),rgba(19,36,32,.5));
+  color:inherit;font:inherit;
+}
+.tkTier:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
+.tkTier[disabled]{cursor:default;opacity:.5}
+.tkTier.locked{border-style:dashed}
+
+.tkTierHead{display:flex;align-items:baseline;gap:10px}
+.tkTierName{font-family:var(--maru);font-weight:800;font-size:17px;color:var(--ivory);letter-spacing:.04em}
+.tkTierSize{font-size:11px;color:var(--muted);margin-left:auto}
+.tkTierNote{display:block;font-size:12px;color:var(--ivory-2);margin:4px 0 7px}
+.tkTierFoot{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.tkPrize{font-family:var(--maru);font-weight:800;font-size:13px;color:var(--gold)}
+.tkBand{
+  font-size:10.5px;color:var(--muted);
+  border:1px solid rgba(201,162,74,.35);border-radius:2px;padding:1px 6px;
+}
+.tkRec{display:block;font-size:10.5px;color:var(--muted);margin-top:6px}
+.tkLock{display:block;font-size:11px;color:var(--vermilion);margin-top:6px}
+
+/* ---------- 進むボタン ---------- */
+.tkGo{
+  display:block;width:100%;margin-top:16px;padding:11px;
+  font-family:var(--maru);font-weight:800;font-size:15px;letter-spacing:.08em;
+  border-radius:4px;cursor:pointer;
+  border:1px solid var(--gold);background:var(--gold);color:var(--ink);
+}
+.tkGo:focus-visible{outline:2px solid var(--ivory);outline-offset:2px}
+
+/* ---------- 出走表 ---------- */
+.tkGroup{margin-bottom:12px}
+.tkGroupT{
+  font-family:var(--maru);font-weight:800;font-size:13px;color:var(--ivory);
+  border-bottom:1px solid var(--gold-dim);padding-bottom:3px;margin-bottom:6px;
+  letter-spacing:.04em;
+}
+.tkGroupT span{font-size:11px;color:var(--muted);font-family:var(--sans)}
+.tkNames{display:flex;flex-wrap:wrap;gap:4px}
+.tkName{font-size:11.5px;color:var(--muted);padding:2px 6px;border-radius:2px;background:rgba(0,0,0,.22)}
+.tkName.own{color:var(--ink);background:var(--gold);font-weight:600}
+
+/* ---------- 進行 ---------- */
+.tkRound{margin-bottom:16px}
+.tkRoundT{
+  display:flex;align-items:baseline;gap:10px;
+  font-family:var(--maru);font-weight:800;font-size:14px;color:var(--ivory);letter-spacing:.05em;
+  border-bottom:1px solid var(--gold-dim);padding-bottom:3px;margin:0 0 8px;
+}
+.tkRoundT span{font-size:11px;color:var(--muted);font-family:var(--sans);margin-left:auto}
+
+.tkTable{
+  border:1px solid var(--gold-dim);border-radius:4px;
+  background:rgba(0,0,0,.22);padding:8px 10px;margin-bottom:8px;
+}
+.tkTable.mine{border-color:var(--gold);background:rgba(201,162,74,.08)}
+.tkTableT{font-size:11px;color:var(--muted);margin-bottom:5px}
+.tkTable.mine .tkTableT{color:var(--gold)}
+
+.tkSeatRow{
+  display:grid;grid-template-columns:3.2em 1fr auto;gap:8px;align-items:baseline;
+  font-size:12.5px;padding:2px 0;
+}
+.tkSeatRow.own .tkSeatName{color:var(--ivory);font-family:var(--maru);font-weight:800;font-size:13.5px}
+.tkSeatName{color:var(--ivory-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tkSeatStyle{font-size:10px;color:var(--muted)}
+.tkPlace{font-family:var(--maru);font-weight:800;font-size:12px;color:var(--muted)}
+.tkPlace.p1{color:var(--gold)}
+
+/* ---------- 結果 ---------- */
+.tkChampion{
+  font-family:var(--maru);font-weight:800;font-size:18px;color:var(--gold);letter-spacing:.05em;
+  border:1px solid var(--gold-dim);border-radius:5px;padding:12px;text-align:center;
+  background:linear-gradient(var(--urushi-2),rgba(19,36,32,.4));
+}
+.tkSecT{
+  font-family:var(--maru);font-weight:800;font-size:13px;color:var(--ivory);
+  border-bottom:1px solid var(--gold-dim);padding-bottom:3px;margin:18px 0 8px;
+  letter-spacing:.05em;
+}
+.tkPrizeRow{
+  display:grid;grid-template-columns:1fr auto auto;gap:10px;align-items:baseline;
+  font-size:12.5px;padding:5px 0;border-bottom:1px solid rgba(201,162,74,.15);
+}
+.tkPrizeName{font-family:var(--maru);font-weight:800;font-size:13.5px;color:var(--ivory)}
+.tkPrizeOut{font-size:11.5px;color:var(--muted)}
+.tkPrizeYen{font-family:var(--maru);font-weight:800;color:var(--gold);min-width:6em;text-align:right}
+.tkPrizeTotal{
+  margin-top:10px;text-align:right;font-size:12.5px;color:var(--muted);
+}
+.tkPrizeTotal b{font-family:var(--maru);font-weight:800;font-size:17px;color:var(--gold);margin:0 2px}
+
+.tkGrowRow{
+  display:grid;grid-template-columns:6.5em 1fr auto;gap:10px;align-items:center;
+  font-size:11.5px;color:var(--muted);padding:4px 0;
+}
+.tkGrowName{font-family:var(--maru);font-weight:800;font-size:12.5px;color:var(--ivory-2);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tkGrowNum{font-size:11px}
+.tkTrack{display:block;height:6px;border-radius:3px;background:rgba(255,255,255,.1);overflow:hidden}
+.tkFill{display:block;height:100%;background:linear-gradient(90deg,var(--gold-dim),var(--gold));border-radius:3px}
+.tkPromote{
+  font-family:var(--maru);font-weight:800;font-size:12.5px;color:var(--gold);
+  padding:4px 0 8px;letter-spacing:.02em;
+}
+
+@media(max-width:400px){
+  .tkGrowRow{grid-template-columns:5.5em 1fr;grid-template-areas:"n b" "x x"}
+  .tkGrowNum{grid-area:x;text-align:right}
+}
+
+.tkCeil{color:var(--muted);opacity:.75;margin-left:4px}
+
+/* ---------- 対局の設定 ---------- */
+.tkSettings{
+  border:1px solid var(--gold-dim);border-radius:6px;padding:10px 12px;margin-top:16px;
+  background:var(--panel);
+}
+.tkSettings .tkSecT{margin-top:0}
+.tkSetRow{display:flex;align-items:center;gap:10px;margin:7px 0}
+.tkSetLabel{font-size:12px;color:var(--muted);min-width:5em}
+.tkSeg{display:flex;gap:4px;flex-wrap:wrap;margin-left:auto}
+.tkSeg button{
+  font-size:11.5px;padding:5px 9px;border-radius:3px;cursor:pointer;
+  border:1px solid var(--gold-dim);background:transparent;color:var(--muted);
+}
+.tkSeg button[aria-pressed="true"]{background:var(--felt);color:var(--ivory);border-color:var(--gold)}
+.tkSeg button:focus-visible{outline:2px solid var(--gold);outline-offset:1px}

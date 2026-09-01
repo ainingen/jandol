@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2032%2032%22%3E%3Crect%20width%3D%2232%22%20height%3D%2232%22%20rx%3D%226%22%20fill%3D%22%2313201c%22/%3E%3Crect%20x%3D%228%22%20y%3D%225%22%20width%3D%2216%22%20height%3D%2222%22%20rx%3D%223%22%20fill%3D%22%23f7f1e4%22/%3E%3Ctext%20x%3D%2216%22%20y%3D%2217%22%20text-anchor%3D%22middle%22%20font-size%3D%2212%22%20font-family%3D%22serif%22%20fill%3D%22%23c0392b%22%3E%E9%9B%80%3C/text%3E%3Ctext%20x%3D%2216%22%20y%3D%2225%22%20text-anchor%3D%22middle%22%20font-size%3D%228%22%20font-family%3D%22serif%22%20fill%3D%22%238c2f28%22%3E%E8%90%AC%3C/text%3E%3C/svg%3E">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>スカウト</title>
+<link rel="stylesheet" href="src/style.css">
+<link rel="stylesheet" href="src/maru.css">
+<link rel="stylesheet" href="src/theme.css">
+<link rel="stylesheet" href="src/meikan.css">
+<link rel="stylesheet" href="src/scout.css">
+<style>
+  body{display:block}
+  .dbg{max-width:760px;margin:0 auto;padding:0 8px 30px;display:flex;gap:6px;flex-wrap:wrap}
+  .dbg button{
+    font-size:11px;padding:4px 9px;border-radius:3px;cursor:pointer;
+    border:1px dashed var(--gold-dim);background:transparent;color:var(--muted);
+  }
+  .dbg span{font-size:11px;color:#5c6d66;align-self:center}
+</style>
+</head>
+<body>
+<div id="scout"></div>
+
+<div class="dbg">
+  <span>動作確認：</span>
+  <button id="dbgMoney">1000万円足す</button>
+  <button id="dbgFind">全員発見にする</button>
+  <button id="dbgWin">全大会を優勝済みにする</button>
+  <button id="dbgBeat">全員を撃破済みにする</button>
+  <button id="dbgReset">セーブを消す</button>
+</div>
+
+<script src="src/characters.js"></script>
+<script src="src/tournament.js"></script>
+<script src="src/scout.js"></script>
+<script>
+/* meikan.html / team.html / taikai.html と同じセーブを共有する */
+const SAVE_KEY = 'jandol_save_v1';
+
+function blankState() {
+  return {
+    discovered: FREE_AGENTS.map((c) => c.id),
+    contracted: [], comp: Object.fromEntries(FREE_AGENTS.map((c) => [c.id, c.comp])),
+    compMax: {}, grades: {}, favor: {}, team: [], teamDecided: false,
+    money: 0, playerRank: 'D', playerWins: 0, records: {}, recent: [],
+    agency: 1, beaten: [],
+  };
+}
+function loadState() {
+  try {
+    const raw = localStorage.getItem(SAVE_KEY);
+    if (!raw) return blankState();
+    const s = JSON.parse(raw);
+    const b = blankState();
+    /* この画面が知らない項目も必ずそのまま残す */
+    return Object.assign({}, s, {
+      discovered: Array.isArray(s.discovered) ? s.discovered : b.discovered,
+      contracted: Array.isArray(s.contracted) ? s.contracted : [],
+      comp: Object.assign({}, b.comp, s.comp || {}),
+      compMax: s.compMax || {},
+      grades: s.grades || {},
+      money: typeof s.money === 'number' ? s.money : 0,
+      records: s.records || {},
+      beaten: Array.isArray(s.beaten) ? s.beaten : [],
+      agency: typeof s.agency === 'number' ? s.agency : 1,
+    });
+  } catch (e) { return blankState(); }
+}
+function saveState(st) {
+  try { localStorage.setItem(SAVE_KEY, JSON.stringify(st)); } catch (e) {}
+}
+
+let state = loadState();
+
+const store = {
+  get: () => state,
+  set: (patch) => { Object.assign(state, patch); saveState(state); },
+  onSigned(c) { /* 名鑑や大会の画面に戻したいときはここで通知する */ },
+};
+
+Scout.mount(document.getElementById('scout'), store);
+
+/* ---------- 動作確認 ---------- */
+const app = { refresh: () => location.reload() };
+document.getElementById('dbgMoney').addEventListener('click', () => {
+  store.set({ money: (state.money || 0) + 10000000 }); app.refresh();
+});
+document.getElementById('dbgFind').addEventListener('click', () => {
+  store.set({ discovered: JANDOLS.concat(FREE_AGENTS).map((c) => c.id) }); app.refresh();
+});
+document.getElementById('dbgWin').addEventListener('click', () => {
+  const records = {};
+  Object.keys(TOURNAMENTS).forEach((k) => { records[k] = { entries: 9, best: '優勝' }; });
+  store.set({ records }); app.refresh();
+});
+document.getElementById('dbgBeat').addEventListener('click', () => {
+  store.set({ beaten: JANDOLS.map((c) => c.id) }); app.refresh();
+});
+document.getElementById('dbgReset').addEventListener('click', () => {
+  try { localStorage.removeItem(SAVE_KEY); } catch (e) {}
+  location.reload();
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,157 @@
+/* ============================================================
+   チーム編成 — team.css
+   style.css の :root トークンを使う。読み込み順は
+     style.css → meikan.css → team.css
+   （meikan.css はシルエットとランクバッジを共有するため）
+   ============================================================ */
+
+.tmRoot{
+  width:100%;max-width:760px;margin:0 auto;padding:10px 8px 40px;
+  font-family:var(--sans);color:var(--text);
+}
+
+/* ---------- 見出し ---------- */
+.tmHead{margin:4px 2px 14px}
+.tmTitle{
+  font-family:var(--maru);font-weight:800;font-size:24px;letter-spacing:.06em;
+  color:var(--ivory);margin:0 0 6px;
+}
+.tmLead{font-size:12.5px;color:var(--muted);line-height:1.75;margin:0;max-width:44em}
+
+/* ---------- 卓（選んだ4人） ---------- */
+.tmTable{
+  position:relative;
+  background:linear-gradient(var(--felt),#11302a);
+  border:1px solid var(--gold-dim);border-radius:10px;
+  padding:12px;margin-bottom:14px;
+  box-shadow:inset 0 0 40px rgba(0,0,0,.55);
+}
+.tmSeats{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+.tmSeat{
+  position:relative;border-radius:4px;overflow:hidden;aspect-ratio:3/4;
+  border:1px dashed var(--gold-dim);background:rgba(0,0,0,.28);
+  display:flex;align-items:center;justify-content:center;
+  padding:0;color:inherit;font:inherit;width:100%;
+}
+.tmSeat.filled{border-style:solid;border-color:var(--gold);cursor:pointer}
+.tmSeat.you{border-style:solid;border-color:var(--ivory-2);cursor:default}
+.tmSeat:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
+
+.tmSeatKaze{
+  position:absolute;top:4px;left:5px;z-index:3;
+  font-family:var(--maru);font-weight:800;font-size:12px;color:var(--gold);
+  text-shadow:0 1px 2px rgba(0,0,0,.9);
+}
+.tmSeatEmpty{
+  font-family:var(--maru);font-weight:800;font-size:11px;color:var(--muted);
+  text-align:center;line-height:1.6;padding:0 4px;
+}
+.tmSeatYou{
+  font-family:var(--maru);font-weight:800;font-size:15px;color:var(--ivory);letter-spacing:.05em;
+}
+.tmSeatBar{
+  position:absolute;left:0;right:0;bottom:0;z-index:3;padding:12px 5px 4px;
+  background:linear-gradient(transparent,rgba(6,10,9,.94) 55%);
+}
+.tmSeatName{
+  display:block;font-family:var(--maru);font-weight:800;font-size:11.5px;color:var(--ivory);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+/* 狭い画面ではフルネームが切れるので、姓と名を二行に折り返す */
+@media(max-width:400px){
+  .tmSeatName{white-space:normal;line-height:1.25;font-size:11px}
+  .tmSeatStyle{font-size:8.5px}
+  .tmSeatBar{padding-top:10px}
+}
+.tmSeatStyle{
+  display:block;font-size:9px;color:var(--muted);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+.tmSeatDrop{
+  position:absolute;top:3px;right:4px;z-index:3;
+  width:18px;height:18px;line-height:16px;text-align:center;border-radius:50%;
+  border:1px solid var(--gold-dim);background:rgba(12,21,18,.8);
+  color:var(--ivory-2);font-size:11px;
+}
+
+/* 講評 */
+.tmVerdict{
+  margin-top:12px;padding-top:10px;border-top:1px solid rgba(201,162,74,.28);
+}
+.tmVerdictLine{font-family:var(--maru);font-weight:800;font-size:13.5px;color:var(--gold);letter-spacing:.02em}
+.tmVerdictNote{font-size:12px;color:var(--ivory-2);line-height:1.7;margin-top:4px}
+
+.tmMeters{display:grid;grid-template-columns:repeat(2,1fr);gap:5px 16px;margin-top:10px}
+.tmMeterRow{display:grid;grid-template-columns:3.6em 1fr;align-items:center;gap:8px;font-size:11px;color:var(--muted)}
+.tmTrack{display:block;height:5px;border-radius:3px;background:rgba(255,255,255,.1);overflow:hidden}
+.tmFill{display:block;height:100%;background:linear-gradient(90deg,var(--bamboo),var(--gold));border-radius:3px}
+
+.tmGo{
+  display:block;width:100%;margin-top:12px;padding:11px;
+  font-family:var(--maru);font-weight:800;font-size:15px;letter-spacing:.08em;
+  border-radius:4px;cursor:pointer;
+  border:1px solid var(--gold);background:var(--gold);color:var(--ink);
+}
+.tmGo[disabled]{
+  border-color:var(--gold-dim);background:transparent;color:var(--muted);cursor:default;
+}
+.tmGo:focus-visible{outline:2px solid var(--ivory);outline-offset:2px}
+
+/* ---------- 候補一覧 ---------- */
+.tmSecT{
+  font-family:var(--maru);font-weight:800;font-size:13px;color:var(--ivory);
+  border-bottom:1px solid var(--gold-dim);padding-bottom:3px;margin:16px 0 10px;
+  letter-spacing:.05em;
+}
+.tmGrid{display:grid;gap:8px;grid-template-columns:repeat(auto-fill,minmax(150px,1fr))}
+
+.tmCand{
+  display:grid;grid-template-columns:64px 1fr;gap:9px;align-items:stretch;
+  border:1px solid var(--gold-dim);border-radius:4px;overflow:hidden;
+  background:rgba(0,0,0,.24);padding:0;width:100%;text-align:left;
+  color:inherit;font:inherit;cursor:pointer;
+}
+.tmCand:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
+.tmCand.picked{border-color:var(--gold);background:rgba(201,162,74,.1)}
+/* 「選出」は名前と同じ行に置くと長い名前を押し出すので、面の上に重ねる */
+.tmCand.picked .tmCandFace::after{
+  content:"選出";position:absolute;left:0;right:0;bottom:0;z-index:3;
+  padding:3px 0;text-align:center;
+  font-family:var(--maru);font-weight:800;font-size:10px;letter-spacing:.06em;
+  color:var(--ink);background:var(--gold);
+}
+
+.tmCandFace{position:relative;z-index:0}
+.tmCandFace .mkFace{position:absolute;inset:0;z-index:0}
+.tmCandBody{padding:7px 8px 8px 0;min-width:0}
+.tmCandName{
+  display:block;font-family:var(--maru);font-weight:800;font-size:13.5px;color:var(--ivory);
+  letter-spacing:.02em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+.tmCandStyle{display:block;font-size:10.5px;color:var(--gold);margin-top:1px}
+.tmCandCopy{
+  display:block;font-family:var(--maru);font-weight:800;font-size:11px;color:var(--ivory-2);
+  margin:4px 0 5px;line-height:1.5;
+}
+.tmCandMeta{display:flex;flex-wrap:wrap;gap:4px}
+.tmMini{
+  font-size:9.5px;padding:2px 5px;border-radius:2px;
+  border:1px solid rgba(201,162,74,.4);color:var(--muted);
+}
+.tmMini.pot{color:var(--ivory-2)}
+
+.tmHint{font-size:11.5px;color:var(--muted);margin:10px 2px 0;line-height:1.7}
+
+/* ---------- 入所希望者を大きく見る ---------- */
+.tmCand.dim{opacity:.5}
+.tmPopName{
+  position:absolute;left:0;right:0;bottom:6px;z-index:2;text-align:center;
+  font-family:var(--maru);font-weight:800;font-size:24px;letter-spacing:.04em;color:var(--ivory);
+  text-shadow:0 2px 8px rgba(0,0,0,.95);
+}
+.tmPopBody{text-align:center}
+.tmPopStyle{font-size:12px;color:var(--gold);letter-spacing:.03em}
+.tmPopCopy{font-family:var(--maru);font-weight:800;font-size:13.5px;color:var(--ivory-2);margin:6px 0 9px}
+.tmPopMeta{justify-content:center;margin-bottom:11px}
+.tmPopMeters{text-align:left;gap:5px 14px}
+.tmPopFull{font-size:12px;color:var(--vermilion);line-height:1.6;margin:12px 0 0}

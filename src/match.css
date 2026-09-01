@@ -1,0 +1,348 @@
+/* ============================================================
+   match.css — 対局中の卓まわり
+   読み込み順は style.css → theme.css → … → match.css（最後）
+   style.css の指定を上書きするので、必ず後に置くこと。
+
+   ・自分の手牌を大きくする
+   ・卓を漆と金で飾る（女流の大会という題材に合わせる）
+   ・横持ちを促す（強制はできない。理由は下の rotate の項）
+   ============================================================ */
+
+/* ---------- 手牌を大きく ----------
+   14枚が横に並ぶので、画面幅から逆算する。
+   縦持ちは幅がぎりぎりなので隙間を詰め、横持ちは高さで頭打ちにする */
+/* 14枚＋隙間13＋引いた牌の余白。これを引かないと左右にはみ出す */
+body.inMatch{
+  --tw:clamp(23px,calc((100vw - 28px)/14),52px);
+  /* --rw-fit は match.js が入れる自動調整の係数。
+     卓からはみ出したら河を少しずつ縮めて必ず収める */
+  --rw-base:clamp(15px,4.4vw,24px);
+  --rw:calc(var(--rw-base) * var(--rw-fit,1));
+}
+body.inMatch #handrow{gap:1px}
+body.inMatch #handrow .drawn{margin-left:5px}
+body.inMatch #table{overflow:hidden}
+/* 横持ちは高さが足りない。河が伸びると卓が縦に膨らんで手牌が画面外に出るので、
+   牌は高さで頭打ちにし、河は思い切って小さくする */
+@media(orientation:landscape){
+  body.inMatch{
+    --tw:clamp(28px,min(calc((100vw - 30px)/14),17dvh),58px);
+    --rw:clamp(10px,1.55vw,17px);
+  }
+  body.inMatch #app{height:100dvh;min-height:0;padding:4px}
+  body.inMatch #table{min-height:0;overflow:hidden;padding:4px;border-radius:10px}
+  body.inMatch #info{min-width:92px;padding:5px 9px;font-size:10.5px;line-height:1.4}
+  body.inMatch #info .kyoku{font-size:16px}
+  body.inMatch #myarea{padding:3px 2px 1px}
+  body.inMatch #actions{margin-top:3px;min-height:29px}
+  body.inMatch #hintbox{min-height:0;margin-top:1px}
+  body.inMatch button.act{padding:5px 12px;font-size:14px}
+  body.inMatch #hintbox{min-height:12px}
+  body.inMatch #table::before,body.inMatch #table::after{width:18px;height:18px}
+
+  /* 横持ちは高さが足りない。河が6列で折り返すと縦に伸びて牌が小さくなるので、
+     横幅は余っているぶん列を増やして段数を減らす。
+     左右の相手の背も13枚縦に並ぶと高さを食うので薄く畳む。 */
+  body.inMatch{--rw:clamp(14px,2.3vw,24px)}
+
+  /* 中央の表示が卓の高さを食って、自分の捨て牌が卓の外に押し出されていた。
+     横持ちは左右が余っているので、中央から外して脇に寄せる。
+     絶対配置にすると中段が空くので、その分を河に回せる */
+  body.inMatch #table{position:relative}
+  body.inMatch #info{
+    position:absolute;left:10px;top:50%;transform:translateY(-50%);
+    z-index:3;min-width:0;width:auto;max-width:30%;
+    padding:7px 10px;text-align:left;
+  }
+  body.inMatch #info .scores{display:block;line-height:1.7}
+  body.inMatch #info .scores span{display:block}
+  body.inMatch #dora{justify-content:flex-start;margin-top:5px}
+  body.inMatch .river{grid-template-columns:repeat(12,auto);min-width:calc(var(--rw)*12.4)}
+  body.inMatch .river.side{
+    grid-template-columns:none;grid-template-rows:repeat(3,auto);
+    min-width:0;min-height:calc(var(--rw)*3.4);
+  }
+  /* 左右の相手の手牌は13枚が縦一列に並ぶので、そのままだと300px近くなり
+     卓の高さを食って自分の捨て牌が押し出される。二列に折り返して半分にする。
+     背は .back ではなく .tile.tiny で描かれている点に注意 */
+  body.inMatch .backs.vert{flex-wrap:wrap;max-height:calc(var(--rw)*7.2);align-content:center}
+  body.inMatch .backs.vert .tile{height:calc(var(--rw)*.95);width:calc(var(--rw)*.72)}
+  body.inMatch #left,body.inMatch #right{max-width:calc(var(--rw)*2.6)}
+}
+
+body.inMatch #handrow{min-height:calc(var(--tw)*1.42)}
+body.inMatch #myarea{padding:8px 2px 4px}
+
+/* つまみ上げたときの見え方も大きく */
+body.inMatch .tile.picked{
+  transform:translateY(-14px) scale(1.26);
+  box-shadow:0 8px 16px rgba(0,0,0,.65),0 0 0 2px var(--gold),0 0 18px rgba(201,162,74,.45);
+}
+
+/* ---------- 卓を飾る ---------- */
+body.inMatch #table{
+  background:
+    radial-gradient(120% 80% at 50% 0%, rgba(255,255,255,.06), transparent 60%),
+    radial-gradient(90% 70% at 50% 110%, rgba(0,0,0,.45), transparent 70%),
+    linear-gradient(#1c4638,#12302a 60%,#0e2620);
+  border:1px solid var(--gold);
+  box-shadow:
+    inset 0 0 0 1px rgba(8,16,16,.9),
+    inset 0 0 0 2px rgba(201,162,74,.55),
+    inset 0 0 60px rgba(0,0,0,.55),
+    0 6px 24px rgba(0,0,0,.5);
+  border-radius:14px;
+}
+
+/* 四隅の金の飾り。卓の角を締める */
+body.inMatch #table::before,
+body.inMatch #table::after{
+  content:"";position:absolute;width:26px;height:26px;pointer-events:none;
+  border:2px solid rgba(201,162,74,.75);
+}
+body.inMatch #table::before{
+  top:7px;left:7px;border-right:0;border-bottom:0;border-radius:6px 0 0 0;
+}
+body.inMatch #table::after{
+  bottom:7px;right:7px;border-left:0;border-top:0;border-radius:0 0 6px 0;
+}
+
+/* 中央の表示。漆の板に金の縁 */
+body.inMatch #info{
+  background:linear-gradient(rgba(10,18,16,.86),rgba(6,12,10,.92));
+  border:1px solid var(--gold);
+  box-shadow:0 0 0 1px rgba(8,16,16,.9),0 4px 14px rgba(0,0,0,.55),
+             inset 0 1px 0 rgba(255,255,255,.06);
+  border-radius:8px;padding:9px 12px;
+}
+body.inMatch #info .kyoku{
+  font-family:var(--maru);font-weight:800;font-size:20px;letter-spacing:.04em;
+  background:linear-gradient(160deg,var(--gold-hi),var(--gold) 45%,var(--gold-lo));
+  -webkit-background-clip:text;background-clip:text;color:transparent;
+}
+body.inMatch .scores .me{color:var(--gold-hi)}
+
+/* 牌の艶。象牙らしく上に光を入れる */
+body.inMatch .tile{
+  background:linear-gradient(172deg,#fffefa,#f7f1e4 48%,#e4dac4);
+  box-shadow:
+    0 1px 0 #b0a68f,
+    0 2px 4px rgba(0,0,0,.5),
+    inset 0 1px 0 rgba(255,255,255,.95);
+  border-radius:4px;
+}
+body.inMatch .back{
+  background:linear-gradient(160deg,#2a6a56,#12362c);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.14),0 1px 2px rgba(0,0,0,.5);
+}
+
+/* 手番のボタンも金に寄せる */
+body.inMatch button.act{
+  font-family:var(--maru);font-weight:800;letter-spacing:.04em;
+  background:linear-gradient(#243029,#151f1b);
+  border-color:var(--gold-dim);color:var(--ivory);
+}
+body.inMatch button.act.primary{
+  background:linear-gradient(150deg,var(--gold-hi),var(--gold) 42%,var(--gold-lo));
+  border-color:var(--gold);color:var(--ink);
+  box-shadow:0 1px 0 rgba(255,255,255,.3) inset,0 2px 8px rgba(0,0,0,.5);
+}
+
+/* ---------- 横持ちの誘導 ----------
+   画面の向きは、Webでは固定できない。
+   screen.orientation.lock() はフルスクリーン中のAndroid Chromeでしか効かず、
+   iOS Safari は非対応。PLiCyはiframeで動くのでフルスクリーン権限も取れない。
+   そこで「試すだけ試して、駄目なら横にしてもらう」形にしてある。
+   縦のままでも打てるので、閉じる道も必ず残すこと。           */
+#rotateHint{
+  position:fixed;inset:0;z-index:40;display:none;
+  align-items:center;justify-content:center;padding:24px;text-align:center;
+  background:rgba(6,12,10,.94);
+}
+body.inMatch.needRotate #rotateHint{display:flex}
+.rotateBox{max-width:320px}
+.rotateIcon{
+  width:96px;height:60px;margin:0 auto 18px;border-radius:8px;
+  border:2px solid var(--gold);
+  box-shadow:inset 0 0 0 1px rgba(8,16,16,.9),0 0 24px rgba(201,162,74,.25);
+}
+@media(prefers-reduced-motion:no-preference){
+  .rotateIcon{animation:rotateTip 2.4s ease-in-out infinite}
+}
+@keyframes rotateTip{
+  0%,30%{transform:rotate(90deg) scale(.7)}
+  55%,100%{transform:none}
+}
+.rotateText{
+  font-family:var(--maru);font-weight:800;font-size:17px;color:var(--ivory);
+  letter-spacing:.04em;margin-bottom:6px;
+}
+.rotateSub{font-size:12.5px;color:var(--muted);line-height:1.8;margin-bottom:18px}
+.rotateGo{
+  font-size:13px;padding:9px 16px;border-radius:4px;cursor:pointer;
+  border:1px solid var(--gold-dim);background:transparent;color:var(--ivory-2);
+}
+.rotateGo:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
+
+
+/* ============================================================
+   列レイアウト
+   卓を上から見た形（四方に配置＋左右は回転）をやめて、
+   各家を「手牌の行」「捨て牌の行」の二行ずつ、上から順に積む。
+
+   回転した牌は読みにくく、左右の河は縦に伸びて卓の高さを食っていた。
+   横に並べると四人ぶんが同じ大きさ・同じ向きで読める。
+
+   ui.js の書き出し先（#top / #left / #right / #river-*）はそのままで、
+   #center に display:contents を当てて #table 直下に並べ替えている。
+   ============================================================ */
+body.inMatch #table{
+  display:flex;flex-direction:column;justify-content:flex-start;
+  gap:0;padding:8px 10px;overflow:hidden;
+}
+body.inMatch #center{display:contents}
+
+/* 上から 下家 → 対面 → 上家 → 自分。読み下すと手番の順になる */
+body.inMatch #right{order:1}
+body.inMatch #river-right{order:2}
+body.inMatch #top{order:3}
+body.inMatch #river-top{order:4}
+body.inMatch #left{order:5}
+body.inMatch #river-left{order:6}
+body.inMatch #info{order:7}
+body.inMatch #river-bottom{order:8}
+
+body.inMatch #top,body.inMatch #left,body.inMatch #right{
+  display:block;width:100%;max-width:none;padding-top:3px;
+}
+/* .opp.vert は縦並びなので、行レイアウトでは横並びに戻す */
+body.inMatch .opp,body.inMatch .opp.vert{
+  display:flex;flex-direction:row;align-items:center;gap:8px;
+  width:100%;justify-content:flex-start;
+}
+/* 名前の札 */
+.oppName{
+  display:flex;align-items:center;gap:6px;flex:none;min-width:11.5em;
+  font-size:11.5px;color:var(--muted);
+}
+.oppKaze{
+  font-family:var(--maru);font-weight:800;font-size:13px;color:var(--gold);
+  border:1px solid var(--gold-dim);border-radius:3px;padding:0 4px;background:rgba(0,0,0,.3);
+}
+.oppWho{
+  color:var(--ivory-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:6.5em;
+}
+.oppScore{margin-left:auto;font-family:var(--maru);font-weight:800;color:var(--ivory)}
+
+/* 手牌の背は一列に戻す。折り返しも回転もしない */
+body.inMatch .backs,body.inMatch .backs.vert{
+  display:flex;flex-direction:row;flex-wrap:nowrap;gap:1px;max-height:none;
+}
+body.inMatch .backs .tile{
+  height:calc(var(--rw)*1.15);width:calc(var(--rw)*.85);transform:none;
+}
+body.inMatch .opp .melds{display:flex;gap:5px;margin-left:6px}
+
+/* 河は全員おなじ向き・おなじ組み方 */
+body.inMatch .river,body.inMatch .river.side{
+  display:flex;flex-wrap:wrap;gap:1px;
+  grid-template-columns:none;grid-template-rows:none;grid-auto-flow:row;
+  justify-content:flex-start;align-content:flex-start;
+  width:100%;min-width:0;min-height:calc(var(--rw)*1.36);
+  padding:0 0 2px calc(11.5em + 8px);     /* 名前の札のぶん字下げして頭をそろえる */
+  box-sizing:border-box;
+  border-bottom:1px solid rgba(201,162,74,.16);
+}
+body.inMatch .river.side .cell{width:auto;height:auto;display:inline-flex}
+body.inMatch .river.side .cell .tile,
+body.inMatch .river .tile.riichi{transform:none}
+body.inMatch .river.side .cell.riichi .tile,
+body.inMatch .river .tile.riichi{outline:1px solid var(--vermilion);outline-offset:-1px}
+body.inMatch .river .tile.last{outline:2px solid var(--vermilion);outline-offset:-1px}
+
+/* 自分の行。局の表示を名前の札の位置に置く */
+body.inMatch #info{
+  position:static;transform:none;order:7;
+  display:flex;align-items:center;gap:9px;flex-wrap:wrap;
+  width:100%;max-width:none;min-width:0;
+  margin-top:5px;padding:5px 8px;text-align:left;
+}
+body.inMatch #info .kyoku{font-size:15px}
+/* 他家の点数は各行に出ているので、自分のぶんだけ残す */
+body.inMatch #info .scores{display:contents}
+body.inMatch #info .scores > div{display:none}
+body.inMatch #info .scores > .me{
+  display:flex;align-items:baseline;gap:6px;order:-1;
+  color:var(--ivory-2);font-size:11.5px;
+}
+body.inMatch #info .scores > .me b{font-family:var(--maru);font-weight:800;color:var(--gold-hi)}
+body.inMatch #dora{margin:0 0 0 auto}
+body.inMatch #river-bottom{padding-left:0;border-bottom:0}
+
+@media(orientation:landscape){
+  body.inMatch #table{padding:5px 10px}
+  body.inMatch #info{margin-top:2px;padding:2px 8px}
+  body.inMatch #top,body.inMatch #left,body.inMatch #right{padding-top:2px}
+  body.inMatch .backs .tile{height:calc(var(--rw)*1.0);width:calc(var(--rw)*.74)}
+  body.inMatch .river,body.inMatch .river.side{padding-bottom:1px}
+  body.inMatch .oppName{font-size:11px;min-width:11em}
+  body.inMatch .river,body.inMatch .river.side{padding-left:calc(11em + 8px)}
+}
+
+/* 河が埋まって鳴きが入ると、詰めても収まらない端末があり得る。
+   隠すのではなくスクロールできるようにして、捨て牌が消えないようにする */
+body.inMatch #table{overflow-y:auto;overflow-x:hidden;scrollbar-width:thin}
+body.inMatch #table::-webkit-scrollbar{width:4px}
+body.inMatch #table::-webkit-scrollbar-thumb{
+  background:rgba(201,162,74,.5);border-radius:2px;
+}
+
+/* ---------- 牌の絵 ----------
+   tiles/ のSVGは図柄だけで、牌の面は入っていない（面は Front.svg が別にある）。
+   面はこれまでどおりCSSで描き、その上に図柄を乗せる */
+body.inMatch .tile{overflow:hidden;line-height:0}
+body.inMatch .tile .face{
+  width:100%;height:100%;display:block;object-fit:contain;
+}
+body.inMatch .tile.hidden-back{
+  background:linear-gradient(160deg,#2c7059,#14372c);
+  border-radius:12%;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.18),0 1px 2px rgba(0,0,0,.5);
+}
+
+/* ---------- 打っている人の顔 ---------- */
+/* 顔の大きさも河に連動させる。固定pxだと自動調整で縮められず、
+   はみ出したときに逃げ場がなくなる */
+.oppFace{
+  width:clamp(11px,calc(var(--rw)*0.95),26px);
+  height:clamp(11px,calc(var(--rw)*0.95),26px);
+  border-radius:50%;overflow:hidden;flex:none;
+  border:1px solid var(--gold-dim);background:linear-gradient(160deg,var(--back),var(--back-2));
+  display:inline-block;vertical-align:middle;
+}
+.oppFace img{width:100%;height:100%;object-fit:cover;object-position:50% 14%;display:block}
+body.inMatch #info .scores > .me .oppFace{margin-right:2px}
+
+
+/* ---------- 卓の色 ----------
+   写真も牌も暖色なので、羅紗は少し明るい翡翠に寄せて、
+   縁に金の照りを足す。彩度を上げすぎると長く見ていられないので、
+   明るいのは中央だけにして周りは落とす */
+body.inMatch #table{
+  background:
+    radial-gradient(115% 78% at 50% 0%, rgba(255,255,255,.09), transparent 58%),
+    radial-gradient(70% 55% at 50% 42%, #24564a, transparent 70%),
+    radial-gradient(95% 75% at 50% 112%, rgba(0,0,0,.5), transparent 72%),
+    linear-gradient(#1d4a3c,#143229 62%,#0f2620);
+  border-color:var(--gold);
+  box-shadow:
+    inset 0 0 0 1px rgba(8,16,16,.9),
+    inset 0 0 0 2px rgba(217,180,94,.62),
+    inset 0 1px 0 3px rgba(255,255,255,.05),
+    inset 0 0 70px rgba(0,0,0,.5),
+    0 6px 26px rgba(0,0,0,.55);
+}
+/* 行の仕切りも金の細線にする */
+body.inMatch .river,body.inMatch .river.side{
+  border-bottom-color:rgba(217,180,94,.22);
+}

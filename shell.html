@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>雀ドル発掘放浪記</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2032%2032%22%3E%3Crect%20width%3D%2232%22%20height%3D%2232%22%20rx%3D%226%22%20fill%3D%22%2313201c%22/%3E%3Crect%20x%3D%228%22%20y%3D%225%22%20width%3D%2216%22%20height%3D%2222%22%20rx%3D%223%22%20fill%3D%22%23f7f1e4%22/%3E%3Ctext%20x%3D%2216%22%20y%3D%2217%22%20text-anchor%3D%22middle%22%20font-size%3D%2212%22%20font-family%3D%22serif%22%20fill%3D%22%23c0392b%22%3E%E9%9B%80%3C/text%3E%3Ctext%20x%3D%2216%22%20y%3D%2225%22%20text-anchor%3D%22middle%22%20font-size%3D%228%22%20font-family%3D%22serif%22%20fill%3D%22%238c2f28%22%3E%E8%90%AC%3C/text%3E%3C/svg%3E">
+<style>
+/*__CSS__*/
+
+/* ===== 外枠（単一HTML用） ===== */
+body{display:block;padding-bottom:64px}
+#view{min-height:60dvh}
+/* 所持金は上部バーに常設するので、画面内の重複は隠す
+   （単体ページで開いたときは表示されたままにしておく） */
+#view .tkStat.money,#view .scStat.money{display:none}
+
+#nav{
+  position:fixed;left:0;right:0;bottom:0;z-index:50;
+  display:flex;justify-content:center;gap:2px;
+  background:linear-gradient(rgba(12,21,18,.86),var(--urushi));
+  border-top:1px solid var(--gold-dim);
+  padding:5px 6px calc(5px + env(safe-area-inset-bottom));
+  backdrop-filter:blur(6px);
+}
+#nav button{
+  flex:1;max-width:150px;padding:8px 4px;border-radius:4px;cursor:pointer;
+  border:1px solid transparent;background:transparent;color:var(--muted);
+  font-family:var(--mincho);font-size:13px;letter-spacing:.08em;
+}
+#nav button[aria-current="page"]{
+  color:var(--gold);border-color:var(--gold-dim);background:rgba(201,162,74,.09);
+}
+#nav button:focus-visible{outline:2px solid var(--gold);outline-offset:1px}
+#nav button[disabled]{opacity:.35;cursor:default}
+
+.appTop{
+  display:flex;align-items:center;gap:10px;
+  max-width:760px;margin:0 auto;padding:8px 10px 0;
+}
+.appTitle{
+  font-family:var(--mincho);font-size:13px;letter-spacing:.22em;margin:0;padding:2px 0;
+  background:none;border:0;cursor:pointer;
+  background-image:var(--kin);-webkit-background-clip:text;background-clip:text;color:transparent;
+}
+.appTitle:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
+/* 表紙のときは上下の枠を消して、写真を画面いっぱいに見せる */
+body.onTitle #appTop,body.onTitle #nav,body.onTitle .appReset{display:none}
+body.onTitle{padding-bottom:0}
+
+/* 対局中は卓だけにする */
+body.inMatch #appTop,body.inMatch #nav,body.inMatch .appReset,body.inMatch #view{display:none}
+body.inMatch{padding-bottom:0}
+#matchRoot:empty{display:none}
+#matchRoot{display:flex;justify-content:center}
+.appMoney{margin-left:auto;font-size:11.5px;color:var(--muted)}
+.appMoney b{font-family:var(--mincho);font-size:13px;color:var(--ivory);margin:0 2px}
+
+.appReset{
+  display:block;max-width:760px;margin:24px auto 0;padding:0 10px;
+  text-align:right;
+}
+.appReset button{
+  font-size:11px;padding:4px 9px;border-radius:3px;cursor:pointer;
+  border:1px dashed var(--gold-dim);background:transparent;color:#5c6d66;
+}
+</style>
+</head>
+<body>
+
+<div class="appTop" id="appTop">
+  <button class="appTitle" id="appHome" type="button">雀ドル発掘放浪記</button>
+  <span class="appMoney" id="appMoney"></span>
+</div>
+
+<!-- 表紙の絵。PLiCyのサムネイルはこのcanvasの中身を撮る。
+     複数のcanvasを置くと撮影が乱れるため、タグとしてのcanvasはこれ一枚だけにすること。 -->
+<div id="coverWrap"><canvas id="cover" width="1200" height="900"></canvas></div>
+
+<!-- 実対局のときだけ使う。ui.js は document 直下のidを見るので、
+     #view の外に置いて、対局中は他をすべて隠す -->
+<div id="matchRoot"></div>
+
+<div id="view"></div>
+
+<div class="appReset"><button id="appReset">最初からやり直す</button></div>
+
+<nav id="nav" aria-label="画面の切り替え">
+  <button data-go="team">チーム</button>
+  <button data-go="taikai">大会</button>
+  <button data-go="scout">スカウト</button>
+  <button data-go="meikan">名鑑</button>
+</nav>
+
+<script>
+/*__JS__*/
+</script>
+
+<script>
+/* ============================================================
+   外枠 — セーブと画面の切り替え
+   セーブはすべてidで持つ（引き継ぎ書 §5）。
+   localStorage が使えない環境では毎回最初から。
+   ============================================================ */
+(function () {
+  'use strict';
+  var SAVE_KEY = 'jandol_save_v1';
+
+  function blankState() {
+    return {
+      discovered: FREE_AGENTS.map(function (c) { return c.id; }),
+      contracted: [],
+      comp: Object.fromEntries(FREE_AGENTS.map(function (c) { return [c.id, c.comp]; })),
+      compMax: {}, grades: {}, favor: {},
+      team: [], teamDecided: false,
+      money: 0, playerRank: 'D', playerWins: 0, records: {}, recent: [],
+      agency: 1, beaten: [],
+      autoMatch: false, matchSpeed: 520, showHints: true,
+    };
+  }
+
+  function loadState() {
+    try {
+      var raw = localStorage.getItem(SAVE_KEY);
+      if (!raw) return blankState();
+      var s = JSON.parse(raw), b = blankState();
+      /* 知らない項目もそのまま残す。拾い直した項目だけを返すと、
+         あとから足した項目を消してしまう */
+      return Object.assign({}, s, {
+        discovered: Array.isArray(s.discovered) ? s.discovered : b.discovered,
+        contracted: Array.isArray(s.contracted) ? s.contracted : [],
+        comp: Object.assign({}, b.comp, s.comp || {}),
+        compMax: s.compMax || {}, grades: s.grades || {}, favor: s.favor || {},
+        team: Array.isArray(s.team) ? s.team : [],
+        money: typeof s.money === 'number' ? s.money : 0,
+        playerRank: s.playerRank || 'D',
+        playerWins: typeof s.playerWins === 'number' ? s.playerWins : 0,
+        records: s.records || {},
+        recent: Array.isArray(s.recent) ? s.recent : [],
+        agency: typeof s.agency === 'number' ? s.agency : 1,
+        beaten: Array.isArray(s.beaten) ? s.beaten : [],
+        playerFace: Title.normalizeFace(s.playerFace),
+        autoMatch: !!s.autoMatch,
+        matchSpeed: typeof s.matchSpeed === 'number' ? s.matchSpeed : 520,
+        showHints: s.showHints !== false,
+      });
+    } catch (e) { return blankState(); }
+  }
+
+  var canSave = true;
+  function saveState(st) {
+    try { localStorage.setItem(SAVE_KEY, JSON.stringify(st)); }
+    catch (e) { canSave = false; }
+  }
+
+  var state = loadState();
+
+  var store = {
+    get: function () { return state; },
+    set: function (patch) { Object.assign(state, patch); saveState(state); paintTop(); },
+
+    /* チーム編成が終わったら大会へ送る */
+    onDecided: function () { go('taikai'); },
+
+    /* 表紙から */
+    onContinue: function () { go(state.teamDecided ? 'taikai' : 'team'); },
+    onStart: function () {
+      /* 「最初からはじめる」は進行だけ消す。名前と顔は今決めたものを残す */
+      var keep = { playerName: state.playerName, playerFace: state.playerFace };
+      state = Object.assign(blankState(), keep);
+      saveState(state);
+      go('team');
+    },
+    onSigned: function () { paintTop(); },
+
+    /* 自分が座る卓だけ実際に打つ。他の卓は taikai.js が確率処理する。
+       設定で切れるようにしてあり、切ると全部の卓が自動処理になる。 */
+    playRealMatch: function (table, ctx) {
+      if (state.autoMatch) return null;      // 「自分の卓も自動で処理する」設定
+      document.body.classList.add('inMatch');
+      return Match.play(document.getElementById('matchRoot'), table, {
+        title: ctx.tier.name + '　' + ctx.name,
+        speed: state.matchSpeed || 520,
+        showHints: state.showHints !== false,
+      }).then(function (rank) {
+        document.body.classList.remove('inMatch');
+        return rank;
+      }, function (e) {
+        document.body.classList.remove('inMatch');
+        throw e;
+      });
+    },
+  };
+
+  var view = document.getElementById('view');
+  var nav = document.getElementById('nav');
+  var current = null;
+
+  function paintTop() {
+    var el = document.getElementById('appMoney');
+    var txt = '所持金 <b>' + (state.money || 0).toLocaleString('ja-JP') + '</b>円';
+    if (!canSave) txt += '　（この環境では保存できません）';
+    el.innerHTML = txt;
+    if (current === 'title') return;
+    /* チームを決めるまで他の画面は開けない */
+    Array.prototype.forEach.call(nav.querySelectorAll('[data-go]'), function (b) {
+      var locked = !state.teamDecided && b.dataset.go !== 'team';
+      b.disabled = locked;
+      b.setAttribute('aria-current', b.dataset.go === current ? 'page' : 'false');
+    });
+  }
+
+  function go(name) {
+    /* ポップアップ類は body に足しているので、画面を替えるときに自分で消す。
+       残したままだと次の画面の上に覆いが被さったままになる */
+    Array.prototype.forEach.call(
+      document.querySelectorAll('.popup,.mkOverlay,.scReveal'),
+      function (el) { el.remove(); }
+    );
+    current = name;
+    view.innerHTML = '';
+    var root = document.createElement('div');
+    view.appendChild(root);
+    document.body.classList.toggle('onTitle', name === 'title');
+    if (name === 'title') Title.mount(root, store);
+    else if (name === 'meikan') Meikan.mount(root, store);
+    else if (name === 'team') Team.mount(root, store);
+    else if (name === 'taikai') Taikai.mount(root, store);
+    else if (name === 'scout') Scout.mount(root, store);
+    paintTop();
+    window.scrollTo(0, 0);
+  }
+
+  nav.addEventListener('click', function (e) {
+    var b = e.target.closest('[data-go]');
+    if (b && !b.disabled) go(b.dataset.go);
+  });
+
+  document.getElementById('appReset').addEventListener('click', function () {
+    if (!window.confirm('セーブを消して最初からやり直します。よろしいですか。')) return;
+    try { localStorage.removeItem(SAVE_KEY); } catch (e) {}
+    state = blankState();
+    go('team');
+  });
+
+  document.getElementById('appHome').addEventListener('click', function () { go('title'); });
+
+  /* 表紙の絵は起動時に一度だけ描く。以降どの画面にいても撮影できる */
+  Title.paintCover(document.getElementById('cover'), state);
+
+  go('title');
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,109 @@
+/* ============================================================
+   title.css — トップページとプレイヤー設定
+   ============================================================ */
+
+.ttRoot{width:100%;max-width:760px;margin:0 auto;padding:0 0 30px}
+
+/* ---------- 表紙 ----------
+   絵はすべて #cover のcanvasが描く。
+   PLiCyはcanvasの中身しかサムネイルに撮らないため、
+   顔の壁も題字もDOMではなくcanvas側にある。            */
+#coverWrap{
+  display:none;                 /* 表紙のときだけ出す。撮影用にDOMからは消さない */
+  width:100%;line-height:0;border-bottom:1px solid var(--gold-dim);
+  background:#081010;
+}
+#cover{width:100%;height:auto;display:block}
+body.onTitle #coverWrap{display:block}
+
+/* ---------- 本体 ---------- */
+.ttBody{padding:16px 12px 0}
+
+.ttActions{display:grid;gap:9px;margin-bottom:16px}
+.ttBtn{
+  display:block;width:100%;padding:14px;cursor:pointer;border-radius:5px;
+  font-family:var(--maru);font-weight:800;font-size:16px;letter-spacing:.05em;
+  border:1px solid var(--gold-lo);color:var(--ink);
+  background:linear-gradient(150deg,var(--gold-hi),var(--gold) 42%,var(--gold-lo));
+  box-shadow:0 1px 0 rgba(255,255,255,.3) inset,0 3px 10px rgba(0,0,0,.5);
+}
+.ttBtn.ghost{
+  background:transparent;color:var(--ivory-2);border-color:var(--gold-dim);
+  box-shadow:none;font-size:14px;padding:11px;
+}
+.ttBtn:focus-visible{outline:2px solid var(--ivory);outline-offset:2px}
+
+/* 事務所の現状 */
+.ttState{
+  border:1px solid var(--gold-dim);border-radius:6px;padding:11px 13px;margin-bottom:14px;
+  background:linear-gradient(var(--urushi-2),rgba(19,36,32,.4));
+}
+.ttStateT{font-family:var(--maru);font-weight:700;font-size:12px;color:var(--gold);letter-spacing:.05em;margin-bottom:7px}
+.ttStateRow{display:flex;flex-wrap:wrap;gap:6px}
+.ttStateItem{
+  font-size:11.5px;color:var(--muted);
+  border:1px solid var(--gold-dim);border-radius:3px;padding:3px 8px;background:rgba(0,0,0,.28);
+}
+.ttStateItem b{font-family:var(--maru);font-weight:800;font-size:13.5px;color:var(--ivory);margin:0 2px}
+.ttRoster{display:flex;gap:5px;margin-top:9px}
+.ttRoster span{
+  width:44px;height:58px;border-radius:3px;overflow:hidden;display:block;
+  border:1px solid var(--gold-dim);background:linear-gradient(160deg,var(--back),var(--back-2));
+}
+.ttRoster img{width:100%;height:100%;object-fit:cover;object-position:50% 10%;display:block}
+
+.ttLead{font-size:12.5px;color:var(--muted);line-height:1.8;margin:0 2px 14px}
+.ttFoot{
+  font-family:var(--maru);font-weight:700;font-size:11.5px;color:var(--muted);
+  letter-spacing:.03em;text-align:center;margin:18px 0 0;opacity:.75;
+}
+/* 表紙は縦に間延びしやすいので、中身を上下に散らさず上に寄せる */
+body.onTitle #view{min-height:0}
+
+/* ---------- プレイヤー設定 ---------- */
+.ttSetup{padding:14px 12px 0}
+.ttSetupT{
+  font-family:var(--maru);font-weight:800;font-size:22px;letter-spacing:.03em;margin:0 0 6px;
+  background:var(--kin);-webkit-background-clip:text;background-clip:text;color:transparent;
+}
+.ttField{margin:16px 0 6px}
+.ttLabel{
+  display:block;font-family:var(--maru);font-weight:700;font-size:12.5px;color:var(--gold);
+  letter-spacing:.07em;margin-bottom:6px;
+}
+.ttInput{
+  width:100%;padding:11px 12px;border-radius:4px;
+  font-family:var(--maru);font-weight:800;font-size:17px;letter-spacing:.03em;
+  border:1px solid var(--gold-dim);background:rgba(0,0,0,.35);color:var(--ivory);
+}
+.ttInput:focus-visible{outline:2px solid var(--gold);outline-offset:1px}
+.ttNote{font-size:11px;color:var(--muted);margin-top:5px;line-height:1.6}
+
+/* 12枚。4列3行で一画面に収まる */
+.ttFaces{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
+@media(min-width:560px){.ttFaces{grid-template-columns:repeat(6,1fr)}}
+.ttFace{
+  position:relative;aspect-ratio:3/4;border-radius:4px;overflow:hidden;cursor:pointer;
+  border:1px solid var(--gold-dim);background:linear-gradient(160deg,var(--back),var(--back-2));
+  padding:0;width:100%;
+}
+.ttFace img{width:100%;height:100%;object-fit:cover;object-position:50% 10%;display:block;position:relative;z-index:1}
+.ttFace.sil::after{
+  content:"";position:absolute;inset:0;z-index:0;
+  background:var(--sil-img) center 62%/78% no-repeat;opacity:.85;
+}
+.ttFace[aria-pressed="true"]{
+  border-color:var(--gold);
+  box-shadow:inset 0 0 0 1px var(--urushi-3),inset 0 0 0 2px var(--gold),0 0 12px rgba(201,162,74,.3);
+}
+.ttFace[aria-pressed="true"]::before{
+  content:"選択";position:absolute;left:0;right:0;bottom:0;z-index:2;
+  padding:2px 0;text-align:center;
+  font-family:var(--maru);font-weight:800;font-size:9.5px;letter-spacing:.06em;
+  color:var(--ink);background:var(--gold);
+}
+.ttFace:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
+
+@media(min-width:560px){
+  .ttWall{grid-template-columns:repeat(8,1fr)}
+}
