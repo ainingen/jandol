@@ -25,9 +25,9 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 
 SRC = os.path.join(HERE, 'src')
 
-CSS = ['style.css', 'theme.css', 'maru.css', 'title.css', 'meikan.css', 'team.css', 'taikai.css', 'scout.css', 'match.css']
+CSS = ['style.css', 'theme.css', 'maru.css', 'title.css', 'meikan.css', 'team.css', 'taikai.css', 'scout.css', 'jansou.css', 'match.css']
 JS = ['engine.js', 'ai.js', 'game.js', 'ui.js', 'match.js',
-      'characters.js', 'tournament.js', 'title.js', 'meikan.js', 'team.js', 'taikai.js', 'scout.js']
+      'characters.js', 'tournament.js', 'title.js', 'meikan.js', 'team.js', 'taikai.js', 'scout.js', 'jansou.js']
 
 
 def read(name, base=SRC):

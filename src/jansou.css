@@ -1,0 +1,147 @@
+/* ============================================================
+   直営雀荘 — jansou.css
+   読み込み順は style.css → theme.css → これ。
+   他画面と同じく、面は --panel、線は --gold-dim、強調は --kin。
+   ============================================================ */
+
+.jnRoot{max-width:760px;margin:0 auto;padding:10px 10px 30px}
+.jnTitle{
+  font-size:20px;letter-spacing:.14em;margin:6px 0 2px;
+  background-image:var(--kin);-webkit-background-clip:text;background-clip:text;color:transparent;
+}
+.jnDay{font-size:12px;letter-spacing:.1em;color:var(--muted);-webkit-text-fill-color:var(--muted)}
+.jnLead{font-size:13px;line-height:1.9;color:var(--ivory-2);margin:4px 0 14px}
+
+/* ---------- 開店前 ---------- */
+.jnOpenBox{
+  margin-top:14px;padding:18px 14px;text-align:center;
+  background:var(--panel);border:1px solid var(--gold-dim);border-radius:6px;
+}
+.jnOpenCost{font-size:15px;color:var(--ivory)}
+.jnOpenCost b{font-size:18px;color:var(--gold)}
+.jnOpenNote{font-size:12px;color:var(--muted);margin:6px 0 12px}
+.jnOpenBtn{
+  font-size:15px;letter-spacing:.18em;padding:10px 34px;border-radius:4px;cursor:pointer;
+  border:1px solid var(--gold);background:rgba(201,162,74,.12);color:var(--gold);
+}
+.jnOpenBtn[disabled]{opacity:.4;cursor:default}
+.jnOpenLack{font-size:12px;color:var(--shu);margin-top:8px}
+
+/* ---------- 上部の数字 ---------- */
+.jnStats{display:flex;gap:16px;align-items:center;flex-wrap:wrap;margin:2px 0 6px}
+.jnStat{font-size:12px;color:var(--muted);display:flex;align-items:center;gap:6px}
+.jnStat b{font-size:13px;color:var(--ivory)}
+.jnRepTrack{
+  display:inline-block;width:88px;height:7px;border-radius:4px;overflow:hidden;
+  background:rgba(255,255,255,.09);border:1px solid rgba(255,255,255,.08);
+}
+.jnRepFill{display:block;height:100%;background:var(--kin)}
+.plus{color:#9fd8a8}
+.minus{color:#e0837a}
+
+.jnSecT{
+  font-size:13px;letter-spacing:.2em;color:var(--gold);
+  margin:18px 0 8px;padding-bottom:4px;border-bottom:1px solid var(--gold-dim);
+}
+.jnEmpty{font-size:12.5px;color:var(--muted)}
+
+/* ---------- シフト表 ---------- */
+.jnShift{display:flex;flex-direction:column;gap:6px}
+.jnRow{
+  display:flex;align-items:center;gap:10px;padding:6px 8px;
+  background:var(--panel);border:1px solid rgba(255,255,255,.07);border-radius:5px;
+}
+.jnRow .mkFace{
+  width:42px;height:56px;flex:none;border-radius:4px;overflow:hidden;
+  background:var(--urushi-2) var(--sil-img) center/70% no-repeat;
+}
+.jnRow .mkFace img{width:100%;height:100%;object-fit:cover;object-position:top}
+.jnRowBody{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.jnRowName{font-size:13.5px;color:var(--ivory);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.jnRowSub{font-size:10.5px;color:var(--muted)}
+.jnChips{display:flex;gap:4px;flex:none}
+.jnChip{
+  font-size:12px;padding:7px 10px;border-radius:4px;cursor:pointer;
+  border:1px solid rgba(255,255,255,.14);background:transparent;color:var(--muted);
+}
+.jnChip.on{border-color:var(--gold);background:rgba(201,162,74,.14);color:var(--gold)}
+.jnChip:focus-visible{outline:2px solid var(--gold);outline-offset:1px}
+
+/* ---------- 設備 ---------- */
+.jnFacils{display:flex;flex-direction:column;gap:6px}
+.jnFacil{
+  display:flex;align-items:center;gap:10px;padding:8px 10px;
+  background:var(--panel);border:1px solid rgba(255,255,255,.07);border-radius:5px;
+}
+.jnFacilBody{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.jnFacilName{font-size:13px;color:var(--ivory)}
+.jnFacilNow{font-size:10.5px;color:var(--muted)}
+.jnFacilMax{font-size:10.5px;color:#5c6d66;flex:none}
+.jnUp{
+  flex:none;display:flex;flex-direction:column;align-items:flex-end;gap:1px;
+  font-size:11px;padding:6px 10px;border-radius:4px;cursor:pointer;text-align:right;
+  border:1px solid var(--gold-dim);background:rgba(201,162,74,.07);color:var(--ivory-2);
+  max-width:52%;
+}
+.jnUp b{font-size:11.5px;color:var(--gold)}
+.jnUp[disabled]{opacity:.4;cursor:default}
+
+/* ---------- 営業ボタン ---------- */
+.jnRun{margin:18px 0 4px;display:flex;flex-direction:column;gap:10px;align-items:center}
+.jnJoin{font-size:12.5px;color:var(--ivory-2);display:flex;align-items:center;gap:7px;cursor:pointer}
+.jnJoin input{width:16px;height:16px;accent-color:var(--gold)}
+.jnRunBtn{
+  font-size:15px;letter-spacing:.22em;padding:12px 40px;border-radius:5px;cursor:pointer;
+  border:1px solid var(--gold);background:rgba(201,162,74,.12);color:var(--gold);
+}
+.jnRunBtn[disabled]{opacity:.4;cursor:default}
+
+/* ---------- 最近の営業 ---------- */
+.jnLog{display:flex;flex-direction:column;gap:3px}
+.jnLogRow{
+  display:flex;gap:12px;font-size:12px;color:var(--muted);
+  padding:4px 8px;border-bottom:1px dashed rgba(255,255,255,.07);
+}
+.jnLogRow span:first-child{width:56px}
+.jnLogRow span:nth-child(2){flex:1}
+.jnLogRow b{font-weight:700}
+
+/* ---------- ポップアップ（イベント・営業結果） ---------- */
+.jnPopBox{max-width:400px}
+.jnPopTitle{
+  font-size:15px;letter-spacing:.1em;margin:8px 0 6px;
+  background-image:var(--kin);-webkit-background-clip:text;background-clip:text;color:transparent;
+}
+.jnPopText{font-size:12.5px;line-height:1.8;color:var(--ivory-2);margin:0 0 10px;text-align:left}
+.jnPopChoices{display:flex;flex-direction:column;gap:7px}
+.jnPopBtn{
+  display:flex;flex-direction:column;align-items:center;gap:2px;
+  font-size:13.5px;padding:9px 12px;border-radius:4px;cursor:pointer;
+  border:1px solid var(--gold-dim);background:rgba(201,162,74,.07);color:var(--ivory);
+}
+.jnPopBtn span{font-size:10.5px;color:var(--muted)}
+.jnPopBtn[disabled]{opacity:.4;cursor:default}
+.jnPopBtn:focus-visible{outline:2px solid var(--gold);outline-offset:1px}
+
+/* 営業結果の行。p の中に入れるので span で組む */
+.jnRepWrap{display:flex;flex-direction:column;gap:3px}
+.jnRepRow{display:flex;align-items:baseline;gap:8px;font-size:12.5px;color:var(--ivory-2)}
+.jnRepRow i{font-style:normal;font-size:10px;color:var(--muted);margin-left:4px}
+.jnRepRow em{font-style:normal;font-size:10px;color:var(--gold);margin-left:4px}
+.jnRepRow span:first-child{flex:1;text-align:left}
+.jnRepRow b{font-weight:700}
+.jnRepRow.line{border-top:1px dashed rgba(255,255,255,.12);padding-top:5px;margin-top:3px}
+.jnRepRow.total{
+  border-top:1px solid var(--gold-dim);padding-top:6px;margin-top:4px;
+  font-size:13.5px;color:var(--ivory);
+}
+.jnRepEv{
+  font-size:12px;color:var(--gold);text-align:left;
+  padding:4px 0 0;
+}
+.jnRepGrowth{
+  display:flex;flex-direction:column;gap:2px;margin-top:8px;
+  padding-top:6px;border-top:1px dashed rgba(255,255,255,.12);
+  font-size:11.5px;color:var(--muted);text-align:left;
+}
+.jnRepGrowth em{font-style:normal;color:var(--gold)}

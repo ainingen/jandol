@@ -71,7 +71,8 @@ tools/make-font.py  表紙の丸ゴシックを作り直す
 meikan.html         ┐
 team.html           │ 画面ごとの単体ページ（開発用）
 taikai.html         │
-scout.html          ┘
+scout.html          │
+jansou.html         ┘
 
 src/
   engine.js         麻雀エンジン（シャンテン・和了判定・役・符・点数）テスト35件合格
@@ -91,6 +92,7 @@ src/
   team.js/.css      チーム編成
   taikai.js/.css    大会
   scout.js/.css     スカウト
+  jansou.js/.css    直営雀荘（シフト・設備・イベント・営業の収支）
 
 fonts/              maru-ui.woff2（本文・568KB）／ maru-title.woff2（題字・4KB）
 tiles/              牌の絵39枚（SVG・770KB）。出典は tiles/LICENSE.txt
@@ -110,6 +112,9 @@ docs/HANDOVER.md    設計の経緯、決めごと、ハマった罠
 - スカウト … 雀荘をまわって発掘、契約条件10種の判定、事務所の拡張
 - **実対局** … 大会で自分が座る卓は実際に打つ。他の卓は結果だけ。
   対局の設定（自分で打つ／自動、速さ、補助表示）は大会画面の下にある
+- **直営雀荘** … 開店資金50万で開く。所属全員にシフト（昼・夕・夜）を組み、
+  一日単位で営業する。出勤者の人気(pop)が客を呼び、月給の日割り（日当）を払う。
+  設備投資4種（卓・内装・卓の型・宣伝）、イベント6種、夜は自分も卓に着ける
 
 この四つが繋がって、**発掘 → スカウト → 所属 → 大会 → 賞金 → 事務所強化** の
 一周が閉じている。
@@ -119,7 +124,7 @@ docs/HANDOVER.md    設計の経緯、決めごと、ハマった罠
 - **イベント**。契約条件が `event` の6人（天城リオを含む）は現状どうやっても
   契約できない。このままだと図鑑が埋まらないので、公開前に暫定条件を置くか
   イベントを作るかを決める必要がある。
-- トップページ、発掘の演出、全国マップ、年俸などの経営、団体戦。
+- トップページ、発掘の演出、全国マップ、団体戦。
 
 ## 決めごと
 
@@ -139,6 +144,10 @@ docs/HANDOVER.md    設計の経緯、決めごと、ハマった罠
 | 題字・副題と表紙の絵 | `src/title.js` の `TITLE` `SUBTITLE` `drawCover` |
 | プレイヤーの顔の候補 | `src/title.js` の `FACES` |
 | 成長曲線 | `src/tournament.js` の `GROWTH_CURVE` |
+| 雀荘の開店資金・場代・回転 | `src/jansou.js` の `OPEN_COST` `SLOTS` |
+| 雀荘の設備（卓・内装・卓の型・宣伝） | `src/jansou.js` の `TABLE_COST` `INTERIOR` `AUTO` `SIGN` |
+| 雀荘の日当・家賃 | `src/jansou.js` の `BASE_WAGE` `wageOf` `utilOf` |
+| 雀荘のイベントの重みと発生率 | `src/jansou.js` の `pickEvent` と `SIGN` の `ev` |
 
 ## 実対局
 

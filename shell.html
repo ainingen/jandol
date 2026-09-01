@@ -88,6 +88,7 @@ body.inMatch{padding-bottom:0}
 <nav id="nav" aria-label="画面の切り替え">
   <button data-go="team">チーム</button>
   <button data-go="taikai">大会</button>
+  <button data-go="jansou">雀荘</button>
   <button data-go="scout">スカウト</button>
   <button data-go="meikan">名鑑</button>
 </nav>
@@ -226,6 +227,7 @@ body.inMatch{padding-bottom:0}
     else if (name === 'meikan') Meikan.mount(root, store);
     else if (name === 'team') Team.mount(root, store);
     else if (name === 'taikai') Taikai.mount(root, store);
+    else if (name === 'jansou') Jansou.mount(root, store);
     else if (name === 'scout') Scout.mount(root, store);
     paintTop();
     window.scrollTo(0, 0);
