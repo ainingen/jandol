@@ -3639,6 +3639,10 @@ class Game {
 
 const $ = (s) => document.querySelector(s);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+/* 名前は入力された文字がそのまま入る。innerHTML に混ぜる前に必ず通す。
+   他の画面（team.js / meikan.js など）が持っているものと同じ */
+const esc = (s) => String(s).replace(/[&<>"']/g,
+  (m) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m]));
 
 /* ---------- 牌の絵 ---------- */
 const faceCache = {};
@@ -3699,9 +3703,9 @@ const UI = {
       <div class="scores">${[0, 1, 2, 3].map((i) => {
         const p = g.players[i];
         return `<div class="${i === 0 ? 'me' : ''} ${i === g.dealer ? 'dealer-dot' : ''}">
-          ${i === 0 && p.face ? `<span class="oppFace"><img src="${p.face}" alt=""
+          ${i === 0 && p.face ? `<span class="oppFace"><img src="${esc(p.face)}" alt=""
             onerror="this.remove()"></span>` : ''}
-          ${p.name} <b>${p.score}</b></div>`;
+          ${esc(p.name)} <b>${p.score}</b></div>`;
       }).join('')}</div>`;
 
     // 対局者
@@ -3710,10 +3714,10 @@ const UI = {
     const oppHTML = (p, vert) => `
       <div class="opp ${vert ? 'vert' : ''}">
         <div class="oppName">
-          ${p.face ? `<span class="oppFace"><img src="${p.face}" alt=""
+          ${p.face ? `<span class="oppFace"><img src="${esc(p.face)}" alt=""
             onerror="this.remove()"></span>` : ''}
           <span class="oppKaze">${KAZE_CH[p.jikaze - 27] || ''}</span>
-          <span class="oppWho">${p.name}</span>
+          <span class="oppWho">${esc(p.name)}</span>
           <span class="oppScore">${p.score}</span>
         </div>
         <div class="backs ${vert ? 'vert' : ''}">${
@@ -4093,7 +4097,7 @@ const UI = {
         `<div>${y.name}</div><div class="h">${y.yakuman ? '役満' : y.han + '翻'}</div>`).join('');
       const winTiles = data.hand.slice().sort((a, b) => kindOf(a) - kindOf(b));
       panel.innerHTML = `
-        <h2>${data.loser ? 'ロン和了' : 'ツモ和了'} — ${data.winner.name}</h2>
+        <h2>${data.loser ? 'ロン和了' : 'ツモ和了'} — ${esc(data.winner.name)}</h2>
         <div class="hand-view">
           ${winTiles.map((id) => tileHTML(id, 'small')).join('')}
           ${data.melds.map((m) => meldHTML(m, 'small')).join('')}
@@ -4107,7 +4111,7 @@ const UI = {
         <div class="opt"><button class="act" id="next">次へ</button></div>`;
     } else {
       const rows = data.tenpai
-        ? g.players.map((p, i) => `<div class="rank-row"><span class="r">${p.name}</span>
+        ? g.players.map((p, i) => `<div class="rank-row"><span class="r">${esc(p.name)}</span>
             <span>${data.tenpai[i] ? 'テンパイ' : 'ノーテン'}</span><span>${p.score}</span></div>`).join('')
         : '';
       panel.innerHTML = `<h2>${data.reason}</h2>${rows}
@@ -4127,7 +4131,7 @@ const UI = {
     const panel = $('#overlay .panel');
     panel.innerHTML = `<h2>対局終了</h2>
       ${rank.map((r, i) => `<div class="rank-row"><span class="r">${i + 1}位</span>
-        <span>${r.name}</span><span>${r.score}</span></div>`).join('')}
+        <span>${esc(r.name)}</span><span>${r.score}</span></div>`).join('')}
       <div class="opt"><button class="act primary" id="again">もう一度</button></div>`;
     $('#overlay').classList.add('show');
     await new Promise((res) => { $('#again').onclick = res; });
