@@ -21,16 +21,23 @@
 `src/` を編集したら、リポジトリ直下で必ず実行する。
 
 ```
-python3 build.py
+python3 build.py            分割版。index.html は約30KB（既定）
+python3 build.py --single   一枚版。全部を埋め込む。約361KB
 ```
 
-`src/` の CSS 9本と JS 12本が `shell.html` に差し込まれ、`index.html` が作り直される。
+既定の分割版では、`src/` の CSS 10本と JS 14本のうち、表紙まわりの
+`title.css` と `title.js` だけが `shell.html` に埋め込まれ、
+残りは `src/` を指す `<link>` と `<script>` になる。
 
 - **`index.html` を直接編集しないこと。** ビルド結果なので、次のビルドで消える。
   直すのは必ず `src/` 側
+- **配布物には `src/` を必ず含めること。** 分割版は `src/*.css` と `src/*.js` を
+  読みに行く。含め忘れると真っ白な画面になる
 - **`index.html` は 500KB 以下に保つこと。** 配布先の PLiCy に上限がある。
   `build.py` が毎回サイズを確認し、超えたらエラーで止まる。
-  フォントを CSS に埋め込むと一気に超えるので、`fonts/` に外出ししてある
+  分割版なら約30KBなので当分は掛からない。効いてくるのは `--single` のとき
+- **確認は `python3 -m http.server` 越しに開くこと。** 分割版は `src/` を
+  相対パスで読むので、ページ単体を切り出して開く経路では読み込めない
 
 画面ごとに単体で確認したいときは、直下の `meikan.html` `team.html`
-`taikai.html` `scout.html` を開く。ビルド不要で `src/` を直に読む。
+`taikai.html` `scout.html` `jansou.html` を開く。ビルド不要で `src/` を直に読む。
