@@ -206,12 +206,14 @@ node から `Jansou.computeDay()` を2000日回した平均：
 切り替えは `UI.bigArt()` が持っていて、`match.css` の
 `min-width:900px` と同じ条件にしてある。**片方だけ変えないこと。**
 
-### 立ち絵は #app の外に置く
+### 立ち絵は #table の外・#app の中に置く
 
 `#tachie` を `#table` の中に入れてはいけない。`#table` は
 `overflow-y:auto` なので、絵が捨て牌と一緒にスクロールして流れていく。
-`position:fixed` で `#app` の外に置き、`#app` に `margin-right` を
-付けて場所を空けている。
+置き場所は `#app` の中、`#table` と `#myarea` のあいだ。
+縦持ちではそこが「自分の捨て牌の下」になる。
+広い横画面のときだけ `position:fixed` で右の余白へ飛ばし、
+`#app` に `margin-right` を付けて場所を空けている。
 
 広い横画面では `position:fixed` で右の余白に立ち絵として出し、
 それ以外（縦持ち・狭い画面）では卓の下の余りを使う面になる。
