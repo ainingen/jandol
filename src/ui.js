@@ -202,9 +202,59 @@ const UI = {
     this.resolve({ type, tile: id });
   },
 
-  /* ---- セリフ ----
-     立ち絵の主を seat に切り替えて、一言を吹き出しに出す。
-     hold=true のときは、そのあと自動で消さない（放銃の顔を残す）  */
+  /* ============================================================
+     顔とセリフ
+
+     四人ぶんの顔を小さく並べておき、喋った人だけ大きくする。
+     一人ずつ入れ替える形だと、誰が喋ったのか追えなくなる。
+
+     吹き出しは「そこから四回捨てられるまで」残す。時間ではなく
+     捨て牌の数で測るので、早送りでも自分の手番でも同じだけ残る。
+     ============================================================ */
+  BUBBLE_TURNS: 4,          // 吹き出しが残る長さ（捨て牌の数）
+
+  /* 卓の並びと同じ順（下家→対面→上家→自分）で顔を作る。
+     対局のはじめに一度だけ。名前は入力された文字が入るので、
+     innerHTML ではなく textContent で入れること */
+  initTachie() {
+    const box = $('#tachie');
+    const g = this.game;
+    if (!box || !g) return;
+    const row = box.querySelector('.tcRow');
+    if (!row) return;
+    row.innerHTML = '';
+    [1, 2, 3, 0].forEach((seat) => {
+      const p = g.players[seat];
+      if (!p) return;
+      const slot = document.createElement('div');
+      slot.className = 'tcSlot';
+      slot.dataset.seat = String(seat);
+      const face = document.createElement('span');
+      face.className = 'tcFace';
+      if (p.face) face.style.backgroundImage = 'url("' + p.face + '")';
+      const tag = document.createElement('span');
+      tag.className = 'tcTag';
+      tag.textContent = p.name || '';
+      slot.appendChild(face);
+      slot.appendChild(tag);
+      row.appendChild(slot);
+    });
+    box.classList.remove('talk');
+    box.querySelector('.tcBubble').textContent = '';
+    this._sayAt = null;
+    this._tachieReady = true;
+  },
+
+  /* 場に出ている捨て牌の総数。吹き出しを引っ込める目安に使う */
+  discardCount() {
+    const g = this.game;
+    if (!g) return 0;
+    let n = 0;
+    for (const p of g.players) n += p.discards.length;
+    return n;
+  },
+
+  /* 一言を出す。喋った人の顔を大きくして、吹き出しをその下に置く */
   say(seat, kind, hold) {
     if (typeof SERIFU === 'undefined') return;
     const g = this.game;
@@ -214,81 +264,46 @@ const UI = {
     if (!p) return;
     const line = SERIFU.pick(p.chara, kind);
     if (!line) return;
-    this.showTachie(seat);
-    /* 名前は showTachie の差分更新に任せず、ここで必ず書き直す。
-       任せると「顔と名前は次の人・セリフは前の人」という取り違えが起きる */
-    box.querySelector('.tcName').textContent = p.name || '';
-    box.querySelector('.tcStyle').textContent = seat === 0 ? 'あなた' : (p.styleName || '');
-    const b = box.querySelector('.tcBubble');
-    b.textContent = line;
+    if (!this._tachieReady) this.initTachie();
+
+    box.querySelectorAll('.tcSlot').forEach((el) => {
+      el.classList.toggle('on', Number(el.dataset.seat) === seat);
+    });
+    box.querySelector('.tcBubble').textContent = line;
     box.classList.add('talk');
-    clearTimeout(this._sayTimer);
-    /* 吹き出しは自分からは消さない。次の誰かが喋るまで出しっぱなしにする。
-       消してしまうと、狭い画面ではほとんどの時間ただの顔になり、
-       セリフがあることに気づけない（スマホで「何も出ない」と見える） */
-    this._talkUntil = Date.now() + (hold ? 2600 : Math.max(1600, (this.speed || 520) * 3));
-  },
-
-  /* ---- 立ち絵 ----
-     卓の右の余白に、いま打っている人の絵を出す。
-     毎回 src を入れ直すと画像が再読込されて点滅するので、
-     席が変わったときだけ差し替える  */
-  showTachie(seat) {
-    const box = $('#tachie');
-    const g = this.game;
-    if (!box || !g) return;
-    const p = g.players[seat];
-    if (!p) return;
-    if (this._tachieSeat !== seat) {
-      this._tachieSeat = seat;
-      /* 映す人が変わったら吹き出しは畳む。
-         残すと「顔は次の人・セリフは前の人」になる。
-         say() はこのあとで新しい一言を入れるので、消えるのは一瞬 */
-      box.classList.remove('talk');
-      box.querySelector('.tcBubble').textContent = '';
-      const art = box.querySelector('.tcArt');
-      const img = p.face || '';
-      art.style.backgroundImage = img ? `url("${img}")` : 'none';
-      box.querySelector('.tcName').textContent = p.name || '';
-      box.querySelector('.tcStyle').textContent = seat === 0 ? 'あなた' : (p.styleName || '');
-      /* 差し替えのたびに軽く出し直す。付け外ししないと二度目が動かない */
-      box.classList.remove('in');
-      void box.offsetWidth;
-      box.classList.add('in');
-    }
     box.classList.toggle('riichi', !!p.riichi);
-    box.classList.toggle('me', seat === 0);
-  },
-
-  /* 立ち絵（横の広い画面）か、顔と吹き出しの帯（それ以外）か。
-     CSS の切り替え条件と同じにしておくこと */
-  bigArt() {
-    try {
-      return window.matchMedia('(orientation:landscape)').matches
-        && window.innerWidth >= 900;
-    } catch (e) { return false; }
+    /* 放銃の一言（hold）は長めに残す */
+    this._sayAt = this.discardCount();
+    this._sayFor = hold ? this.BUBBLE_TURNS + 3 : this.BUBBLE_TURNS;
+    this._sayKyoku = g.kyoku;
   },
 
   renderTachie() {
     const g = this.game;
-    if (!g || !$('#tachie')) return;
-    /* 帯のときは手番を追いかけない。
-       追うと顔だけ次の人に変わり、吹き出しが前の人のまま残って
-       誰の発言か分からなくなる。帯は「最後に喋った人」を映しておく */
-    if (!this.bigArt()) {
-      if (this._tachieSeat === null || this._tachieSeat === undefined) {
-        this.showTachie(g.dealer);
+    const box = $('#tachie');
+    if (!g || !box) return;
+    if (!this._tachieReady) this.initTachie();
+
+    /* 吹き出しを引っ込める。四回捨てられたか、局が変わったら */
+    if (this._sayAt !== null && this._sayAt !== undefined) {
+      const past = this.discardCount() - this._sayAt;
+      if (past >= this._sayFor || this._sayKyoku !== g.kyoku) {
+        box.classList.remove('talk', 'riichi');
+        box.querySelector('.tcBubble').textContent = '';
+        box.querySelectorAll('.tcSlot.on').forEach((el) => el.classList.remove('on'));
+        this._sayAt = null;
       }
-      this.maybeIdle();
-      return;
     }
-    /* 立ち絵のときは手番を追う。ただし喋っている最中は動かさない */
-    if (this._talkUntil && Date.now() < this._talkUntil) return;
-    const seat = g.currentDraw ? g.currentDraw.seat
+
+    /* いま打っている人に薄く印を付ける。顔は動かさないので取り違えない */
+    const turn = g.currentDraw ? g.currentDraw.seat
       : (g.lastDiscard ? g.lastDiscard.seat : g.dealer);
-    const before = this._tachieSeat;
-    this.showTachie(seat);
-    if (before !== seat) this.maybeIdle(seat);
+    box.querySelectorAll('.tcSlot').forEach((el) => {
+      const s = Number(el.dataset.seat);
+      el.classList.toggle('turn', s === turn);
+      el.classList.toggle('rc', !!(g.players[s] && g.players[s].riichi));
+    });
+    this.maybeIdle(turn);
   },
 
   /* 手番がまわってきたときだけ、たまに雑談させる。
@@ -296,12 +311,11 @@ const UI = {
   maybeIdle(seat) {
     const g = this.game;
     if (!g || typeof SERIFU === 'undefined') return;
-    const now = g.currentDraw ? g.currentDraw.seat
-      : (g.lastDiscard ? g.lastDiscard.seat : g.dealer);
-    const s = seat === undefined ? now : seat;
-    if (this._idleSeat === s && this._idleKyoku === g.kyoku) return;   // 同じ手番で二度言わない
-    this._idleSeat = s; this._idleKyoku = g.kyoku;
-    if (Math.random() < 0.18) this.say(s, 'idle');
+    if (this._idleSeat === seat && this._idleKyoku === g.kyoku) return;
+    this._idleSeat = seat; this._idleKyoku = g.kyoku;
+    /* 喋っている最中は割り込ませない */
+    if (this._sayAt !== null && this._sayAt !== undefined) return;
+    if (Math.random() < 0.18) this.say(seat, 'idle');
   },
 
   resolve(action) {

@@ -1771,162 +1771,119 @@ body.inMatch .river,body.inMatch .river.side{
 .mdNote{font-size:12.5px;line-height:1.8;color:var(--muted);margin:0 0 4px}
 
 /* ============================================================
-   立ち絵とセリフ
+   顔とセリフ
 
-   置き場所は #app の中、卓と自分の手牌のあいだ。
-   縦持ちでは「自分の捨て牌の下」に顔と吹き出しの帯として出て、
-   横持ちの広い画面では position:fixed で右の余白に立ち絵として出る。
+   四人ぶんの顔を小さく並べ、喋った人だけ大きくする。
+   一人ずつ入れ替えると誰が喋ったのか追えなくなる（実機で確認済み）。
 
-   #table の中には入れないこと。#table は overflow-y:auto なので、
+   置き場所は #app の中、#table と #myarea のあいだ。
+   #table の中に入れてはいけない。#table は overflow-y:auto なので、
    捨て牌と一緒にスクロールして流れていってしまう。
+
+   縦持ちでは #table を「中身なりの高さ」にして、余った高さを
+   ここが flex:1 で全部もらう。序盤は顔が大きく、河が埋まると縮む。
    ============================================================ */
-
-/* ---------- 縦持ち・狭い画面：卓の下の余りに絵とセリフ ----------
-   卓（#table）は捨て牌が増えるぶんだけ縦に伸びる。
-   そこで #table を「中身なりの高さ」にして、余った高さを
-   こちらが flex:1 で全部もらう。序盤は絵が大きく出て、
-   河が埋まってくると自然に縮む。
-
-   #table の中には入れないこと。#table は overflow-y:auto なので、
-   中に置くと捨て牌と一緒にスクロールして流れていってしまう。 */
 body.inMatch #table{flex:0 1 auto}
 body.inMatch #tachie{
-  flex:1 1 auto;min-height:92px;max-height:42dvh;
-  display:grid;grid-template-columns:minmax(0,1fr);grid-template-rows:auto 1fr;
-  gap:2px 8px;align-items:start;
-  margin:5px 2px 0;padding:6px 8px;
-  background:
-    radial-gradient(120% 80% at 80% 100%,rgba(201,162,74,.10),transparent 62%),
-    linear-gradient(rgba(10,18,16,.5),rgba(6,12,10,.72));
-  border:1px solid rgba(201,162,74,.28);border-radius:8px;
+  flex:1 1 auto;min-height:96px;max-height:40dvh;
+  display:flex;flex-direction:column;gap:5px;
+  margin:5px 2px 0;padding:6px;
+  background:linear-gradient(rgba(10,18,16,.5),rgba(6,12,10,.72));
+  border:1px solid rgba(201,162,74,.26);border-radius:8px;
   position:relative;overflow:hidden;
 }
-/* 絵は右下に立たせる。
-   グリッドの中で aspect-ratio と stretch を併用すると、
-   高さと幅がお互いを参照して決まらず、min-width まで潰れる。
-   絶対配置にして幅を割合で決めること。 */
-body.inMatch .tcArt{
-  position:absolute;right:0;top:0;bottom:0;width:64%;
-  grid-column:auto;grid-row:auto;
-  height:auto;min-width:0;aspect-ratio:auto;
-  background-position:right bottom;background-size:contain;background-repeat:no-repeat;
-  background-color:transparent;border:0;border-radius:0;
-  /* 下と左を透かして枠に溶かす */
-  -webkit-mask-image:linear-gradient(to bottom,transparent 0,#000 9%,#000 86%,transparent 100%),
-                     linear-gradient(to right,transparent 0,#000 22%);
-          mask-image:linear-gradient(to bottom,transparent 0,#000 9%,#000 86%,transparent 100%),
-                     linear-gradient(to right,transparent 0,#000 22%);
-  -webkit-mask-composite:source-in;mask-composite:intersect;
-  pointer-events:none;
+
+/* ---------- 四人の顔 ---------- */
+.tcRow{display:flex;gap:5px;flex:1 1 auto;min-height:0}
+.tcSlot{
+  flex:1 1 0;min-width:0;position:relative;
+  display:flex;flex-direction:column;justify-content:flex-end;
+  border-radius:6px;overflow:hidden;
+  border:1px solid rgba(255,255,255,.10);
+  background:var(--urushi-2);
+  transition:flex-grow .28s cubic-bezier(.2,.9,.3,1.05),border-color .2s,filter .2s;
+  filter:saturate(.72) brightness(.72);
 }
-body.inMatch .tcPlate{
-  grid-column:1;grid-row:1;position:relative;z-index:1;
-  display:flex;align-items:baseline;gap:7px;max-width:64%;min-width:0;
+.tcFace{
+  position:absolute;inset:0;
+  background-position:50% 14%;background-size:cover;background-repeat:no-repeat;
 }
-body.inMatch .tcName{
-  font-family:var(--maru);font-weight:800;font-size:12.5px;letter-spacing:.02em;
-  color:var(--gold-hi);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+.tcTag{
+  position:relative;z-index:1;
+  font-size:9.5px;line-height:1.3;color:var(--ivory-2);
+  padding:2px 4px;text-align:center;
+  background:linear-gradient(transparent,rgba(4,10,8,.82) 45%);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
 }
-body.inMatch .tcStyle{
-  font-size:10px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+/* いま打っている人。薄く印を付けるだけ。顔は動かさない */
+.tcSlot.turn{border-color:var(--gold-dim);filter:saturate(.9) brightness(.92)}
+/* リーチ中 */
+.tcSlot.rc{border-color:var(--vermilion)}
+.tcSlot.rc::after{
+  content:"立";position:absolute;top:3px;left:3px;z-index:2;
+  font-family:var(--maru);font-weight:800;font-size:10px;color:#fff;
+  background:var(--vermilion);border-radius:3px;padding:0 3px;
 }
-/* 吹き出しは左下。次の誰かが喋るまで出したままにする（ui.js の say を参照）。
-   高さが変わると卓が上下に跳ねるので、空のときも場所は取っておく */
+/* 喋っている人。大きくして色を戻す */
+.tcSlot.on{
+  flex-grow:2.4;filter:none;
+  border-color:var(--gold);
+  box-shadow:0 0 0 1px rgba(201,162,74,.5),0 4px 14px rgba(0,0,0,.5);
+}
+.tcSlot.on .tcTag{
+  font-size:11.5px;font-family:var(--maru);font-weight:800;color:var(--gold-hi);
+}
+@media(prefers-reduced-motion:reduce){
+  .tcSlot{transition:none}
+}
+
+/* ---------- 吹き出し ----------
+   四回捨てられるまで残る（長さは ui.js の BUBBLE_TURNS）。
+   空のときも場所を取っておく。高さが変わると卓が上下に跳ねる */
 body.inMatch .tcBubble{
-  grid-column:1;grid-row:2;align-self:end;justify-self:start;
-  position:relative;z-index:1;max-width:72%;min-width:0;
-  font-size:14.5px;line-height:1.55;color:var(--ivory);
-  padding:9px 14px;border-radius:13px 13px 13px 3px;
-  background:linear-gradient(rgba(255,255,255,.10),rgba(255,255,255,.05));
-  border:1px solid rgba(201,162,74,.34);
-  box-shadow:0 3px 10px rgba(0,0,0,.4);
+  flex:none;min-height:34px;
+  display:flex;align-items:center;
+  font-size:14px;line-height:1.45;color:var(--ivory);
+  padding:7px 13px;border-radius:12px 12px 12px 3px;
+  background:linear-gradient(rgba(255,255,255,.11),rgba(255,255,255,.05));
+  border:1px solid rgba(201,162,74,.32);
   opacity:0;transform:translateY(4px);
   transition:opacity .18s,transform .18s;
 }
 body.inMatch #tachie.talk .tcBubble{opacity:1;transform:none}
-body.inMatch #tachie.riichi{border-color:rgba(192,57,43,.5)}
-body.inMatch #tachie.riichi .tcBubble{border-color:rgba(192,57,43,.6)}
-body.inMatch #tachie.riichi .tcStyle{color:var(--vermilion)}
+body.inMatch #tachie.riichi .tcBubble{
+  border-color:rgba(192,57,43,.6);
+  background:linear-gradient(rgba(192,57,43,.16),rgba(192,57,43,.07));
+}
 @media(prefers-reduced-motion:reduce){
   body.inMatch .tcBubble{transition:none}
 }
-/* 卓が伸びて余りが無くなったら、顔だけの細い帯に戻る */
-@media(max-height:560px){
-  body.inMatch #tachie{max-height:34dvh}
+
+/* 画面が低いときは顔の枠を抑える */
+@media(max-height:620px){
+  body.inMatch #tachie{max-height:32dvh;min-height:84px}
+  .tcTag{font-size:9px}
 }
 
-/* ---------- 横持ち・広い画面：右の余白に立ち絵 ----------
-   卓（#app）は最大760px。広い画面では左右が丸ごと余るので、
-   右へ絵を出して #app を左に寄せる。
-   position:fixed なので、帯として取っていた高さは返る。 */
+/* ---------- 横持ち・広い画面 ----------
+   卓（#app）は最大760px。広い画面では右が丸ごと余るので、
+   顔を縦に積んで右の余白に置く。 */
 @media(orientation:landscape) and (min-width:900px){
-  body.inMatch #app{margin-right:min(300px,26vw)}
-  /* 立ち絵は画面に貼り付けるので、卓は元どおり余りを全部使う */
+  body.inMatch #app{margin-right:min(260px,24vw)}
   body.inMatch #table{flex:1}
   body.inMatch #tachie{
-    position:fixed;right:0;bottom:0;z-index:2;
-    display:block;width:min(300px,26vw);height:94dvh;
-    margin:0;padding:0;
-    /* 縦持ち用の上限をここで外す。残すと絵が 42dvh に潰れる */
-    min-height:0;max-height:none;
-    background:none;border:0;border-radius:0;pointer-events:none;
+    position:fixed;right:6px;top:6px;bottom:6px;z-index:2;
+    width:min(248px,23vw);
+    margin:0;min-height:0;max-height:none;
   }
-  body.inMatch .tcArt{
-    /* 縦持ちでは右に寄せた 64% 幅。横持ちでは全幅に戻す。
-       left と right と width を同時に指定すると right が無視される */
-    position:absolute;inset:0 0 26px 0;left:0;right:0;width:100%;height:auto;
-    border:0;border-radius:0;background-color:transparent;
-    background-position:center bottom;background-size:contain;
-    /* 下と左を透かして、卓との境目を消す */
-    -webkit-mask-image:linear-gradient(to bottom,#000 78%,transparent 100%),
-                       linear-gradient(to right,transparent 0,#000 14%);
-            mask-image:linear-gradient(to bottom,#000 78%,transparent 100%),
-                       linear-gradient(to right,transparent 0,#000 14%);
-    -webkit-mask-composite:source-in;mask-composite:intersect;
-    filter:saturate(.92) contrast(1.02);
-  }
-  #tachie.in .tcArt{animation:tcIn .34s cubic-bezier(.2,.9,.3,1.05) both}
-  @keyframes tcIn{
-    from{opacity:0;transform:translateX(14px) scale(.985)}
-    to{opacity:1;transform:none}
-  }
-  @media(prefers-reduced-motion:reduce){
-    #tachie.in .tcArt{animation:none}
-  }
-
-  body.inMatch .tcPlate{
-    position:absolute;left:10px;right:6px;bottom:2px;
-    display:flex;flex-direction:column;align-items:flex-end;gap:1px;
-    text-align:right;max-width:none;
-  }
-  body.inMatch .tcName{font-size:14px;text-shadow:0 2px 6px rgba(0,0,0,.7)}
-  body.inMatch .tcStyle{font-size:10.5px;text-shadow:0 1px 4px rgba(0,0,0,.8)}
-
-  /* 吹き出しは絵の上のほうに、大きく出す */
-  body.inMatch .tcBubble{
-    position:absolute;left:4px;right:8px;top:12%;
-    flex:none;font-size:13.5px;line-height:1.55;
-    white-space:normal;text-align:left;
-    padding:8px 12px;border-radius:12px 12px 3px 12px;
-    background:linear-gradient(rgba(10,18,16,.92),rgba(6,12,10,.95));
-    border:1px solid var(--gold-dim);
-    box-shadow:0 4px 16px rgba(0,0,0,.55);
-    transform:translateY(6px);
-  }
-  body.inMatch #tachie.talk .tcBubble{transform:none}
-  body.inMatch #tachie.riichi .tcArt{
-    filter:saturate(1.05) contrast(1.05) drop-shadow(0 0 14px rgba(192,57,43,.55));
-  }
-  body.inMatch #tachie.riichi .tcStyle{color:var(--vermilion)}
-  body.inMatch #tachie.me .tcArt{
-    filter:saturate(.95) drop-shadow(0 0 12px rgba(201,162,74,.4));
-  }
-}
-
-@media(orientation:landscape) and (min-width:1280px){
-  body.inMatch #app{margin-right:min(360px,26vw)}
-  body.inMatch #tachie{width:min(360px,26vw)}
-  body.inMatch .tcName{font-size:16px}
+  .tcRow{flex-direction:column}
+  .tcSlot{flex:1 1 0}
+  /* 横持ちの枠は横長になる。顔が上に切れるので少し下げる */
+  .tcFace{background-position:50% 27%}
+  .tcTag{font-size:10.5px}
+  .tcSlot.on{flex-grow:2.6}
+  .tcSlot.on .tcTag{font-size:12.5px}
+  body.inMatch .tcBubble{font-size:13.5px;min-height:40px}
 }
 
 
@@ -3880,9 +3837,59 @@ const UI = {
     this.resolve({ type, tile: id });
   },
 
-  /* ---- セリフ ----
-     立ち絵の主を seat に切り替えて、一言を吹き出しに出す。
-     hold=true のときは、そのあと自動で消さない（放銃の顔を残す）  */
+  /* ============================================================
+     顔とセリフ
+
+     四人ぶんの顔を小さく並べておき、喋った人だけ大きくする。
+     一人ずつ入れ替える形だと、誰が喋ったのか追えなくなる。
+
+     吹き出しは「そこから四回捨てられるまで」残す。時間ではなく
+     捨て牌の数で測るので、早送りでも自分の手番でも同じだけ残る。
+     ============================================================ */
+  BUBBLE_TURNS: 4,          // 吹き出しが残る長さ（捨て牌の数）
+
+  /* 卓の並びと同じ順（下家→対面→上家→自分）で顔を作る。
+     対局のはじめに一度だけ。名前は入力された文字が入るので、
+     innerHTML ではなく textContent で入れること */
+  initTachie() {
+    const box = $('#tachie');
+    const g = this.game;
+    if (!box || !g) return;
+    const row = box.querySelector('.tcRow');
+    if (!row) return;
+    row.innerHTML = '';
+    [1, 2, 3, 0].forEach((seat) => {
+      const p = g.players[seat];
+      if (!p) return;
+      const slot = document.createElement('div');
+      slot.className = 'tcSlot';
+      slot.dataset.seat = String(seat);
+      const face = document.createElement('span');
+      face.className = 'tcFace';
+      if (p.face) face.style.backgroundImage = 'url("' + p.face + '")';
+      const tag = document.createElement('span');
+      tag.className = 'tcTag';
+      tag.textContent = p.name || '';
+      slot.appendChild(face);
+      slot.appendChild(tag);
+      row.appendChild(slot);
+    });
+    box.classList.remove('talk');
+    box.querySelector('.tcBubble').textContent = '';
+    this._sayAt = null;
+    this._tachieReady = true;
+  },
+
+  /* 場に出ている捨て牌の総数。吹き出しを引っ込める目安に使う */
+  discardCount() {
+    const g = this.game;
+    if (!g) return 0;
+    let n = 0;
+    for (const p of g.players) n += p.discards.length;
+    return n;
+  },
+
+  /* 一言を出す。喋った人の顔を大きくして、吹き出しをその下に置く */
   say(seat, kind, hold) {
     if (typeof SERIFU === 'undefined') return;
     const g = this.game;
@@ -3892,81 +3899,46 @@ const UI = {
     if (!p) return;
     const line = SERIFU.pick(p.chara, kind);
     if (!line) return;
-    this.showTachie(seat);
-    /* 名前は showTachie の差分更新に任せず、ここで必ず書き直す。
-       任せると「顔と名前は次の人・セリフは前の人」という取り違えが起きる */
-    box.querySelector('.tcName').textContent = p.name || '';
-    box.querySelector('.tcStyle').textContent = seat === 0 ? 'あなた' : (p.styleName || '');
-    const b = box.querySelector('.tcBubble');
-    b.textContent = line;
+    if (!this._tachieReady) this.initTachie();
+
+    box.querySelectorAll('.tcSlot').forEach((el) => {
+      el.classList.toggle('on', Number(el.dataset.seat) === seat);
+    });
+    box.querySelector('.tcBubble').textContent = line;
     box.classList.add('talk');
-    clearTimeout(this._sayTimer);
-    /* 吹き出しは自分からは消さない。次の誰かが喋るまで出しっぱなしにする。
-       消してしまうと、狭い画面ではほとんどの時間ただの顔になり、
-       セリフがあることに気づけない（スマホで「何も出ない」と見える） */
-    this._talkUntil = Date.now() + (hold ? 2600 : Math.max(1600, (this.speed || 520) * 3));
-  },
-
-  /* ---- 立ち絵 ----
-     卓の右の余白に、いま打っている人の絵を出す。
-     毎回 src を入れ直すと画像が再読込されて点滅するので、
-     席が変わったときだけ差し替える  */
-  showTachie(seat) {
-    const box = $('#tachie');
-    const g = this.game;
-    if (!box || !g) return;
-    const p = g.players[seat];
-    if (!p) return;
-    if (this._tachieSeat !== seat) {
-      this._tachieSeat = seat;
-      /* 映す人が変わったら吹き出しは畳む。
-         残すと「顔は次の人・セリフは前の人」になる。
-         say() はこのあとで新しい一言を入れるので、消えるのは一瞬 */
-      box.classList.remove('talk');
-      box.querySelector('.tcBubble').textContent = '';
-      const art = box.querySelector('.tcArt');
-      const img = p.face || '';
-      art.style.backgroundImage = img ? `url("${img}")` : 'none';
-      box.querySelector('.tcName').textContent = p.name || '';
-      box.querySelector('.tcStyle').textContent = seat === 0 ? 'あなた' : (p.styleName || '');
-      /* 差し替えのたびに軽く出し直す。付け外ししないと二度目が動かない */
-      box.classList.remove('in');
-      void box.offsetWidth;
-      box.classList.add('in');
-    }
     box.classList.toggle('riichi', !!p.riichi);
-    box.classList.toggle('me', seat === 0);
-  },
-
-  /* 立ち絵（横の広い画面）か、顔と吹き出しの帯（それ以外）か。
-     CSS の切り替え条件と同じにしておくこと */
-  bigArt() {
-    try {
-      return window.matchMedia('(orientation:landscape)').matches
-        && window.innerWidth >= 900;
-    } catch (e) { return false; }
+    /* 放銃の一言（hold）は長めに残す */
+    this._sayAt = this.discardCount();
+    this._sayFor = hold ? this.BUBBLE_TURNS + 3 : this.BUBBLE_TURNS;
+    this._sayKyoku = g.kyoku;
   },
 
   renderTachie() {
     const g = this.game;
-    if (!g || !$('#tachie')) return;
-    /* 帯のときは手番を追いかけない。
-       追うと顔だけ次の人に変わり、吹き出しが前の人のまま残って
-       誰の発言か分からなくなる。帯は「最後に喋った人」を映しておく */
-    if (!this.bigArt()) {
-      if (this._tachieSeat === null || this._tachieSeat === undefined) {
-        this.showTachie(g.dealer);
+    const box = $('#tachie');
+    if (!g || !box) return;
+    if (!this._tachieReady) this.initTachie();
+
+    /* 吹き出しを引っ込める。四回捨てられたか、局が変わったら */
+    if (this._sayAt !== null && this._sayAt !== undefined) {
+      const past = this.discardCount() - this._sayAt;
+      if (past >= this._sayFor || this._sayKyoku !== g.kyoku) {
+        box.classList.remove('talk', 'riichi');
+        box.querySelector('.tcBubble').textContent = '';
+        box.querySelectorAll('.tcSlot.on').forEach((el) => el.classList.remove('on'));
+        this._sayAt = null;
       }
-      this.maybeIdle();
-      return;
     }
-    /* 立ち絵のときは手番を追う。ただし喋っている最中は動かさない */
-    if (this._talkUntil && Date.now() < this._talkUntil) return;
-    const seat = g.currentDraw ? g.currentDraw.seat
+
+    /* いま打っている人に薄く印を付ける。顔は動かさないので取り違えない */
+    const turn = g.currentDraw ? g.currentDraw.seat
       : (g.lastDiscard ? g.lastDiscard.seat : g.dealer);
-    const before = this._tachieSeat;
-    this.showTachie(seat);
-    if (before !== seat) this.maybeIdle(seat);
+    box.querySelectorAll('.tcSlot').forEach((el) => {
+      const s = Number(el.dataset.seat);
+      el.classList.toggle('turn', s === turn);
+      el.classList.toggle('rc', !!(g.players[s] && g.players[s].riichi));
+    });
+    this.maybeIdle(turn);
   },
 
   /* 手番がまわってきたときだけ、たまに雑談させる。
@@ -3974,12 +3946,11 @@ const UI = {
   maybeIdle(seat) {
     const g = this.game;
     if (!g || typeof SERIFU === 'undefined') return;
-    const now = g.currentDraw ? g.currentDraw.seat
-      : (g.lastDiscard ? g.lastDiscard.seat : g.dealer);
-    const s = seat === undefined ? now : seat;
-    if (this._idleSeat === s && this._idleKyoku === g.kyoku) return;   // 同じ手番で二度言わない
-    this._idleSeat = s; this._idleKyoku = g.kyoku;
-    if (Math.random() < 0.18) this.say(s, 'idle');
+    if (this._idleSeat === seat && this._idleKyoku === g.kyoku) return;
+    this._idleSeat = seat; this._idleKyoku = g.kyoku;
+    /* 喋っている最中は割り込ませない */
+    if (this._sayAt !== null && this._sayAt !== undefined) return;
+    if (Math.random() < 0.18) this.say(seat, 'idle');
   },
 
   resolve(action) {
@@ -4251,9 +4222,8 @@ const Match = (() => {
         </div>
       </div>
       <div id="tachie" aria-hidden="true">
-        <div class="tcArt"></div>
+        <div class="tcRow"></div>
         <div class="tcBubble"></div>
-        <div class="tcPlate"><span class="tcName"></span><span class="tcStyle"></span></div>
       </div>
       <div id="myarea">
         <div id="melds-row"></div>
@@ -4415,6 +4385,8 @@ const Match = (() => {
     UI._tachieSeat = null;
     UI._idleSeat = null;
     UI._idleKyoku = null;
+    UI._sayAt = null;
+    UI._tachieReady = false;      // 顔の並びは対局ごとに組み直す
     const giveBtn = host.querySelector('#giveup');
     giveBtn.addEventListener('click', async () => {
       const v = await UI.modal(

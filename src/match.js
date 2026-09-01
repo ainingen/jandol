@@ -39,9 +39,8 @@ const Match = (() => {
         </div>
       </div>
       <div id="tachie" aria-hidden="true">
-        <div class="tcArt"></div>
+        <div class="tcRow"></div>
         <div class="tcBubble"></div>
-        <div class="tcPlate"><span class="tcName"></span><span class="tcStyle"></span></div>
       </div>
       <div id="myarea">
         <div id="melds-row"></div>
@@ -203,6 +202,8 @@ const Match = (() => {
     UI._tachieSeat = null;
     UI._idleSeat = null;
     UI._idleKyoku = null;
+    UI._sayAt = null;
+    UI._tachieReady = false;      // 顔の並びは対局ごとに組み直す
     const giveBtn = host.querySelector('#giveup');
     giveBtn.addEventListener('click', async () => {
       const v = await UI.modal(
