@@ -4229,6 +4229,10 @@ const Match = (() => {
     /* おまかせ。以降は自分の席もCPUが打つ。
        着順はごまかさず、そのまま結果になる                        */
     UI.auto = false;
+    /* UI は対局をまたいで使い回すので、立ち絵の席も戻す。
+       残っていると次の対局の一枚目で差し替えが飛ばされ、
+       前の対局の顔と名前がそのまま出る */
+    UI._tachieSeat = null;
     const giveBtn = host.querySelector('#giveup');
     giveBtn.addEventListener('click', async () => {
       const v = await UI.modal(
