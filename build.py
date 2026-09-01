@@ -27,7 +27,7 @@ SRC = os.path.join(HERE, 'src')
 
 CSS = ['style.css', 'theme.css', 'maru.css', 'title.css', 'meikan.css', 'team.css', 'taikai.css', 'scout.css', 'jansou.css', 'match.css']
 JS = ['engine.js', 'ai.js', 'game.js', 'ui.js', 'match.js',
-      'characters.js', 'tournament.js', 'title.js', 'meikan.js', 'team.js', 'taikai.js', 'scout.js', 'jansou.js']
+      'characters.js', 'tournament.js', 'title.js', 'meikan.js', 'team.js', 'taikai.js', 'scout.js', 'jansou.js', 'serifu.js']
 
 
 def read(name, base=SRC):

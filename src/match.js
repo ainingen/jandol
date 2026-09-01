@@ -38,16 +38,17 @@ const Match = (() => {
           <div id="river-bottom" class="river"></div>
         </div>
       </div>
+      <div id="tachie" aria-hidden="true">
+        <div class="tcArt"></div>
+        <div class="tcBubble"></div>
+        <div class="tcPlate"><span class="tcName"></span><span class="tcStyle"></span></div>
+      </div>
       <div id="myarea">
         <div id="melds-row"></div>
         <div id="handrow"></div>
         <div id="hintbox"></div>
         <div id="actions"></div>
       </div>
-    </div>
-    <div id="tachie" aria-hidden="true">
-      <div class="tcArt"></div>
-      <div class="tcPlate"><span class="tcName"></span><span class="tcStyle"></span></div>
     </div>
     <div id="toast"></div>
     <div id="overlay"><div class="panel"></div></div>
@@ -185,6 +186,7 @@ const Match = (() => {
       if (c.id === 0) return;
       g.players[i].name = c.name;
       g.players[i].styleName = (STYLES[c.style] || {}).name || '';
+      g.players[i].chara = c.chara || '';
       if (typeof paramsOf === 'function' && c.style) {
         g.players[i].ai = paramsOf(c, STYLES);
       }
@@ -195,7 +197,7 @@ const Match = (() => {
     UI.auto = false;
     /* UI は対局をまたいで使い回すので、立ち絵の席も戻す。
        残っていると次の対局の一枚目で差し替えが飛ばされ、
-       前の対局の顔と名前がそのまま出る */
+       前の対局の顔がそのまま出る */
     UI._tachieSeat = null;
     const giveBtn = host.querySelector('#giveup');
     giveBtn.addEventListener('click', async () => {

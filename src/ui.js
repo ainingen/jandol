@@ -202,17 +202,48 @@ const UI = {
     this.resolve({ type, tile: id });
   },
 
+  /* ---- セリフ ----
+     立ち絵の主を seat に切り替えて、一言を吹き出しに出す。
+     hold=true のときは、そのあと自動で消さない（放銃の顔を残す）  */
+  say(seat, kind, hold) {
+    if (typeof SERIFU === 'undefined') return;
+    const g = this.game;
+    const box = $('#tachie');
+    if (!g || !box) return;
+    const p = g.players[seat];
+    if (!p) return;
+    const line = SERIFU.pick(p.chara, kind);
+    if (!line) return;
+    this.showTachie(seat);
+    /* 名前は showTachie の差分更新に任せず、ここで必ず書き直す。
+       任せると「顔と名前は次の人・セリフは前の人」という取り違えが起きる */
+    box.querySelector('.tcName').textContent = p.name || '';
+    box.querySelector('.tcStyle').textContent = seat === 0 ? 'あなた' : (p.styleName || '');
+    const b = box.querySelector('.tcBubble');
+    b.textContent = line;
+    box.classList.add('talk');
+    clearTimeout(this._sayTimer);
+    /* 早送り中は間を詰める。0にすると読めないので下限は置く */
+    const ms = hold ? 2600 : Math.max(1400, (this.speed || 520) * 3);
+    /* 喋り終わるまでは立ち絵を動かさない。
+       ここを押さえないと、次の手番の顔に差し替わったのに
+       吹き出しだけ前の人のまま残り、誰の発言か分からなくなる */
+    this._talkUntil = Date.now() + ms;
+    this._sayTimer = setTimeout(() => {
+      box.classList.remove('talk');
+      this._talkUntil = 0;
+      this.renderTachie();
+    }, ms);
+  },
+
   /* ---- 立ち絵 ----
      卓の右の余白に、いま打っている人の絵を出す。
      毎回 src を入れ直すと画像が再読込されて点滅するので、
      席が変わったときだけ差し替える  */
-  renderTachie() {
+  showTachie(seat) {
     const box = $('#tachie');
-    if (!box) return;
     const g = this.game;
-    if (!g) return;
-    const seat = g.currentDraw ? g.currentDraw.seat
-      : (g.lastDiscard ? g.lastDiscard.seat : g.dealer);
+    if (!box || !g) return;
     const p = g.players[seat];
     if (!p) return;
     if (this._tachieSeat !== seat) {
@@ -229,6 +260,30 @@ const UI = {
     }
     box.classList.toggle('riichi', !!p.riichi);
     box.classList.toggle('me', seat === 0);
+  },
+
+  renderTachie() {
+    const g = this.game;
+    if (!g || !$('#tachie')) return;
+    /* 誰かが喋っている最中は、その人を映したままにする */
+    if (this._talkUntil && Date.now() < this._talkUntil) return;
+    /* setTimeout は遅れて発火することがある。待っているあいだにここへ来ると、
+       吹き出しは前の人のまま顔だけ次の人に変わってしまう。
+       期限が切れていたら、タイマーを待たずにここで確実に消す */
+    if (this._talkUntil) {
+      this._talkUntil = 0;
+      clearTimeout(this._sayTimer);
+      $('#tachie').classList.remove('talk');
+    }
+    const seat = g.currentDraw ? g.currentDraw.seat
+      : (g.lastDiscard ? g.lastDiscard.seat : g.dealer);
+    const before = this._tachieSeat;
+    this.showTachie(seat);
+    /* 手番がまわってきたときだけ、たまに雑談させる。
+       毎回だと喋りっぱなしでうるさい */
+    if (before !== seat && typeof SERIFU !== 'undefined' && Math.random() < 0.12) {
+      this.say(seat, 'idle');
+    }
   },
 
   resolve(action) {
@@ -342,10 +397,13 @@ const UI = {
     });
   },
 
-  async event(text, ms) {
+  async event(text, ms, who) {
     const t = $('#toast');
     t.textContent = text;
     t.className = 'show' + (/ポン|チー|カン|リーチ|暗槓|加槓/.test(text) ? ' call' : '');
+    /* game.js が「誰が・何を」を添えてくる。添えて来ない呼び出しもあるので、
+       あるときだけ喋らせる */
+    if (who && who.kind) this.say(who.seat, who.kind);
     await sleep(ms || 700);
     t.className = '';
     await sleep(120);
@@ -354,6 +412,14 @@ const UI = {
   async result(data) {
     const g = this.game;
     const panel = $('#overlay .panel');
+    /* 和了った人と、振り込んだ人の両方に一言。
+       振り込みのほうを後にして、そちらを画面に残す */
+    if (data.type === 'win' && data.winner) {
+      this.say(data.winner.seat, data.loser ? 'ron' : 'tsumo');
+      if (data.loser) this.say(data.loser.seat, 'deal', true);
+    } else if (data.type === 'draw') {
+      this.say(g.dealer, 'draw');
+    }
     if (data.type === 'win') {
       const r = data.result;
       const yakuRows = r.yaku.map((y) =>
