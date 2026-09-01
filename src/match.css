@@ -346,3 +346,84 @@ body.inMatch #table{
 body.inMatch .river,body.inMatch .river.side{
   border-bottom-color:rgba(217,180,94,.22);
 }
+
+/* ---------- おまかせ ----------
+   #actions は判断のたびに作り直されるので、そこには置けない。
+   卓の上に常設して、いつでも降りられるようにする */
+#giveup{
+  align-self:flex-end;margin:0 2px 4px;
+  font-size:11.5px;padding:5px 12px;border-radius:4px;cursor:pointer;
+  border:1px solid var(--gold-dim);background:rgba(0,0,0,.3);color:var(--muted);
+  letter-spacing:.06em;
+}
+#giveup:hover{color:var(--gold);border-color:var(--gold)}
+#giveup:focus-visible{outline:2px solid var(--gold);outline-offset:1px}
+.mdNote{font-size:12.5px;line-height:1.8;color:var(--muted);margin:0 0 4px}
+
+/* ============================================================
+   立ち絵
+   卓（#app）は最大760px。広い画面ではその左右が丸ごと余るので、
+   右の余白にいま打っている人の絵を出す。
+
+   置き場所は #app の外。中に入れると卓のスクロール
+   （#table は overflow-y:auto）に巻き込まれて一緒に流れてしまう。
+
+   出すのは横向きで、絵の幅（190px）が確保できるときだけ。
+   狭い画面では列レイアウトの行と重なるので出さない。
+   ============================================================ */
+#tachie{display:none}
+
+@media(orientation:landscape) and (min-width:900px){
+  body.inMatch #tachie{
+    display:block;position:fixed;right:0;bottom:0;z-index:2;
+    width:min(300px,26vw);height:94dvh;pointer-events:none;
+  }
+  /* 卓を左に寄せて、絵の場所を空ける。
+     body が中央寄せなので margin-right でずらす */
+  body.inMatch #app{margin-right:min(300px,26vw)}
+
+  .tcArt{
+    position:absolute;inset:0 0 26px 0;
+    background-position:center bottom;background-size:contain;background-repeat:no-repeat;
+    /* 下と左を透かして、卓との境目を消す */
+    -webkit-mask-image:linear-gradient(to bottom,#000 78%,transparent 100%),
+                       linear-gradient(to right,transparent 0,#000 14%);
+            mask-image:linear-gradient(to bottom,#000 78%,transparent 100%),
+                       linear-gradient(to right,transparent 0,#000 14%);
+    -webkit-mask-composite:source-in;mask-composite:intersect;
+    filter:saturate(.92) contrast(1.02);
+  }
+  /* 出し直しの動き。席が変わるたびに軽く滑り込む */
+  #tachie.in .tcArt{animation:tcIn .34s cubic-bezier(.2,.9,.3,1.05) both}
+  @keyframes tcIn{
+    from{opacity:0;transform:translateX(14px) scale(.985)}
+    to{opacity:1;transform:none}
+  }
+  @media(prefers-reduced-motion:reduce){
+    #tachie.in .tcArt{animation:none}
+  }
+
+  .tcPlate{
+    position:absolute;left:10px;right:6px;bottom:2px;
+    display:flex;flex-direction:column;align-items:flex-end;gap:1px;text-align:right;
+  }
+  .tcName{
+    font-family:var(--maru);font-weight:800;font-size:14px;letter-spacing:.04em;
+    background-image:var(--kin);-webkit-background-clip:text;background-clip:text;color:transparent;
+    text-shadow:0 2px 6px rgba(0,0,0,.7);
+  }
+  .tcStyle{font-size:10.5px;color:var(--muted);text-shadow:0 1px 4px rgba(0,0,0,.8)}
+
+  /* リーチ中は朱を差す */
+  #tachie.riichi .tcArt{filter:saturate(1.05) contrast(1.05) drop-shadow(0 0 14px rgba(192,57,43,.55))}
+  #tachie.riichi .tcStyle{color:var(--vermilion)}
+  /* 自分の番は金で締める */
+  #tachie.me .tcArt{filter:saturate(.95) drop-shadow(0 0 12px rgba(201,162,74,.4))}
+}
+
+/* とても広い画面では絵をもう少し大きく見せる */
+@media(orientation:landscape) and (min-width:1280px){
+  body.inMatch #tachie{width:min(360px,26vw)}
+  body.inMatch #app{margin-right:min(360px,26vw)}
+  .tcName{font-size:16px}
+}

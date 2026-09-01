@@ -127,6 +127,7 @@ const UI = {
     $('#handrow').querySelectorAll('.tile.selectable').forEach((el) => {
       el.onclick = () => this.onTileClick(+el.dataset.id);
     });
+    this.renderTachie();
     this.renderHintText();
   },
 
@@ -201,6 +202,35 @@ const UI = {
     this.resolve({ type, tile: id });
   },
 
+  /* ---- 立ち絵 ----
+     卓の右の余白に、いま打っている人の絵を出す。
+     毎回 src を入れ直すと画像が再読込されて点滅するので、
+     席が変わったときだけ差し替える  */
+  renderTachie() {
+    const box = $('#tachie');
+    if (!box) return;
+    const g = this.game;
+    if (!g) return;
+    const seat = g.currentDraw ? g.currentDraw.seat
+      : (g.lastDiscard ? g.lastDiscard.seat : g.dealer);
+    const p = g.players[seat];
+    if (!p) return;
+    if (this._tachieSeat !== seat) {
+      this._tachieSeat = seat;
+      const art = box.querySelector('.tcArt');
+      const img = p.face || '';
+      art.style.backgroundImage = img ? `url("${img}")` : 'none';
+      box.querySelector('.tcName').textContent = p.name || '';
+      box.querySelector('.tcStyle').textContent = seat === 0 ? 'あなた' : (p.styleName || '');
+      /* 差し替えのたびに軽く出し直す。付け外ししないと二度目が動かない */
+      box.classList.remove('in');
+      void box.offsetWidth;
+      box.classList.add('in');
+    }
+    box.classList.toggle('riichi', !!p.riichi);
+    box.classList.toggle('me', seat === 0);
+  },
+
   resolve(action) {
     this._selected = null;
     const p = this.pending;
@@ -208,6 +238,38 @@ const UI = {
     $('#actions').innerHTML = '';
     this.render();
     if (p) p.resolve(action);
+  },
+
+  /* ---- おまかせ（対局を最後まで自動で進める） ----
+     game.js はどの判断も p.isAI を見て分岐しているので、
+     自分の席を isAI にすれば以降は全部CPUが打つ。
+     いま入力待ちで止まっている一手だけは、ここで解いてやる必要がある。
+     解かずに isAI にしても、待っている Promise は誰も解決しない  */
+  giveUp(speed) {
+    const g = this.game;
+    if (!g || this.auto) return;
+    this.auto = true;
+    g.players[0].isAI = true;
+    if (speed !== undefined) this.speed = speed;
+    const pend = this.pending;
+    if (!pend) return;
+    const me = g.players[0];
+    /* game.js の思考をそのまま借りる。自前で「ツモ切り」にすると、
+       鳴いた直後（ツモ牌が無く drawnId が null）に打てない牌を選んでしまう */
+    try {
+      if (pend.type === 'turn') {
+        this.resolve(g.aiTurnAction(me, pend.options, pend.drawnId, null));
+      } else {
+        this.resolve(g.aiCallAction(me, pend.opt, pend.tileId));
+      }
+    } catch (e) {
+      /* 思考が転んでも対局は続ける。和了れるなら和了り、駄目なら見送る */
+      if (pend.type === 'turn' && pend.options && pend.options.tsumo) this.resolve({ type: 'tsumo' });
+      else if (pend.type === 'call' && pend.opt && pend.opt.ron) this.resolve({ type: 'ron' });
+      else if (pend.type === 'call') this.resolve({ type: 'pass' });
+      else this.resolve({ type: 'discard', tile: pend.drawnId !== null && pend.drawnId !== undefined
+        ? pend.drawnId : me.hand[me.hand.length - 1] });
+    }
   },
 
   buttons(list) {
@@ -225,7 +287,7 @@ const UI = {
   /* ---- 手番の入力 ---- */
   askTurn(p, options, drawnId) {
     return new Promise((resolve) => {
-      this.pending = { type: 'turn', options, resolve };
+      this.pending = { type: 'turn', options, resolve, drawnId };
       this.riichiSelect = false;
       this._selected = null;
       const btns = [];
@@ -261,7 +323,7 @@ const UI = {
   /* ---- 鳴き・ロンの入力 ---- */
   askCall(p, opt, tileId, from) {
     return new Promise((resolve) => {
-      this.pending = { type: 'call', resolve };
+      this.pending = { type: 'call', resolve, opt, tileId };
       const btns = [];
       if (opt.ron) btns.push({ label: 'ロン', primary: true, onClick: () => this.resolve({ type: 'ron' }) });
       if (opt.kan) btns.push({ label: 'カン', onClick: () => this.resolve({ type: 'kan', tiles: opt.kan }) });
@@ -319,7 +381,12 @@ const UI = {
         <div class="opt"><button class="act" id="next">次へ</button></div>`;
     }
     $('#overlay').classList.add('show');
-    await new Promise((res) => { $('#next').onclick = res; });
+    /* おまかせ中は局の結果も自分で送る。押させると早送りの意味がない。
+       早送り(speed 0)でも一瞬は見えるよう、最低限の間は置く */
+    await new Promise((res) => {
+      $('#next').onclick = res;
+      if (this.auto) setTimeout(res, Math.max(700, this.speed * 2));
+    });
     $('#overlay').classList.remove('show');
   },
 

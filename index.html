@@ -1757,6 +1757,87 @@ body.inMatch .river,body.inMatch .river.side{
   border-bottom-color:rgba(217,180,94,.22);
 }
 
+/* ---------- おまかせ ----------
+   #actions は判断のたびに作り直されるので、そこには置けない。
+   卓の上に常設して、いつでも降りられるようにする */
+#giveup{
+  align-self:flex-end;margin:0 2px 4px;
+  font-size:11.5px;padding:5px 12px;border-radius:4px;cursor:pointer;
+  border:1px solid var(--gold-dim);background:rgba(0,0,0,.3);color:var(--muted);
+  letter-spacing:.06em;
+}
+#giveup:hover{color:var(--gold);border-color:var(--gold)}
+#giveup:focus-visible{outline:2px solid var(--gold);outline-offset:1px}
+.mdNote{font-size:12.5px;line-height:1.8;color:var(--muted);margin:0 0 4px}
+
+/* ============================================================
+   立ち絵
+   卓（#app）は最大760px。広い画面ではその左右が丸ごと余るので、
+   右の余白にいま打っている人の絵を出す。
+
+   置き場所は #app の外。中に入れると卓のスクロール
+   （#table は overflow-y:auto）に巻き込まれて一緒に流れてしまう。
+
+   出すのは横向きで、絵の幅（190px）が確保できるときだけ。
+   狭い画面では列レイアウトの行と重なるので出さない。
+   ============================================================ */
+#tachie{display:none}
+
+@media(orientation:landscape) and (min-width:900px){
+  body.inMatch #tachie{
+    display:block;position:fixed;right:0;bottom:0;z-index:2;
+    width:min(300px,26vw);height:94dvh;pointer-events:none;
+  }
+  /* 卓を左に寄せて、絵の場所を空ける。
+     body が中央寄せなので margin-right でずらす */
+  body.inMatch #app{margin-right:min(300px,26vw)}
+
+  .tcArt{
+    position:absolute;inset:0 0 26px 0;
+    background-position:center bottom;background-size:contain;background-repeat:no-repeat;
+    /* 下と左を透かして、卓との境目を消す */
+    -webkit-mask-image:linear-gradient(to bottom,#000 78%,transparent 100%),
+                       linear-gradient(to right,transparent 0,#000 14%);
+            mask-image:linear-gradient(to bottom,#000 78%,transparent 100%),
+                       linear-gradient(to right,transparent 0,#000 14%);
+    -webkit-mask-composite:source-in;mask-composite:intersect;
+    filter:saturate(.92) contrast(1.02);
+  }
+  /* 出し直しの動き。席が変わるたびに軽く滑り込む */
+  #tachie.in .tcArt{animation:tcIn .34s cubic-bezier(.2,.9,.3,1.05) both}
+  @keyframes tcIn{
+    from{opacity:0;transform:translateX(14px) scale(.985)}
+    to{opacity:1;transform:none}
+  }
+  @media(prefers-reduced-motion:reduce){
+    #tachie.in .tcArt{animation:none}
+  }
+
+  .tcPlate{
+    position:absolute;left:10px;right:6px;bottom:2px;
+    display:flex;flex-direction:column;align-items:flex-end;gap:1px;text-align:right;
+  }
+  .tcName{
+    font-family:var(--maru);font-weight:800;font-size:14px;letter-spacing:.04em;
+    background-image:var(--kin);-webkit-background-clip:text;background-clip:text;color:transparent;
+    text-shadow:0 2px 6px rgba(0,0,0,.7);
+  }
+  .tcStyle{font-size:10.5px;color:var(--muted);text-shadow:0 1px 4px rgba(0,0,0,.8)}
+
+  /* リーチ中は朱を差す */
+  #tachie.riichi .tcArt{filter:saturate(1.05) contrast(1.05) drop-shadow(0 0 14px rgba(192,57,43,.55))}
+  #tachie.riichi .tcStyle{color:var(--vermilion)}
+  /* 自分の番は金で締める */
+  #tachie.me .tcArt{filter:saturate(.95) drop-shadow(0 0 12px rgba(201,162,74,.4))}
+}
+
+/* とても広い画面では絵をもう少し大きく見せる */
+@media(orientation:landscape) and (min-width:1280px){
+  body.inMatch #tachie{width:min(360px,26vw)}
+  body.inMatch #app{margin-right:min(360px,26vw)}
+  .tcName{font-size:16px}
+}
+
 
 /* ===== 外枠（単一HTML用） ===== */
 body{display:block;padding-bottom:64px}
@@ -3632,6 +3713,7 @@ const UI = {
     $('#handrow').querySelectorAll('.tile.selectable').forEach((el) => {
       el.onclick = () => this.onTileClick(+el.dataset.id);
     });
+    this.renderTachie();
     this.renderHintText();
   },
 
@@ -3706,6 +3788,35 @@ const UI = {
     this.resolve({ type, tile: id });
   },
 
+  /* ---- 立ち絵 ----
+     卓の右の余白に、いま打っている人の絵を出す。
+     毎回 src を入れ直すと画像が再読込されて点滅するので、
+     席が変わったときだけ差し替える  */
+  renderTachie() {
+    const box = $('#tachie');
+    if (!box) return;
+    const g = this.game;
+    if (!g) return;
+    const seat = g.currentDraw ? g.currentDraw.seat
+      : (g.lastDiscard ? g.lastDiscard.seat : g.dealer);
+    const p = g.players[seat];
+    if (!p) return;
+    if (this._tachieSeat !== seat) {
+      this._tachieSeat = seat;
+      const art = box.querySelector('.tcArt');
+      const img = p.face || '';
+      art.style.backgroundImage = img ? `url("${img}")` : 'none';
+      box.querySelector('.tcName').textContent = p.name || '';
+      box.querySelector('.tcStyle').textContent = seat === 0 ? 'あなた' : (p.styleName || '');
+      /* 差し替えのたびに軽く出し直す。付け外ししないと二度目が動かない */
+      box.classList.remove('in');
+      void box.offsetWidth;
+      box.classList.add('in');
+    }
+    box.classList.toggle('riichi', !!p.riichi);
+    box.classList.toggle('me', seat === 0);
+  },
+
   resolve(action) {
     this._selected = null;
     const p = this.pending;
@@ -3713,6 +3824,38 @@ const UI = {
     $('#actions').innerHTML = '';
     this.render();
     if (p) p.resolve(action);
+  },
+
+  /* ---- おまかせ（対局を最後まで自動で進める） ----
+     game.js はどの判断も p.isAI を見て分岐しているので、
+     自分の席を isAI にすれば以降は全部CPUが打つ。
+     いま入力待ちで止まっている一手だけは、ここで解いてやる必要がある。
+     解かずに isAI にしても、待っている Promise は誰も解決しない  */
+  giveUp(speed) {
+    const g = this.game;
+    if (!g || this.auto) return;
+    this.auto = true;
+    g.players[0].isAI = true;
+    if (speed !== undefined) this.speed = speed;
+    const pend = this.pending;
+    if (!pend) return;
+    const me = g.players[0];
+    /* game.js の思考をそのまま借りる。自前で「ツモ切り」にすると、
+       鳴いた直後（ツモ牌が無く drawnId が null）に打てない牌を選んでしまう */
+    try {
+      if (pend.type === 'turn') {
+        this.resolve(g.aiTurnAction(me, pend.options, pend.drawnId, null));
+      } else {
+        this.resolve(g.aiCallAction(me, pend.opt, pend.tileId));
+      }
+    } catch (e) {
+      /* 思考が転んでも対局は続ける。和了れるなら和了り、駄目なら見送る */
+      if (pend.type === 'turn' && pend.options && pend.options.tsumo) this.resolve({ type: 'tsumo' });
+      else if (pend.type === 'call' && pend.opt && pend.opt.ron) this.resolve({ type: 'ron' });
+      else if (pend.type === 'call') this.resolve({ type: 'pass' });
+      else this.resolve({ type: 'discard', tile: pend.drawnId !== null && pend.drawnId !== undefined
+        ? pend.drawnId : me.hand[me.hand.length - 1] });
+    }
   },
 
   buttons(list) {
@@ -3730,7 +3873,7 @@ const UI = {
   /* ---- 手番の入力 ---- */
   askTurn(p, options, drawnId) {
     return new Promise((resolve) => {
-      this.pending = { type: 'turn', options, resolve };
+      this.pending = { type: 'turn', options, resolve, drawnId };
       this.riichiSelect = false;
       this._selected = null;
       const btns = [];
@@ -3766,7 +3909,7 @@ const UI = {
   /* ---- 鳴き・ロンの入力 ---- */
   askCall(p, opt, tileId, from) {
     return new Promise((resolve) => {
-      this.pending = { type: 'call', resolve };
+      this.pending = { type: 'call', resolve, opt, tileId };
       const btns = [];
       if (opt.ron) btns.push({ label: 'ロン', primary: true, onClick: () => this.resolve({ type: 'ron' }) });
       if (opt.kan) btns.push({ label: 'カン', onClick: () => this.resolve({ type: 'kan', tiles: opt.kan }) });
@@ -3824,7 +3967,12 @@ const UI = {
         <div class="opt"><button class="act" id="next">次へ</button></div>`;
     }
     $('#overlay').classList.add('show');
-    await new Promise((res) => { $('#next').onclick = res; });
+    /* おまかせ中は局の結果も自分で送る。押させると早送りの意味がない。
+       早送り(speed 0)でも一瞬は見えるよう、最低限の間は置く */
+    await new Promise((res) => {
+      $('#next').onclick = res;
+      if (this.auto) setTimeout(res, Math.max(700, this.speed * 2));
+    });
     $('#overlay').classList.remove('show');
   },
 
@@ -3913,6 +4061,7 @@ const Match = (() => {
   /* ui.js が触るidを全部そろえた卓。style.css の指定に合わせてある */
   const TABLE_HTML = `
     <div id="app">
+      <button type="button" id="giveup">おまかせ</button>
       <div id="table">
         <div id="top" class="opp"></div>
         <div id="left" class="opp vert"></div>
@@ -3931,6 +4080,10 @@ const Match = (() => {
         <div id="hintbox"></div>
         <div id="actions"></div>
       </div>
+    </div>
+    <div id="tachie" aria-hidden="true">
+      <div class="tcArt"></div>
+      <div class="tcPlate"><span class="tcName"></span><span class="tcStyle"></span></div>
     </div>
     <div id="toast"></div>
     <div id="overlay"><div class="panel"></div></div>
@@ -4067,9 +4220,28 @@ const Match = (() => {
         : `img/${String(c.id).padStart(3, '0')}.webp`;
       if (c.id === 0) return;
       g.players[i].name = c.name;
+      g.players[i].styleName = (STYLES[c.style] || {}).name || '';
       if (typeof paramsOf === 'function' && c.style) {
         g.players[i].ai = paramsOf(c, STYLES);
       }
+    });
+
+    /* おまかせ。以降は自分の席もCPUが打つ。
+       着順はごまかさず、そのまま結果になる                        */
+    UI.auto = false;
+    const giveBtn = host.querySelector('#giveup');
+    giveBtn.addEventListener('click', async () => {
+      const v = await UI.modal(
+        '<h2>残りをおまかせにしますか</h2>' +
+        '<p class="mdNote">ここから先は自分の手もCPUが打ちます。' +
+        '着順はそのまま結果になります。<br>途中でやめることはできません。</p>',
+        [{ v: 'fast', label: '早送りで終わらせる', primary: true },
+         { v: 'auto', label: '見ながら自動で進める' },
+         { v: 'x', label: '自分で打つ', ghost: true }]
+      );
+      if (v === 'x') return;
+      giveBtn.remove();
+      UI.giveUp(v === 'fast' ? 0 : UI.speed);
     });
 
     /* 向きの誘導。閉じたら二度と出さない（局ごとに出ると邪魔） */

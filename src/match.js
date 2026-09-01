@@ -25,6 +25,7 @@ const Match = (() => {
   /* ui.js が触るidを全部そろえた卓。style.css の指定に合わせてある */
   const TABLE_HTML = `
     <div id="app">
+      <button type="button" id="giveup">おまかせ</button>
       <div id="table">
         <div id="top" class="opp"></div>
         <div id="left" class="opp vert"></div>
@@ -43,6 +44,10 @@ const Match = (() => {
         <div id="hintbox"></div>
         <div id="actions"></div>
       </div>
+    </div>
+    <div id="tachie" aria-hidden="true">
+      <div class="tcArt"></div>
+      <div class="tcPlate"><span class="tcName"></span><span class="tcStyle"></span></div>
     </div>
     <div id="toast"></div>
     <div id="overlay"><div class="panel"></div></div>
@@ -179,9 +184,28 @@ const Match = (() => {
         : `img/${String(c.id).padStart(3, '0')}.webp`;
       if (c.id === 0) return;
       g.players[i].name = c.name;
+      g.players[i].styleName = (STYLES[c.style] || {}).name || '';
       if (typeof paramsOf === 'function' && c.style) {
         g.players[i].ai = paramsOf(c, STYLES);
       }
+    });
+
+    /* おまかせ。以降は自分の席もCPUが打つ。
+       着順はごまかさず、そのまま結果になる                        */
+    UI.auto = false;
+    const giveBtn = host.querySelector('#giveup');
+    giveBtn.addEventListener('click', async () => {
+      const v = await UI.modal(
+        '<h2>残りをおまかせにしますか</h2>' +
+        '<p class="mdNote">ここから先は自分の手もCPUが打ちます。' +
+        '着順はそのまま結果になります。<br>途中でやめることはできません。</p>',
+        [{ v: 'fast', label: '早送りで終わらせる', primary: true },
+         { v: 'auto', label: '見ながら自動で進める' },
+         { v: 'x', label: '自分で打つ', ghost: true }]
+      );
+      if (v === 'x') return;
+      giveBtn.remove();
+      UI.giveUp(v === 'fast' ? 0 : UI.speed);
     });
 
     /* 向きの誘導。閉じたら二度と出さない（局ごとに出ると邪魔） */
