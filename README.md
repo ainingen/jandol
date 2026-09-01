@@ -96,7 +96,7 @@ fonts/              maru-ui.woff2（本文・568KB）／ maru-title.woff2（題�
 tiles/              牌の絵39枚（SVG・770KB）。出典は tiles/LICENSE.txt
 img/                001.webp 〜 073.webp（雀ドル73人）
                     p01.webp 〜 p12.webp（プレイヤーの顔・十二人から選ぶ）
-docs/引き継ぎ書.md   設計の経緯、決めごと、ハマった罠
+docs/HANDOVER.md    設計の経緯、決めごと、ハマった罠
 ```
 
 ## できていること
@@ -238,7 +238,7 @@ Android Chromeでしか効かず、iOS Safariは非対応。PLiCyはiframeで動
 未熟なキャラも最善手を打つようになり、育成が完全に無効になる。
 症状が「完成度を上げても勝率が変わらない」なので気づきにくい。
 
-そのほかの設計判断とハマった罠は `docs/引き継ぎ書.md` にまとめてある。
+そのほかの設計判断とハマった罠は `docs/HANDOVER.md` にまとめてある。
 特に **伸びしろの天井（`compMax`）は必ず保存すること**。
 毎回 `現在の完成度 + pot` で計算し直すと天井が上がり続ける。
 

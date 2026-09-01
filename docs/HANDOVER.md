@@ -14,7 +14,7 @@ https://github.com/ainingen/jandol
 ```
 
 Claudeは `raw.githubusercontent.com` からソースを直接読める。
-最初に「このリポジトリの続きをやりたい。README と docs/引き継ぎ書.md を読んで」
+最初に「このリポジトリの続きをやりたい。README と docs/HANDOVER.md を読んで」
 と伝えれば、そこから始められる。
 
 **README に書いてあること**（重複を避けるため、この引き継ぎ書には書かない）
