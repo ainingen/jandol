@@ -20,6 +20,7 @@
 'use strict';
 
 const { JansouFloor } = require('../src/jansou-floor.js');
+const { Jansou } = require('../src/jansou.js');
 const { JansouGuests } = require('../src/jansou-guests.js');
 
 let pass = 0;
@@ -1106,6 +1107,203 @@ function eq(a, b, name) {
     eq(out, 0, tag + ' の絵が床からはみ出さない');
   }
   delete global.document;
+}
+
+/* ============================================================
+   月末決算・月報（monthly.md §7 の検算）
+   ============================================================ */
+{
+  const M = Jansou.MONTH_DAYS;
+  eq(M, 30, 'ひと月は30日（wageOf の割る数と対）');
+
+  /* wageOf が MONTH_DAYS で割っている。**値は30のままで実測が動いていない** */
+  eq(Jansou.wageOf({ salary: 300000 }), 4000 + 10000, 'wageOf は月給の三十分割を乗せる');
+  eq(Jansou.wageOf({}), 4000, 'salary が無ければ底だけ');
+
+  /* ---- 決定的な「一日」を作る。乱数は使わない ---- */
+  function fakeDay(seed) {
+    const g = [8 + (seed % 5), 14 + (seed % 7), 22 + (seed % 3)];
+    return {
+      slots: [{ guests: g[0], sales: g[0] * 1600 },
+              { guests: g[1], sales: g[1] * 2100 },
+              { guests: g[2], sales: g[2] * 2600 }],
+      wages: 40000 + seed * 100,
+      util: 8000 + 4 * 1500,
+      extraBottle: seed % 4 === 0 ? 30000 : 0,
+      extraTip: (seed % 3) * 300,
+      extraOther: seed % 7 === 0 ? -50000 : 0,
+      full: seed % 5 === 0,
+      profit: 0,
+      events: { bottle: seed % 4 === 0 ? 1 : 0, arashi: seed % 9 === 0 ? 1 : 0 },
+      work: { 11: 2, 12: 1 },
+      nominate: seed % 2 === 0 ? { 11: 1 } : {},
+      grow: { 11: 0.12, 12: 0.07 },
+      promo: { stage1: seed % 6 === 0 ? 1 : 0, stage2: 0, stage3: 0 },
+    };
+  }
+  /* profit はその日の確定式（settle と同じ）。整数だけで組む */
+  function withProfit(d) {
+    const fee = d.slots.reduce((a, s) => a + s.sales, 0);
+    const extra = d.extraBottle + d.extraTip + d.extraOther;
+    return Object.assign({}, d, { profit: fee + extra - d.wages - d.util });
+  }
+
+  let month = Jansou.blankMonth(60, 38, [2, 1, 0, 0, 0, 0]);
+  const days = [];
+  for (let i = 0; i < M; i++) { const d = withProfit(fakeDay(i)); days.push(d); month = Jansou.accrue(month, d); }
+
+  eq(month.days, M, '30日ぶん積んだ');
+  eq(month.profits.length, M, '日ごとの profit が30件');
+
+  const ctx = { no: 3, toDay: 90, rep: 52, bottles: [3, 2, 1, 0, 0, 0],
+                regulars: { s1: 34, s2: 12, s3: 3 },
+                names: { 11: { name: '桐生ひかり', pop: 92 }, 12: { name: '白鳥さくら', pop: 78 } },
+                promotedNames: { 12: 'C' } };
+  const rep = Jansou.closeMonth(month, null, ctx);
+
+  /* ---- §7 の検算その1：帯の合計が場代に厳密一致 ---- */
+  eq(rep.bands.reduce((a, b) => a + b.sales, 0), rep.fee, '帯の合計が場代に厳密一致（一円まで）');
+  eq(rep.bands.reduce((a, b) => a + b.guests, 0), rep.guests, '帯の人数の合計が客数に一致');
+  /* 帯は month.slots からしか来ていない（平均や割合が混ざっていない） */
+  eq(rep.fee, month.slots.reduce((a, s) => a + s.sales, 0), '場代は帯の合計として定義されている');
+
+  /* ---- §7 の検算その2：収支の整合 ---- */
+  eq(rep.fee + rep.extra.total - rep.wages - rep.util, rep.profit, '収支の帯 四本の合計が収支に一致');
+  eq(month.profits.reduce((a, n) => a + n, 0), rep.profit, '月の収支が Σ（その日の profit）に一致');
+  eq(rep.extra.bottle + rep.extra.tip + rep.extra.other, rep.extra.total, '臨時収入の内訳の合計が臨時収入に一致');
+
+  /* ---- §7 の検算その3：closeMonth は純関数（二度通して同じ） ---- */
+  const rep2 = Jansou.closeMonth(month, null, ctx);
+  eq(JSON.stringify(rep2), JSON.stringify(rep), 'closeMonth を二度通すと深く等しい（乱数も Date も引かない）');
+  /* accrue も月を壊さない（新しい月を返す） */
+  const before = JSON.stringify(month);
+  Jansou.accrue(month, withProfit(fakeDay(99)));
+  eq(JSON.stringify(month), before, 'accrue は渡された月を書き換えない');
+
+  /* ---- 中身の妥当性 ---- */
+  eq(rep.avgGuests, Math.round(rep.guests / M), '一日平均は客数と日数から');
+  eq(rep.top[0].name, '桐生ひかり', '人気×出勤日数の一位');
+  eq(rep.top[0].days, M, '出勤日数が30日');
+  eq(rep.rep.from, 38, '期首の評判');
+  eq(rep.rep.to, 52, '期末の評判');
+  eq(rep.rep.delta, 14, '評判の差');
+  eq(rep.bottles.fromTotal, 3, 'ボトル在庫の期首の本数');
+  eq(rep.bottles.nowTotal, 6, 'ボトル在庫の期末の本数');
+  eq(rep.vs, null, '前期が無ければ差分を出さない（「±0」も出さない）');
+  ok(rep.bands.every((b) => b.pct >= 0 && b.pct <= 100), '帯の長さは0〜100%');
+  eq(rep.bands.reduce((a, b) => Math.max(a, b.pct), 0), 100, 'いちばん長い帯が100%');
+  eq(rep.grow.find((g) => g.name === '白鳥さくら').promoted, 'C', '昇格が月報に載る');
+
+  /* ---- 前期との比較 ---- */
+  const prev = Object.assign({}, rep, { fee: 10000000, profit: 5000000, guests: 4000,
+                                        regulars: { s1: 28, s2: 9, s3: 2 } });
+  const rep3 = Jansou.closeMonth(month, prev, ctx);
+  eq(rep3.vs.fee, rep.fee - 10000000, '前期比（場代の差）');
+  eq(rep3.vs.profit, rep.profit - 5000000, '前期比（収支の差）');
+  eq(rep3.vs.regulars, (34 + 12 + 3) - (28 + 9 + 2), '前期比（常連の差）');
+  eq(rep3.vs.feePct, Math.round(((rep.fee - 10000000) / 10000000) * 100), '前期比（％）');
+  const rep4 = Jansou.closeMonth(month, Object.assign({}, prev, { fee: 0, profit: 0, guests: 0 }), ctx);
+  eq(rep4.vs.feePct, null, '前期がゼロなら％を出さない（ゼロ除算しない）');
+
+  /* ---- §7 の検算その4：renderMonth は report を読むだけ（二回描画して文字列一致） ---- */
+  const h1 = Jansou.renderMonth(rep);
+  const h2 = Jansou.renderMonth(rep);
+  eq(h1, h2, 'renderMonth を二回通すと文字列が完全一致（中で計算していない）');
+  /* 締めたときと読み返したときで同じものが出る。closeMonth を通し直しても同じ */
+  eq(Jansou.renderMonth(Jansou.closeMonth(month, null, ctx)), h1,
+     '締めたときと読み返したときで月報が一致する');
+  /* 月報に出る額が report の値そのままであること（描画側で作っていない） */
+  ok(h1.indexOf(Math.round(rep.fee).toLocaleString('ja-JP')) >= 0, '場代が月報に出ている');
+  ok(h1.indexOf(Math.round(rep.profit).toLocaleString('ja-JP')) >= 0, '収支が月報に出ている');
+  ok(h1.indexOf('data-pct="100"') >= 0, 'いちばん長い帯が100%で描かれる');
+  ok(h1.indexOf('<canvas') < 0, '月報に canvas を使っていない（表紙の一枚だけ）');
+  /* **月報は <p class="jnPopText"> の中に入る。**div を混ぜるとパーサが p を閉じ、
+     以降が p の外に出て text-align も継承も壊れる（日報が span で組んでいるのと同じ理由）。
+     見た目だけ崩れて数字は合っているので、気づきにくい */
+  ok(h1.indexOf('<div') < 0, '月報は span だけで組む（p の中に入るので div を混ぜない）');
+  ok(h1.indexOf('<p') < 0, '月報に p を入れない（同上）');
+  /* 名前は esc を通している（プレイヤー名と同じ経路。HANDOVER §4） */
+  const evil = Jansou.closeMonth(month, null, Object.assign({}, ctx,
+    { names: { 11: { name: '<img src=x onerror=alert(1)>', pop: 92 }, 12: ctx.names[12] } }));
+  ok(Jansou.renderMonth(evil).indexOf('<img src=x') < 0, '名前は esc を通してから埋める');
+
+  /* ---- 空の月でも壊れない（開店初日に月報を開いた場合） ---- */
+  const empty = Jansou.closeMonth(Jansou.blankMonth(0, 10, [0, 0, 0, 0, 0, 0]), null,
+    { no: 1, toDay: 0, rep: 10, bottles: [0, 0, 0, 0, 0, 0], regulars: { s1: 0, s2: 0, s3: 0 },
+      names: {}, promotedNames: {} });
+  eq(empty.fee, 0, '空の月でも場代は0');
+  eq(empty.avgGuests, 0, '空の月で一日平均がゼロ除算にならない');
+  eq(empty.bands[0].pct, 0, '空の月で帯の長さが0');
+  ok(Jansou.renderMonth(empty).length > 0, '空の月でも月報が描ける');
+}
+
+/* ============================================================
+   normalize：月を落とさない（monthly.md §9 の重大な罠）
+   ============================================================ */
+{
+  /* **これが落ちると「月報は出るが全部0」になる。**normalize は既知のキーだけで
+     組み直すので、month を書き忘れると毎日の集計が消える */
+  let p = Jansou.normalize({ open: true, day: 47 });
+  ok(p.month != null, 'normalize が month を返す');
+  ok(Array.isArray(p.months), 'normalize が months を返す');
+  eq(p.month.from, 47, '既存セーブは month.from に「今日」が入る（初回も30日ぶんになる）');
+  eq(p.month.days, 0, '既存セーブの集計はゼロから');
+  eq(p.month.repFrom, 10, '期首の評判が控えられる');
+
+  /* 積んだ月が normalize を通しても消えない（毎日の store.set を模す） */
+  let m = Jansou.blankMonth(47, 10, [0, 0, 0, 0, 0, 0]);
+  m = Jansou.accrue(m, { slots: [{ guests: 1, sales: 1600 }, { guests: 2, sales: 4200 }, { guests: 3, sales: 7800 }],
+                         wages: 4000, util: 14000, extraBottle: 0, extraTip: 300, extraOther: 0,
+                         full: false, profit: 1600 + 4200 + 7800 + 300 - 4000 - 14000,
+                         events: {}, work: { 5: 1 }, nominate: {}, grow: {}, promo: {} });
+  for (let i = 0; i < 5; i++) {
+    const round = Jansou.normalize({ open: true, day: 48, month: m, months: [] });
+    eq(round.month.days, 1, 'normalize を' + (i + 1) + '回通しても集計が消えない');
+    eq(round.month.slots[2].sales, 7800, 'normalize を通しても帯が消えない');
+    m = round.month;
+  }
+
+  /* months は直近12期だけ残す（セーブが無限に伸びない） */
+  const many = [];
+  for (let i = 0; i < 20; i++) many.push({ no: i + 1 });
+  eq(Jansou.normalize({ months: many }).months.length, Jansou.MONTHS_KEPT, 'months は直近12期だけ残す');
+  eq(Jansou.normalize({ months: many }).months[0].no, 9, '古い期から落ちる');
+
+  /* 壊れたセーブを読んでも作り直す */
+  eq(Jansou.normalize({ day: 3, month: { slots: 'こわれている' } }).month.days, 0, '壊れた month は作り直す');
+  eq(Jansou.normalize({ day: 3, month: null }).month.from, 3, 'month が null でも from が入る');
+}
+
+/* ============================================================
+   月末の判定は month.from からの経過で見る（day % 30 にしない）
+   ============================================================ */
+{
+  const M = Jansou.MONTH_DAYS;
+  /* from は「この期が始まる前に済んでいる日数」。d はいま終えた日の番号
+     （settle での parlor.day + 1）。差がちょうど30になったら締める */
+  const isEnd = (d, from) => (d - from) >= M;
+
+  /* 新しいセーブ（from = 0）は 30 / 60 / 90 日目で締まる */
+  ok(!isEnd(29, 0), '新しいセーブの29日目はまだ締まらない');
+  ok(isEnd(30, 0), '新しいセーブは30日目で締まる');
+  ok(isEnd(60, 30), '第2期は60日目で締まる');
+
+  /* 47日目まで打った既存セーブ（from = 47）。第1期は48〜77日目 */
+  ok(!isEnd(48, 47), '既存セーブの初日はまだ締まらない');
+  ok(!isEnd(76, 47), '29日目はまだ締まらない');
+  ok(isEnd(77, 47), '30日目で締まる');
+  eq(77 - (47 + 1) + 1, M, '既存セーブの第1期もまるまる30日ぶん（48〜77日目）');
+
+  /* closeMonth が出す期間の表示も 48〜77 になる */
+  const r = Jansou.closeMonth(Jansou.blankMonth(47, 10, [0, 0, 0, 0, 0, 0]), null,
+    { no: 1, toDay: 77, rep: 10, bottles: [0, 0, 0, 0, 0, 0],
+      regulars: { s1: 0, s2: 0, s3: 0 }, names: {}, promotedNames: {} });
+  eq(r.fromDay, 48, '月報の初日は from の翌日');
+  eq(r.toDay, 77, '月報の最終日');
+
+  /* day % 30 だと、47日目のプレイヤーの初回は14日ぶんで「一ヶ月」を名乗る */
+  eq(60 % M, 0, 'day%30 なら60日目で締まってしまい');
+  eq(60 - (47 + 1) + 1, 13, '13日ぶりしか入っていない（だから % は使わない）');
 }
 
 /* ============================================================ */

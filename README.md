@@ -126,7 +126,8 @@ img/                001.webp 〜 073.webp（雀ドル73人）
                     p01.webp 〜 p12.webp（プレイヤーの顔・十二人から選ぶ）
 docs/HANDOVER.md    設計の経緯、決めごと、ハマった罠
 docs/design/jansou/ 直営雀荘の設計一式（spec.md ＝リニューアル、
-                    placement.md ＝卓の自由配置と隣接コンボ）
+                    placement.md ＝卓の自由配置と隣接コンボ、
+                    monthly.md ＝月末決算と月報）
 tools/test-jansou.js 雀荘の純関数テスト（node tools/test-jansou.js）
 ```
 
@@ -150,6 +151,9 @@ tools/test-jansou.js 雀荘の純関数テスト（node tools/test-jansou.js）
   一日単位で営業する。出勤者の人気(pop)が客を呼び、月給の日割り（日当）を払う。
   設備投資4種（卓・内装・卓の型・宣伝）、イベント6種、夜は自分も卓に着ける。
   一日の営業はフロアで流れる（スキップ・倍速。**スキップしても結果は同一**）
+- **月末決算** … 30日で締めて月報が出る。時間帯別の場代、収支、客数と常連の育ち、
+  いちばん客を呼んだ子、できごと、評判の推移。あとから読み返せる。
+  **見せるだけで、経済には触れていない**
 - **模様替え** … 卓と設備を 8px のマス目に自分で置ける。卓は席4つぶんの
   広さを使う。隣り合わせで**コンボ**（くつろぎ席・カウンター席・入口席・
   静かな席・花道・ラウンジ）が付き、誰が座るか・どれだけ居るか・
@@ -192,6 +196,8 @@ tools/test-jansou.js 雀荘の純関数テスト（node tools/test-jansou.js）
 | 雀荘の設備（卓・内装・卓の型・宣伝） | `src/jansou.js` の `TABLE_COST` `INTERIOR` `AUTO` `SIGN` |
 | 雀荘の日当・家賃 | `src/jansou.js` の `BASE_WAGE` `wageOf` `utilOf` |
 | 雀荘のイベントの重みと発生率 | `src/jansou.js` の `pickEvent` と `SIGN` の `ev` |
+| ひと月の日数（`wageOf` の割る数と対） | `src/jansou.js` の `MONTH_DAYS` |
+| 月報を残す期の数 | `src/jansou.js` の `MONTHS_KEPT` |
 | 雀荘の観葉植物の値段 | `src/jansou.js` の `PLANT_COST` |
 | 雀荘のマス目と設置物の大きさ | `src/jansou-floor.js` の `GRID` `COLS` `ROWS` `KINDS` `DOOR` |
 | 雀荘の自動配置（既存セーブの再現） | `src/jansou-floor.js` の `ROWS_FOR` `SOFA_SPOTS` `COUNTER_SPOTS` |

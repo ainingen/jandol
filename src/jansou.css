@@ -166,3 +166,108 @@
 /* 模様替えの入口（設備の段の下） */
 .jnFacilFoot{margin-top:8px}
 .jnUp.wide{display:block;width:100%;text-align:center;padding:8px 10px}
+
+/* ============================================================
+   月末決算・月報（monthly.md §4）
+   帯は div の幅で描く。**canvas は表紙の一枚だけ**（spec.md §2）。
+   評判のバー（.jnRepTrack / .jnRepFill）と同じ作りを使い回している。
+   ============================================================ */
+.jnMonBox{max-width:420px}
+/* popupBox は中身なりに伸びるので、長い月報は中で流す */
+.jnMonBox .popupBody{max-height:78dvh;overflow-y:auto;overscroll-behavior:contain}
+.jnMonBox .jnPopText{margin:0}
+
+.jnMon{display:flex;flex-direction:column;gap:14px;text-align:left}
+
+/* 節は上から順に現れる。触ったら飛ぶ（.done） */
+.jnMonHead,.jnMonSec{
+  display:flex;flex-direction:column;gap:4px;
+  opacity:0;transform:translateY(4px);
+  animation:jnMonIn .28s ease-out forwards;
+  animation-delay:calc(var(--i) * .08s);
+}
+.jnMonWrap.done .jnMonHead,.jnMonWrap.done .jnMonSec{
+  animation:none;opacity:1;transform:none;
+}
+@keyframes jnMonIn{to{opacity:1;transform:none}}
+@media (prefers-reduced-motion:reduce){
+  .jnMonHead,.jnMonSec{animation:none;opacity:1;transform:none}
+  .jnMonFill{transition:none}
+}
+
+.jnMonHead{align-items:center;gap:2px;padding-bottom:4px}
+.jnMonNo{font-size:12px;letter-spacing:.18em;color:var(--gold)}
+.jnMonKessan{
+  font-size:22px;font-weight:800;letter-spacing:.22em;
+  background:var(--kin);-webkit-background-clip:text;background-clip:text;color:transparent;
+}
+.jnMonRange{font-size:11px;color:var(--muted)}
+
+.jnMonH{
+  font-size:11px;letter-spacing:.1em;color:var(--gold);
+  padding-bottom:2px;border-bottom:1px solid var(--gold-dim);margin-bottom:2px;
+}
+
+/* 場代の帯。三本の合計が場代に厳密一致する（spec.md §5.3 / monthly.md §7） */
+.jnMonBand{
+  display:grid;grid-template-columns:auto 1fr auto;gap:2px 8px;align-items:baseline;
+  font-size:12.5px;color:var(--ivory-2);
+}
+.jnMonBandName{color:var(--ivory)}
+.jnMonBandName i{font-style:normal;font-size:10px;color:var(--muted);margin-left:4px}
+.jnMonBandNum{text-align:right;font-size:11.5px;color:var(--muted)}
+.jnMonBand b{font-weight:700;text-align:right}
+.jnMonTrack{
+  grid-column:1 / -1;display:block;height:5px;border-radius:3px;
+  background:rgba(255,255,255,.07);overflow:hidden;margin:1px 0 3px;
+}
+.jnMonTrack.wide{flex:1;margin:0}
+.jnMonFill{
+  display:block;height:100%;width:0;background:var(--kin);
+  transition:width .5s cubic-bezier(.22,.9,.3,1);
+}
+.jnMonWrap.done .jnMonFill{transition:none}
+
+.jnMonRow{display:flex;align-items:baseline;gap:8px;font-size:12.5px;color:var(--ivory-2)}
+.jnMonRow span:first-child{flex:1}
+.jnMonRow b{font-weight:700;font-variant-numeric:tabular-nums}
+.jnMonRow em{font-style:normal;font-size:10.5px;color:var(--gold)}
+.jnMonRow.total{
+  border-top:1px solid var(--gold-dim);padding-top:5px;margin-top:3px;
+  font-size:14px;color:var(--ivory);
+}
+.jnMonRow .plus{color:var(--gold-hi)}
+.jnMonRow .minus{color:var(--shu)}
+/* 臨時収入の内訳。一段下げて添えるだけで、帯として数えない（monthly.md §3） */
+.jnMonSub{font-size:10.5px;color:var(--muted);padding-left:10px;margin-top:-2px}
+.jnMonLine{display:block;font-size:11.5px;color:var(--muted);padding-top:2px}
+.jnMonRegVs{font-size:10.5px;color:var(--muted)}
+
+.jnMonTop{display:grid;grid-template-columns:auto 1fr;gap:0 8px;align-items:baseline;font-size:12.5px}
+.jnMonRank{grid-row:span 2;color:var(--gold);font-size:14px}
+.jnMonTopName{color:var(--ivory)}
+.jnMonTopSub{font-size:10.5px;color:var(--muted)}
+.jnMonGrow{
+  display:flex;flex-direction:column;align-items:flex-start;gap:2px;margin-top:6px;padding-top:5px;
+  border-top:1px dashed rgba(255,255,255,.12);font-size:11.5px;color:var(--muted);
+}
+.jnMonGrow em{font-style:normal;color:var(--gold)}
+.jnMonEv{display:block;font-size:12px;color:var(--ivory-2)}
+.jnMonSub{display:block}
+
+.jnMonRep{display:flex;align-items:center;gap:8px;font-size:12.5px}
+.jnMonRepNum{color:var(--muted);font-variant-numeric:tabular-nums;min-width:22px}
+.jnMonRep .jnMonFill.rep{background:var(--kin)}
+.jnMonRep b{font-weight:700}
+.jnMonRep .plus{color:var(--gold-hi)}
+.jnMonRep .minus{color:var(--shu)}
+
+/* 雀荘の画面に置く「先月の決算を見る」 */
+.jnMonBtn{
+  display:flex;align-items:center;justify-content:center;gap:8px;width:100%;
+  margin-top:12px;padding:10px;border-radius:8px;cursor:pointer;
+  border:1px solid var(--gold-dim);background:rgba(201,162,74,.07);
+  color:var(--ivory);font:inherit;font-size:13px;
+}
+.jnMonBtn span{font-size:10.5px;color:var(--muted)}
+.jnMonBtn:focus-visible{outline:2px solid var(--gold);outline-offset:1px}
