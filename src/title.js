@@ -179,6 +179,9 @@ const Title = (() => {
   /* ------------------------------------------------------------
      マウント
   ------------------------------------------------------------ */
+  /* いま張ってある resize の後始末用。mount は表紙に戻るたび呼ばれる */
+  let mounted = null;
+
   function mount(root, store) {
     ensureSilVar();
     root.innerHTML = '';
@@ -221,6 +224,46 @@ const Title = (() => {
           </div>
           <p class="ttFoot">本格麻雀。イカサマなし、牌操作なし。</p>
         </div>`;
+      fitTop();
+    }
+
+    /* 表紙が画面に収まるか実測して、はみ出すぶんだけ中身を落とす。
+
+       表紙の高さは title.css が max-height で詰めるが、下限（150px）を
+       割ると題字が読めなくなる。そこから先は中身のほうを落とす。
+       **落とす順は あらすじ → ロスター。**題字は表紙でしか見せられないが、
+       あらすじは他でも読ませられるので、優先順位は題字が上。
+
+       メディアクエリではなく実測にしてあるのは、**同じ画面の高さでも
+       セーブの進み具合で中身の高さが変わる**ため。新規のセーブは
+       ボタンが1つで「事務所の様子」も無いので余裕があり、あらすじを
+       消す必要がない。あらすじは新規のプレイヤーにこそ要る文章なので、
+       消さずに済むなら残す。書体が代替に落ちて行数が増えた場合にも効く。 */
+    const FIT_MARGIN = 8;         // 端ぎりぎりに置かない
+
+    /* **スクロール位置に依存しない測り方をすること。**
+       getBoundingClientRect は見えている枠が基準なので、#scroll が下に
+       送られたまま測ると、ボタンが上にあるように見えて「収まっている」と
+       誤判定する（設定から戻ったときに実際そうなった）。
+       枠の中身の座標に直してから、枠の見える高さと比べる。
+       単体ページには #scroll が無いので、そのときは文書全体で測る。 */
+    function fitsInView() {
+      const btns = root.querySelectorAll('.ttBtn');
+      const last = btns[btns.length - 1];
+      if (!last) return true;
+      const host = document.getElementById('scroll') || document.documentElement;
+      const bottom = last.getBoundingClientRect().bottom
+        - host.getBoundingClientRect().top + host.scrollTop;
+      return bottom <= host.clientHeight - FIT_MARGIN;
+    }
+
+    function fitTop() {
+      if (screen !== 'top') return;
+      root.classList.remove('noLead', 'noRoster');
+      if (fitsInView()) return;
+      root.classList.add('noLead');
+      if (fitsInView()) return;
+      root.classList.add('noRoster');
     }
 
     /* ---------- プレイヤー設定 ---------- */
@@ -301,11 +344,11 @@ const Title = (() => {
       } else if (act.dataset.act === 'new') {
         screen = 'setup';
         renderSetup();
-        window.scrollTo(0, 0);
+        toTop();
       } else if (act.dataset.act === 'back') {
         screen = 'top';
         renderTop();
-        window.scrollTo(0, 0);
+        toTop();
       } else if (act.dataset.act === 'go') {
         const clean = (name || '').trim() || DEFAULT_NAME;
         store.set({ playerName: clean, playerFace: face });
@@ -313,11 +356,24 @@ const Title = (() => {
       }
     });
 
+    /* 流れるのは shell.html の #scroll。単体ページにはそれが無い */
+    function toTop() {
+      const sc = document.getElementById('scroll');
+      if (sc) sc.scrollTop = 0; else window.scrollTo(0, 0);
+    }
+
+    /* 画面の高さが変わったら測り直す。
+       mount は表紙に戻るたび呼ばれるので、前の分を必ず外してから足す */
+    if (mounted) window.removeEventListener('resize', mounted);
+    mounted = () => fitTop();
+    window.addEventListener('resize', mounted);
+
     renderTop();
     return {
       refresh: function () { if (screen === 'top') renderTop(); else renderSetup(); },
     };
   }
+
 
   function ensureSilVar() {
     if (document.documentElement.style.getPropertyValue('--sil-img')) return;

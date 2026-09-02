@@ -26,15 +26,20 @@
    引く値は表紙以外の中身（あらすじ・事務所の様子・ボタン・脚注）の実測値。
    狭いほど文章が折り返して縦に伸びるので、幅で二段に分けてある。
    いちばん厳しいのは「続きから」が増える進行済みのセーブ。
-   80pxの下限は、絵として成立する最小の見え方。 */
+
+   **下限の150pxは題字が読める最小の高さ。**表示高さを変えて実際に見て
+   決めた（題字は canvas の118px＝高さの13%なので、150pxで約20px。
+   130pxだと題字は読めるが副題が潰れる。80pxでは題字も読めない）。
+   ここを下回るくらいなら、あらすじのほうを隠す（title.js の fitTop）。
+   **題字は表紙でしか見せられないが、あらすじは他でも読ませられる。** */
 #cover{
   display:block;margin:0 auto;
   width:auto;max-width:100%;
-  height:auto;max-height:max(80px, calc(100dvh - 410px));
+  height:auto;max-height:max(150px, calc(100dvh - 410px));
   object-fit:contain;
 }
 @media(min-width:560px){
-  #cover{max-height:max(80px, calc(100dvh - 355px))}
+  #cover{max-height:max(150px, calc(100dvh - 355px))}
 }
 body.onTitle #coverWrap{display:block}
 
@@ -81,6 +86,14 @@ body.onTitle #coverWrap{display:block}
 }
 /* 表紙は縦に間延びしやすいので、中身を上下に散らさず上に寄せる */
 body.onTitle #view{min-height:0}
+
+/* 画面が低くてボタンが入りきらないとき、title.js の fitTop が
+   この順で落としていく。**メディアクエリで一律に隠さないのは、
+   セーブの進み具合で中身の高さが変わるため。**
+   新規のセーブはボタンが1つで余裕があり、あらすじを消す必要がない。
+   あらすじは新規のプレイヤーにこそ要る文章なので、消さずに済むなら残す */
+.ttRoot.noLead .ttLead{display:none}
+.ttRoot.noRoster .ttRoster{display:none}
 
 /* ---------- プレイヤー設定 ---------- */
 .ttSetup{padding:14px 12px 0}
