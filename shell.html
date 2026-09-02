@@ -7,9 +7,26 @@
 <link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2032%2032%22%3E%3Crect%20width%3D%2232%22%20height%3D%2232%22%20rx%3D%226%22%20fill%3D%22%2313201c%22/%3E%3Crect%20x%3D%228%22%20y%3D%225%22%20width%3D%2216%22%20height%3D%2222%22%20rx%3D%223%22%20fill%3D%22%23f7f1e4%22/%3E%3Ctext%20x%3D%2216%22%20y%3D%2217%22%20text-anchor%3D%22middle%22%20font-size%3D%2212%22%20font-family%3D%22serif%22%20fill%3D%22%23c0392b%22%3E%E9%9B%80%3C/text%3E%3Ctext%20x%3D%2216%22%20y%3D%2225%22%20text-anchor%3D%22middle%22%20font-size%3D%228%22%20font-family%3D%22serif%22%20fill%3D%22%238c2f28%22%3E%E8%90%AC%3C/text%3E%3C/svg%3E">
 <!--__STYLES__-->
 <style>
-/* ===== 外枠 ===== */
-body{display:block;padding-bottom:64px}
-#view{min-height:60dvh}
+/* ===== 外枠 =====
+   **ページ全体ではなく、アプリの内側でスクロールさせる。**
+   PLiCyのプレイヤーは枠のスクロールを止めていることがあり、
+   ページスクロールに頼るとボタンに手が届かなくなる（実際に届かなかった）。
+   body を100dvhで固定して、中の #scroll だけを流す。 */
+html,body{height:100%}
+body{
+  display:flex;flex-direction:column;align-items:center;
+  height:100dvh;overflow:hidden;padding-bottom:0;
+}
+#appTop{flex:none}
+#scroll{
+  flex:1;width:100%;min-height:0;
+  overflow-y:auto;overflow-x:hidden;
+  -webkit-overflow-scrolling:touch;overscroll-behavior:contain;
+  padding-bottom:64px;                 /* 下端に固定した #nav のぶん */
+}
+body.onTitle #scroll{padding-bottom:0}
+body.inMatch #scroll{display:none}
+#view{min-height:0}
 /* 所持金は上部バーに常設するので、画面内の重複は隠す
    （単体ページで開いたときは表示されたままにしておく） */
 #view .tkStat.money,#view .scStat.money{display:none}
@@ -51,7 +68,8 @@ body.onTitle{padding-bottom:0}
 body.inMatch #appTop,body.inMatch #nav,body.inMatch .appReset,body.inMatch #view{display:none}
 body.inMatch{padding-bottom:0}
 #matchRoot:empty{display:none}
-#matchRoot{display:flex;justify-content:center}
+#matchRoot{display:flex;justify-content:center;width:100%}
+body.inMatch #matchRoot{flex:1;min-height:0}
 .appMoney{margin-left:auto;font-size:11.5px;color:var(--muted)}
 .appMoney b{font-family:var(--mincho);font-size:13px;color:var(--ivory);margin:0 2px}
 
@@ -72,17 +90,21 @@ body.inMatch{padding-bottom:0}
   <span class="appMoney" id="appMoney"></span>
 </div>
 
-<!-- 表紙の絵。PLiCyのサムネイルはこのcanvasの中身を撮る。
-     複数のcanvasを置くと撮影が乱れるため、タグとしてのcanvasはこれ一枚だけにすること。 -->
-<div id="coverWrap"><canvas id="cover" width="1200" height="900"></canvas></div>
-
 <!-- 実対局のときだけ使う。ui.js は document 直下のidを見るので、
      #view の外に置いて、対局中は他をすべて隠す -->
 <div id="matchRoot"></div>
 
-<div id="view"></div>
+<!-- スクロールするのはここだけ。body は 100dvh で固定してある -->
+<div id="scroll">
+  <!-- 表紙の絵。PLiCyのサムネイルはこのcanvasの中身を撮る。
+       複数のcanvasを置くと撮影が乱れるため、タグとしてのcanvasはこれ一枚だけにすること。
+       **画面が低いときは title.css が縮めるが、DOMからは外さないし中身も描いたままにする。** -->
+  <div id="coverWrap"><canvas id="cover" width="1200" height="900"></canvas></div>
 
-<div class="appReset"><button id="appReset">最初からやり直す</button></div>
+  <div id="view"></div>
+
+  <div class="appReset"><button id="appReset">最初からやり直す</button></div>
+</div>
 
 <nav id="nav" aria-label="画面の切り替え">
   <button data-go="team">チーム</button>
@@ -227,7 +249,8 @@ body.inMatch{padding-bottom:0}
     else if (name === 'jansou') Jansou.mount(root, store);
     else if (name === 'scout') Scout.mount(root, store);
     paintTop();
-    window.scrollTo(0, 0);
+    /* スクロールするのは #scroll なので、window.scrollTo では戻らない */
+    document.getElementById('scroll').scrollTop = 0;
   }
 
   nav.addEventListener('click', function (e) {

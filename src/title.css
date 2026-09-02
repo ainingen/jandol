@@ -13,7 +13,29 @@
   width:100%;line-height:0;border-bottom:1px solid var(--gold-dim);
   background:#081010;
 }
-#cover{width:100%;height:auto;display:block}
+/* **表紙の高さに上限を掛けて、下のボタンを画面内に残す。**
+   canvasは1200×900の4:3。width:100%だけで出すと、幅760pxのとき
+   高さが570pxになり、その下の「はじめる」が画面外へ押し出される
+   （PLiCyで実際に押せなかった）。
+
+   canvasは置換要素なので、width/height を auto にして max-* で挟むと
+   縦横比を保ったまま縮む。object-fit:contain は、幅のほうが先に
+   詰まった場合の保険。**撮影のため中身は描いたまま、DOMにも残す。**
+   縮めても足りないぶんは #scroll（shell.html）が流す。
+
+   引く値は表紙以外の中身（あらすじ・事務所の様子・ボタン・脚注）の実測値。
+   狭いほど文章が折り返して縦に伸びるので、幅で二段に分けてある。
+   いちばん厳しいのは「続きから」が増える進行済みのセーブ。
+   80pxの下限は、絵として成立する最小の見え方。 */
+#cover{
+  display:block;margin:0 auto;
+  width:auto;max-width:100%;
+  height:auto;max-height:max(80px, calc(100dvh - 410px));
+  object-fit:contain;
+}
+@media(min-width:560px){
+  #cover{max-height:max(80px, calc(100dvh - 355px))}
+}
 body.onTitle #coverWrap{display:block}
 
 /* ---------- 本体 ---------- */

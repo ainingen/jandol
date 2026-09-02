@@ -24,13 +24,13 @@
 `src/` を編集したら、リポジトリ直下で必ず実行する。
 
 ```
-python3 build.py            分割版。index.html は約30KB（既定）
-python3 build.py --single   一枚版。全部を埋め込む。約361KB
+python3 build.py            index.html は約13KB
 ```
 
-既定の分割版では、`src/` の CSS 10本と JS 14本のうち、表紙まわりの
-`title.css` と `title.js` だけが `shell.html` に埋め込まれ、
-残りは `src/` を指す `<link>` と `<script>` になる。
+`index.html` は `shell.html` に `src/` を指す `<link>` と `<script>` を
+差し込むだけのもの。CSS 11本と JS 16本はすべて `src/` のまま読まれる。
+**PLiCyで外部のCSS・JSが読めることは確認済み**なので、
+以前あった一枚版（`--single`）は廃止した。
 
 - **`index.html` を直接編集しないこと。** ビルド結果なので、次のビルドで消える。
   直すのは必ず `src/` 側
@@ -38,9 +38,13 @@ python3 build.py --single   一枚版。全部を埋め込む。約361KB
   読みに行く。含め忘れると真っ白な画面になる
 - **`index.html` は 500KB 以下に保つこと。** 配布先の PLiCy に上限がある。
   `build.py` が毎回サイズを確認し、超えたらエラーで止まる。
-  分割版なら約30KBなので当分は掛からない。効いてくるのは `--single` のとき
-- **確認は `python3 -m http.server` 越しに開くこと。** 分割版は `src/` を
+  いまは13KBなので、`shell.html` に直接書き足しすぎないかぎり掛からない
+- **確認は `python3 -m http.server` 越しに開くこと。** `src/` を
   相対パスで読むので、ページ単体を切り出して開く経路では読み込めない
+- **表紙の高さと、アプリ内スクロールを壊さないこと。** PLiCyのプレイヤーは
+  枠のスクロールを止めていることがある。`body` は `100dvh` 固定で、
+  流すのは `#scroll` の中だけ。表紙は `max-height` で縮めてボタンを
+  画面内に残している（`docs/HANDOVER.md` §5）
 
 画面ごとに単体で確認したいときは、直下の `meikan.html` `team.html`
 `taikai.html` `scout.html` `jansou.html` を開く。ビルド不要で `src/` を直に読む。
@@ -54,7 +58,3 @@ python3 build.py --single   一枚版。全部を埋め込む。約361KB
   代替書体で表示されている。直すなら、`maru.css` の `font-family` に
   丸ゴシック系のフォールバックを明示するか、`發` → `発`のように
   字を差し替えるかのどちらか。
-- **分割版（既定ビルド）が PLiCy で動作した確認は、まだ取れていない。**
-  2026年9月に切り替えたが、GitHub Pages とローカルでしか見ていない。
-  PLiCy が外部の `src/*.js` を読めるか、`img/` `fonts/` と同じ扱いになるかは
-  投稿して確かめるしかない。確認が取れるまで `--single`（一枚版）は残す。

@@ -2,8 +2,7 @@
 """
 雀ドル発掘放浪記 — index.html を組み立てる
 
-  python3 build.py            → 分割版（既定）。index.html は約25KB
-  python3 build.py --single   → 一枚版。全部を index.html に埋め込む
+  python3 build.py
 
 前提：リポジトリの直下で実行すること。
   shell.html      … 外枠。ここに <link> と <script> を差し込む
@@ -17,28 +16,12 @@
 公式FAQには載っていないが、実際に何度も弾かれている（ゆう・実証済み）。
 
 ただしこの制限は index.html だけに掛かる。ZIP全体は2GBまで許される。
-fonts/ と img/ はもともと外部参照で問題なく動いているので、
-CSSとJSも外に出せば index.html は約25KBまで落ちる。
-以後どれだけ足しても、この制限に引っ掛かることはない。
+そこで CSS と JS を `src/` に置いたまま `<link>` と `<script>` で読む形にした。
+index.html は約30KBで、以後どれだけ足しても上限には掛からない。
 
---------------------------------------------------------------------
-title.js と title.css だけ埋め込む理由（安全策）
---------------------------------------------------------------------
-PLiCyのサムネイルは「index.html に書かれた最初のcanvas」を撮る。
-canvasタグ自体は shell.html にあるので分割しても残るが、
-表紙を描くコードまで外に出すのは念のため避けている。
-
-**この判断は保険であって、必須ではない。**
-撮影は投稿者が手で行うもので、そのときには読み込みはとっくに終わっている。
-外に出しても動く可能性のほうが高い。25KBは充分に小さいので、
-確かめる手間と釣り合わないと判断して埋め込みを残した。
-
---------------------------------------------------------------------
-うまくいかなかったときの逃げ道
---------------------------------------------------------------------
-PLiCyが外部JSを受け付けなかった場合は --single を使う。
-従来どおり全部を index.html に埋め込んだ一枚版ができる。
-**ただし500KBの制限が復活する**ので、その中で収める必要がある。
+**PLiCyで外部のCSS・JSが読めることは確認済み（2026年9月・ゆう）。**
+表紙が正しく描画され、サムネイルも撮れている。
+以前あった一枚版（--single）は役目を終えたので廃止した。
 
 --------------------------------------------------------------------
 注意
@@ -48,15 +31,13 @@ PLiCyが外部JSを受け付けなかった場合は --single を使う。
   scriptタグに defer は付けない。付けるなら全部に付ける。
   混ぜると順序が崩れる。
 
-・url(../fonts/) の書き換えは**埋め込むCSSだけ**に行う。
-  外部のままの src/*.css は src/ から見て ../fonts/ が正しく解決される。
-  外部ぶんまで書き換えるとフォントが読めなくなる。
+・**ZIPには src/ を必ず含めること。** 含め忘れると真っ白な画面になる。
 
-・module.exports の除去は「最初に現れる if (typeof module から
-  ファイル末尾まで」を丸ごと落とす。正規表現に m フラグを付けると
-  複数行の export ブロックを消しきれず、閉じ括弧だけが残って構文エラーに
-  なる（引き継ぎ書 §4）。外部のままのファイルは削る必要がない。
-  typeof で守られているのでブラウザでも安全に無視される。
+・url(../fonts/) は書き換えない。CSSは src/ に置いたまま読むので、
+  src/ から見た ../fonts/ が正しく解決される。
+
+・module.exports は削らない。typeof で守られているのでブラウザでは
+  無視される（node のテストから読むために置いてある）。
 """
 import os
 import sys
@@ -74,10 +55,7 @@ JS = ['engine.js', 'ai.js', 'game.js', 'ui.js', 'match.js',
       'team.js', 'taikai.js', 'scout.js',
       'jansou-guests.js', 'jansou-floor.js', 'jansou.js', 'serifu.js']
 
-# 分割版でも index.html に埋め込むもの（表紙まわり。上の「安全策」参照）
-INLINE = {'title.css', 'title.js'}
-
-LIMIT = 500 * 1024          # PLiCyの上限
+LIMIT = 500 * 1024          # PLiCyの上限。分割版では掛からないはずの保険
 
 
 def read(name, base=SRC):
@@ -85,45 +63,15 @@ def read(name, base=SRC):
         return f.read()
 
 
-def strip_exports(src):
-    """末尾の module.exports を落とす。exports は必ずファイル末尾にある前提。"""
-    marker = 'if (typeof module'
-    i = src.find(marker)
-    if i == -1:
-        return src
-    return src[:i].rstrip() + '\n'
+def build_styles():
+    return '\n'.join('<link rel="stylesheet" href="src/%s">' % n for n in CSS)
 
 
-def fix_font_path(css):
-    """埋め込むCSSだけ。index.html は直下にあるので ../fonts/ が1段ずれる"""
-    return css.replace('url(../fonts/', 'url(fonts/')
-
-
-def build_styles(single):
-    out = []
-    for n in CSS:
-        if single or n in INLINE:
-            out.append('<style>\n/* ===== %s ===== */\n%s</style>'
-                       % (n, fix_font_path(read(n))))
-        else:
-            out.append('<link rel="stylesheet" href="src/%s">' % n)
-    return '\n'.join(out)
-
-
-def build_scripts(single):
-    out = []
-    for n in JS:
-        if single or n in INLINE:
-            out.append('<script>\n/* ===== %s ===== */\n%s</script>'
-                       % (n, strip_exports(read(n))))
-        else:
-            out.append('<script src="src/%s"></script>' % n)
-    return '\n'.join(out)
+def build_scripts():
+    return '\n'.join('<script src="src/%s"></script>' % n for n in JS)
 
 
 def main():
-    single = '--single' in sys.argv[1:]
-
     missing = [n for n in CSS + JS if not os.path.exists(os.path.join(SRC, n))]
     if not os.path.exists(os.path.join(HERE, 'shell.html')):
         missing.append('shell.html')
@@ -138,38 +86,26 @@ def main():
             return 1
 
     out = (shell
-           .replace('<!--__STYLES__-->', build_styles(single))
-           .replace('<!--__SCRIPTS__-->', build_scripts(single)))
-
-    # 埋め込んだぶんに export の残骸が無いか確認する
-    if 'module.exports' in out:
-        print('module.exports が index.html に残っています', file=sys.stderr)
-        return 1
+           .replace('<!--__STYLES__-->', build_styles())
+           .replace('<!--__SCRIPTS__-->', build_scripts()))
 
     path = os.path.join(HERE, 'index.html')
     with open(path, 'w', encoding='utf-8') as f:
         f.write(out)
 
     size = len(out.encode('utf-8'))
-    mode = '一枚版' if single else '分割版'
-    print('%s  %s  %.0fKB' % (path, mode, size / 1024))
+    print('%s  %.0fKB' % (path, size / 1024))
 
     if size > LIMIT:
         print('index.html が %.0fKB あります。PLiCyの上限は500KBです。'
               % (size / 1024), file=sys.stderr)
-        if single:
-            print('分割版（--single なし）にすれば約25KBになります。', file=sys.stderr)
-        else:
-            print('埋め込んでいるもの（build.py の INLINE）を減らしてください。',
-                  file=sys.stderr)
+        print('shell.html に直接書いたものが増えすぎていないか確認してください。',
+              file=sys.stderr)
         return 1
-    print('  上限500KBに対して残り %.0fKB' % ((LIMIT - size) / 1024))
 
-    if not single:
-        ext = [n for n in CSS + JS if n not in INLINE]
-        total = sum(os.path.getsize(os.path.join(SRC, n)) for n in ext)
-        print('  外部ファイル %d 個（%.0fKB）。ZIPには src/ を必ず含めること'
-              % (len(ext), total / 1024))
+    total = sum(os.path.getsize(os.path.join(SRC, n)) for n in CSS + JS)
+    print('  src/ の %d 個（%.0fKB）を読みに行く。ZIPには src/ を必ず含めること'
+          % (len(CSS + JS), total / 1024))
     return 0
 
 

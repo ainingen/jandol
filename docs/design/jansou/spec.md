@@ -601,10 +601,10 @@ challengedToday: false,   // 今日もう打ったか
 各段階の終わりに `python3 build.py` を通し、`tools/make-font.py` を
 実行し直すこと（`pip install fonttools brotli` が要る）。
 
-`--single`（一枚版）の残りは **139KB**（現在361KB／上限500KB）。
-24種のドット絵データと再生層で使い切る可能性があるので、
-段階ごとに `python3 build.py --single` のサイズを見ておくこと。
-分割版（30KB）はこの制限と無関係。
+**`index.html` の500KB制限はもう気にしなくてよい（2026年9月）。**
+CSSとJSは `src/` のまま読む形になり、`index.html` は約13KBで頭打ち。
+PLiCyで外部のCSS・JSが読めることも確認済みで、一枚版（`--single`）は
+廃止した。ドット絵のデータをどれだけ足しても上限には掛からない。
 
 ---
 

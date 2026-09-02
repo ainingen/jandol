@@ -46,28 +46,27 @@ git push -u origin main
 セーブは `localStorage` に入る。使えない環境では毎回最初からになり、
 画面上部に「この環境では保存できません」と出る。
 
-## PLiCyの500KB制限と、分割版
+## PLiCyの500KB制限と、外部ファイル
 
 **PLiCyには index.html が500KBまでという制限がある。**
 公式FAQには載っていないが、実際に何度も弾かれている（実証済み）。
 
 この制限は index.html だけに掛かる。ZIP全体は2GBまで許される。
-そこで2026年9月に、CSSとJSを外部ファイルのまま読む「分割版」を既定にした。
+そこで2026年9月に、CSSとJSを `src/` に置いたまま
+`<link>` と `<script>` で読む形にした。
 
 ```
-python3 build.py            分割版。index.html は約30KB（既定）
-python3 build.py --single   一枚版。全部埋め込み。約361KB
+python3 build.py            index.html は約13KB
 ```
 
-分割版でも `title.css` と `title.js` だけは埋め込んでいる。
-表紙のcanvasを描くコードなので、サムネイル撮影に念のため備えた安全策。
-必須ではない（`build.py` の `INLINE` を参照）。
+**PLiCyで外部のCSS・JSが読めることは確認済み（2026年9月・ゆう）。**
+表紙が正しく描画され、サムネイルも撮れている。
+これを確かめたので、以前あった一枚版（`--single`）は廃止した。
+`index.html` は shell.html にタグを差し込むだけになり、
+以後どれだけ足しても上限には掛からない。
 
-**ZIPには `src/` を必ず含めること。** 分割版は `src/*.js` と `src/*.css` を
+**ZIPには `src/` を必ず含めること。** `src/*.js` と `src/*.css` を
 読みに行く。含め忘れると真っ白な画面になる。
-
-外部JSがPLiCyで動かなかった場合は `--single` に戻せばよい。
-ただしその場合は500KBの制限が復活する。
 
 ## 直したあと
 
@@ -88,8 +87,7 @@ python3 build.py
 ```
 index.html          ビルド結果。これを配布する（500KB以下に保つこと）
 shell.html          外枠。表紙・タブ・セーブ。ビルド時にCSS/JSが差し込まれる
-build.py            index.html を組み立てる（既定は分割版・約30KB）
-                    --single を付けると従来の一枚版（約361KB）
+build.py            index.html を組み立てる（約13KB。CSS/JSは src/ のまま読む）
 tools/make-font.py  表紙の丸ゴシックを作り直す
 
 meikan.html         ┐
