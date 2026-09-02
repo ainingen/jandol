@@ -115,13 +115,19 @@ src/
   team.js/.css      チーム編成
   taikai.js/.css    大会
   scout.js/.css     スカウト
-  jansou.js/.css    直営雀荘（シフト・設備・イベント・営業の収支）
+  jansou.js/.css    直営雀荘（シフト・設備・イベント・営業の収支・模様替え）
+  jansou-floor.js   フロアのマス目と設置物、タイムライン生成、一日の再生
+  jansou-floor.css  フロアと客カード・ボトル・模様替えのスタイル
+  jansou-guests.js  客タイプ24種、名前と常連、ボトル勝負の判定
 
 fonts/              maru-ui.woff2（本文・568KB）／ maru-title.woff2（題字・4KB）
 tiles/              牌の絵39枚（SVG・770KB）。出典は tiles/LICENSE.txt
 img/                001.webp 〜 073.webp（雀ドル73人）
                     p01.webp 〜 p12.webp（プレイヤーの顔・十二人から選ぶ）
 docs/HANDOVER.md    設計の経緯、決めごと、ハマった罠
+docs/design/jansou/ 直営雀荘の設計一式（spec.md ＝リニューアル、
+                    placement.md ＝卓の自由配置と隣接コンボ）
+tools/test-jansou.js 雀荘の純関数テスト（node tools/test-jansou.js）
 ```
 
 ## できていること
@@ -142,7 +148,12 @@ docs/HANDOVER.md    設計の経緯、決めごと、ハマった罠
   対局の設定（自分で打つ／自動、速さ、補助表示）は大会画面の下にある
 - **直営雀荘** … 開店資金50万で開く。所属全員にシフト（昼・夕・夜）を組み、
   一日単位で営業する。出勤者の人気(pop)が客を呼び、月給の日割り（日当）を払う。
-  設備投資4種（卓・内装・卓の型・宣伝）、イベント6種、夜は自分も卓に着ける
+  設備投資4種（卓・内装・卓の型・宣伝）、イベント6種、夜は自分も卓に着ける。
+  一日の営業はフロアで流れる（スキップ・倍速。**スキップしても結果は同一**）
+- **模様替え** … 卓と設備を 8px のマス目に自分で置ける。卓は席4つぶんの
+  広さを使う。隣り合わせで**コンボ**（くつろぎ席・カウンター席・入口席・
+  静かな席・花道・ラウンジ）が付き、誰が座るか・どれだけ居るか・
+  誰から立つか・チップ・ボトルの格が変わる。**客数と売上は変わらない**
 
 この四つが繋がって、**発掘 → スカウト → 所属 → 大会 → 賞金 → 事務所強化** の
 一周が閉じている。
@@ -181,6 +192,10 @@ docs/HANDOVER.md    設計の経緯、決めごと、ハマった罠
 | 雀荘の設備（卓・内装・卓の型・宣伝） | `src/jansou.js` の `TABLE_COST` `INTERIOR` `AUTO` `SIGN` |
 | 雀荘の日当・家賃 | `src/jansou.js` の `BASE_WAGE` `wageOf` `utilOf` |
 | 雀荘のイベントの重みと発生率 | `src/jansou.js` の `pickEvent` と `SIGN` の `ev` |
+| 雀荘の観葉植物の値段 | `src/jansou.js` の `PLANT_COST` |
+| 雀荘のマス目と設置物の大きさ | `src/jansou-floor.js` の `GRID` `COLS` `ROWS` `KINDS` `DOOR` |
+| 雀荘の自動配置（既存セーブの再現） | `src/jansou-floor.js` の `ROWS_FOR` `SOFA_SPOTS` `COUNTER_SPOTS` |
+| 雀荘の隣接コンボと効き目 | `src/jansou-floor.js` の `COMBOS` `TIP_PER_GUEST` `DWELL_RELAX` `DWELL_DOOR` `tableTraits` |
 
 ## 実対局
 
