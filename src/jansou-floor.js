@@ -41,7 +41,8 @@ const JansouFloor = (() => {
     carpetA: '#d4c6b2', carpetB: '#ccbda8', carpetPat: '#baa692', edge: '#a88e78',
     wall: '#301634', wallLow: '#241028',
     neonPink: '#ff56b2', neonCyan: '#60e8ff', neonYellow: '#ffe86e', neonGreen: '#96ffb4',
-    tableEdge: '#a668ce', tableMine: '#60a0e1', tableCall: '#ffce50',
+    tableEdge: '#a668ce', tableMine: '#60a0e1', tableCall: '#ffce50', tableWood: '#8a6a48',
+    plankA: '#b8a894', plankSeam: '#9a8a74', plankGrain: '#ac9c86',
     feltTop: '#f06eb0', felt: '#ce3a84', feltLow: '#a02064',
     tile: '#fffcf0', tileLow: '#cec6b2',
     panel: '#542c4c', panelInk: '#fff6e0', panelSub: '#eebee1',
@@ -480,44 +481,87 @@ const JansouFloor = (() => {
   /* ============================================================
      部屋を描く
      ============================================================ */
+  /* 壁。**SIGN が看板、INTERIOR がパネルとミラーボール**（§10）。
+     買い足すほど girls-ivory.png の完成形に近づく */
   function drawWall(g, floorW, parlor) {
+    const sign = parlor.sign | 0, lv = parlor.interior | 0;
     g.appendChild(rect(0, 0, floorW, WALL_H, PAL.wall));
     g.appendChild(rect(0, WALL_H - 3, floorW, 3, PAL.wallLow));
 
-    /* 壁の下端のLED。点線で色を回す */
-    const led = [PAL.neonCyan, PAL.neonPink, PAL.neonYellow, PAL.neonGreen];
-    for (let x = 1; x < floorW; x += 3) {
-      g.appendChild(rect(x, WALL_H - 2, 1, 1, led[(x / 3 | 0) % led.length]));
+    /* 壁の下端のLED。宣伝3から灯る */
+    if (sign >= 3) {
+      const led = [PAL.neonCyan, PAL.neonPink, PAL.neonYellow, PAL.neonGreen];
+      for (let x = 1; x < floorW; x += 3) {
+        g.appendChild(rect(x, WALL_H - 2, 1, 1, led[(x / 3 | 0) % led.length]));
+      }
     }
 
-    /* 看板。SIGN の段階で灯りが増える（§10） */
-    neon(g, 'GIRLS', 6, 3, PAL.neonPink, '#a01e64');
-    if ((parlor.sign | 0) >= 2) neon(g, '*', 48, 3, PAL.neonYellow, '#a08a20');
-    neon(g, 'MAHJONG', 58, 3, PAL.neonCyan, '#2080a0');
+    /* 看板（§10）。
+       1 手書きの貼り紙 … 灯りは無く、壁に紙が貼ってあるだけ
+       2 通りに看板     … GIRLS が灯る
+       3 雑誌に広告     … ★ MAHJONG も灯り、壁の下端にLEDが入る */
+    if (sign >= 2) neon(g, 'GIRLS', 6, 3, PAL.neonPink, '#a01e64');
+    else {
+      /* 貼り紙。消えたネオン管の下に、手書きの紙が数枚 */
+      neon(g, 'GIRLS', 6, 3, '#4a2a44', '#3a2036');
+      [[10, 16], [24, 18], [38, 15]].forEach(([x, y]) => {
+        g.appendChild(rect(x, y, 9, 7, '#e8dcc8'));
+        g.appendChild(rect(x + 1, y + 2, 7, 1, '#6a5a50'));
+        g.appendChild(rect(x + 1, y + 4, 5, 1, '#6a5a50'));
+      });
+    }
+    if (sign >= 3) {
+      neon(g, '*', 48, 3, PAL.neonYellow, '#a08a20');
+      neon(g, 'MAHJONG', 58, 3, PAL.neonCyan, '#2080a0');
+    }
 
-    /* ミラーボール（内装3から） */
-    if ((parlor.interior | 0) >= 3) {
-      const cx = Math.min(floorW - 9, 110), cy = 14;   // 看板の字に重ねない
-      g.appendChild(rect(cx, 0, 1, cy - 5, '#6a5a70'));
-      const ball = ['..###..', '.#####.', '#######', '#######', '#######', '.#####.', '..###..'];
-      ball.forEach((line, y) => {
-        for (let x = 0; x < line.length; x++) {
-          if (line[x] !== '#') continue;
-          const on = (x + y) % 2 === 0;
-          g.appendChild(rect(cx - 3 + x, cy - 3 + y, 1, 1, on ? '#dceaff' : '#8898c0'));
-        }
+    /* ミラーボールの紐（玉は drawActors が回す）。内装3から */
+    if (lv >= 3) g.appendChild(rect(Math.min(floorW - 9, 110), 0, 1, 9, '#6a5a70'));
+
+    /* スタンド花。**奥の壁に立てる。**床に置くと卓が3行になったとき
+       客や卓の裏に隠れて、買った手応えが出ない（実際に隠れた）。
+       看板とパネルとミラーボールを避けて、壁の右側に二基 */
+    if (lv >= 4) {
+      [floorW - 30, floorW - 15].forEach((fx) => {
+        const fy = 17;
+        g.appendChild(rect(fx + 3, fy + 8, 2, 12, '#e8dcc8'));
+        g.appendChild(rect(fx, fy + 18, 8, 2, '#e8dcc8'));
+        [[0, 0, '#ff9ec8'], [4, 1, '#ffe86e'], [2, 4, '#ff84a8'], [6, 5, '#96ffb4'],
+         [1, 6, '#ffe86e']].forEach(([dx, dy, c]) => g.appendChild(rect(fx + dx, fy + dy, 2, 2, c)));
       });
     }
 
-    /* 指名ランキングのパネル（金枠） */
-    const px = 6, py = 16, pw = 40, ph = 15;
-    g.appendChild(rect(px, py, pw, ph, PAL.gold));
-    g.appendChild(rect(px + 1, py + 1, pw - 2, ph - 2, '#1c0c20'));
-    const bars = [[PAL.neonYellow, 26], [PAL.neonCyan, 20], [PAL.neonGreen, 13]];
-    bars.forEach((b, i) => g.appendChild(rect(px + 3, py + 4 + i * 4, b[1], 2, b[0])));
+    /* 指名ランキングのパネル（金枠）。内装3から。
+       宣伝が弱いうちは看板が無いので、パネルは看板の位置に寄せない */
+    if (lv >= 3) {
+      const px = 6, py = 16, pw = 40, ph = 15;
+      g.appendChild(rect(px, py, pw, ph, PAL.gold));
+      g.appendChild(rect(px + 1, py + 1, pw - 2, ph - 2, '#1c0c20'));
+      const bars = [[PAL.neonYellow, 26], [PAL.neonCyan, 20], [PAL.neonGreen, 13]];
+      bars.forEach((b, i) => g.appendChild(rect(px + 3, py + 4 + i * 4, b[1], 2, b[0])));
+    }
   }
 
-  function drawCarpet(g, floorW) {
+  /* 床。**内装1は板張り、2から §4.7 のカーペット**（§10） */
+  function drawCarpet(g, floorW, parlor) {
+    if ((parlor.interior | 0) < 2) {
+      g.appendChild(rect(0, EDGE_Y, floorW, 2, '#6a5a4a'));
+      g.appendChild(rect(0, CARPET_Y, floorW, FLOOR_H - CARPET_Y, PAL.plankA));
+      /* 板の継ぎ目。**長い横板に見せる。**縦の継ぎ目を短い周期で入れると
+         煉瓦に見えてしまうので、板一枚につき1本だけ、間隔を空けて置く */
+      for (let y = CARPET_Y + 8, row = 0; y < FLOOR_H; y += 8, row++) {
+        g.appendChild(rect(0, y, floorW, 1, PAL.plankSeam));
+        /* 木目。板ごとに位置をずらす（時刻に依らない固定の並び） */
+        for (let k = 0; k < 2; k++) {
+          const x = (row * 37 + k * 79 + 11) % (floorW - 20) + 6;
+          g.appendChild(rect(x, y - 5, 10, 1, PAL.plankGrain));
+        }
+        /* 板の継ぎ目（縦）。1行に1本だけ */
+        const bx = (row * 53 + 17) % (floorW - 8) + 4;
+        g.appendChild(rect(bx, y - 7, 1, Math.min(7, FLOOR_H - (y - 7)), PAL.plankSeam));
+      }
+      return;
+    }
     g.appendChild(rect(0, EDGE_Y, floorW, 2, PAL.edge));
     g.appendChild(rect(0, CARPET_Y, floorW, FLOOR_H - CARPET_Y, PAL.carpetA));
     /* 4×4の市松（周期8） */
@@ -537,15 +581,20 @@ const JansouFloor = (() => {
     }
   }
 
-  /* 卓。kind は 'normal' | 'mine' | 'call' | 'closed' */
-  function drawTable(g, t, kind) {
-    const x = t.x, y = t.y;
+  /* 卓。kind は 'normal' | 'mine' | 'call' | 'closed'。
+     **見た目は AUTO の段階で変わる**（§10）。
+       1 手積み … 木の縁。山が乱れていて、自動卓の穴が無い
+       2 全自動卓 … 紫の縁と中央の穴
+       3 点数表示付き … 縁に点数の小窓が4つ */
+  function drawTable(g, t, kind, auto) {
+    const x = t.x, y = t.y, lv = Math.max(1, auto | 0);
     if (kind === 'closed') {
       g.appendChild(rect(x, y, TABLE_W, TABLE_H, PAL.closed));
       g.appendChild(rect(x + 3, y + 3, TABLE_W - 6, TABLE_H - 6, PAL.closedTop));
       return;
     }
-    const edge = kind === 'mine' ? PAL.tableMine : kind === 'call' ? PAL.tableCall : PAL.tableEdge;
+    const edge = kind === 'mine' ? PAL.tableMine : kind === 'call' ? PAL.tableCall
+      : lv >= 2 ? PAL.tableEdge : PAL.tableWood;
     g.appendChild(rect(x, y, TABLE_W, TABLE_H, edge));
     /* ラシャ */
     g.appendChild(rect(x + 3, y + 3, TABLE_W - 6, 1, PAL.feltTop));
@@ -556,28 +605,43 @@ const JansouFloor = (() => {
     g.appendChild(rect(x + 7, y + 5, 7, 2, PAL.gold));
     g.appendChild(rect(x + 17, y + 5, 6, 2, '#ffb4d2'));
     g.appendChild(rect(x + 23, y + 5, 3, 2, '#96f0ff'));
-    /* 牌。4枚組を4つ */
+    /* 全自動卓の穴 */
+    if (lv >= 2) g.appendChild(rect(x + 13, y + 8, 4, 3, PAL.feltLow));
+    /* 点数表示の小窓 */
+    if (lv >= 3) {
+      for (let i = 0; i < 4; i++) {
+        g.appendChild(rect(x + 5 + i * 6, y + 1, 5, 1, '#1c0c20'));
+        g.appendChild(rect(x + 6 + i * 6, y + 1, 3, 1, PAL.neonCyan));
+      }
+    }
+    /* 牌。手積みは山がそろっていない */
     for (let i = 0; i < 4; i++) {
       const tx = x + 4 + i * 6;
-      g.appendChild(rect(tx, y + 12, 4, 4, PAL.tile));
-      g.appendChild(rect(tx, y + 16, 4, 1, PAL.tileLow));
+      const dy = lv >= 2 ? 0 : [0, 1, 0, 1][i];
+      g.appendChild(rect(tx, y + 12 + dy, 4, 4, PAL.tile));
+      g.appendChild(rect(tx, y + 16 + dy, 4, 1, PAL.tileLow));
     }
   }
 
-  /* 床の設備。内装の段階で増えていく（§10。段階の作り込みは第五段） */
+  /* 床の設備。**内装の段階で増えていく**（§10）。
+       1 板張りの床だけ（素っ気ない部屋）
+       2 カーペット（drawCarpet）
+       3 ミラーボール・指名パネル（drawWall / drawActors）
+       4 スタンド花・ソファ席
+       5 ドリンクカウンターとボトル棚 → girls-ivory.png の完成形 */
   function drawFixtures(g, floorW, parlor) {
     const lv = parlor.interior | 0;
-    /* 入口のマット */
-    g.appendChild(rect((floorW >> 1) - 16, FLOOR_H - 6, 32, 4, '#c86ab0'));
+    /* 入口のマット。内装1は素の板張りなので敷かない */
+    if (lv >= 2) g.appendChild(rect((floorW >> 1) - 16, FLOOR_H - 6, 32, 4, '#c86ab0'));
     /* ソファ席 */
-    if (lv >= 2) {
+    if (lv >= 4) {
       const sx = 3, sy = FLOOR_H - 30;
       g.appendChild(rect(sx, sy, 30, 18, '#b8508e'));
       g.appendChild(rect(sx + 1, sy + 3, 13, 13, '#d46aa8'));
       g.appendChild(rect(sx + 16, sy + 3, 13, 13, '#d46aa8'));
     }
     /* ドリンクカウンターとボトル棚 */
-    if (lv >= 4) {
+    if (lv >= 5) {
       const cx = floorW - 34, cy = FLOOR_H - 30;
       g.appendChild(rect(cx, cy, 31, 20, PAL.panel));
       g.appendChild(rect(cx + 1, cy + 1, 29, 5, '#6e3c64'));
@@ -586,15 +650,6 @@ const JansouFloor = (() => {
       for (let i = 0; i < 4; i++) {
         g.appendChild(rect(cx + 4 + i * 7, cy + 14, 3, 5, i % 2 ? '#dcd0c0' : '#c8a44a'));
       }
-    }
-    /* スタンド花 */
-    if (lv >= 3) {
-      [[floorW - 62, FLOOR_H - 26], [(floorW >> 1) - 34, FLOOR_H - 26]].forEach(([fx, fy]) => {
-        g.appendChild(rect(fx + 3, fy + 8, 2, 12, '#e8dcc8'));
-        g.appendChild(rect(fx, fy + 18, 8, 3, '#e8dcc8'));
-        [[0, 0, '#ff9ec8'], [4, 1, '#ffe86e'], [2, 4, '#ff84a8'], [6, 5, '#96ffb4']].forEach(([dx, dy, c]) =>
-          g.appendChild(rect(fx + dx, fy + dy, 2, 2, c)));
-      });
     }
   }
 
@@ -770,15 +825,30 @@ const JansouFloor = (() => {
        客の上に立たないように、他のスタッフが居る席も避ける。
        全部埋まっていたら卓の手前に立つ */
     function staffSpotFor(table, selfId) {
-      const t = tables[table] || tables[0];
-      if (!t) return entrance();
+      if (!tables.length) return entrance();
+      const home = Math.max(0, Math.min(tables.length - 1, table | 0));
       const taken = takenSeats();
       live.staff.forEach((s, id) => { if (id !== selfId && s.at) taken.add(s.at); });
-      const ss = seatsOf(t);
-      for (let i = 0; i < ss.length; i++) {
-        if (!taken.has(table + ':' + i)) return { x: ss[i].x + 1, y: ss[i].y + 9, at: table + ':' + i };
+
+      /* 目当ての卓 → 近い卓の順に、空いている席を探す */
+      const order = tables.map((_, i) => i).sort((a, b) => Math.abs(a - home) - Math.abs(b - home));
+      for (const ti of order) {
+        if (tables[ti].kind === 'closed') continue;
+        const ss = seatsOf(tables[ti]);
+        for (let i = 0; i < ss.length; i++) {
+          if (!taken.has(ti + ':' + i)) return { x: ss[i].x + 1, y: ss[i].y + 9, at: ti + ':' + i };
+        }
       }
-      return { x: t.x + 10, y: t.y + TABLE_H + 1, at: null };
+      /* **どこも埋まっていたら通路へ。ここで同じ場所に重ねない。**
+         丸写真が重なると誰が誰だか分からなくなる（実際に4人重なった）。
+         通路は卓の下すぐ。床の下端に置くと店の隅に取り残されて見える */
+      const lastY = tables.reduce((a, t) => Math.max(a, t.y), 0);
+      const aisleY = Math.min(FLOOR_H - 16, lastY + TABLE_H + 4);
+      for (let i = 0; i < 8; i++) {
+        const key = 'aisle:' + i;
+        if (!taken.has(key)) return { x: Math.min(floorW - 10, 8 + i * 22), y: aisleY, at: key };
+      }
+      return { x: Math.min(floorW - 10, 8), y: aisleY, at: null };
     }
     function moveStaff(id, table) {
       const s = live.staff.get(id);
@@ -809,14 +879,14 @@ const JansouFloor = (() => {
       svg.appendChild(roomG); svg.appendChild(actG); svg.appendChild(lightG);
 
       drawWall(roomG, floorW, parlor);
-      drawCarpet(roomG, floorW);
+      drawCarpet(roomG, floorW, parlor);
       drawFixtures(roomG, floorW, parlor);
       tables = layout(parlor.tables || 2, floorW);
       const closed = live.closedTables || 0;
       tables.forEach((t, i) => {
         t.kind = i >= tables.length - closed ? 'closed'
           : i === live.myTable ? 'mine' : 'normal';
-        drawTable(roomG, t, t.kind);
+        drawTable(roomG, t, t.kind, parlor.auto);
       });
       /* スタッフの体は一つの <g> を使い回す */
       const gg = el('g', { id: 'jns-body' });
@@ -1308,6 +1378,7 @@ const JansouFloor = (() => {
 
   return {
     mount, fit, layout, seatsOf, gridRects, build, slotStartTimes, spriteSvg, bottleSvg, insertEvent,
+    drawWall, drawCarpet, drawFixtures, drawTable,
     PAL, FLOOR_H, FLOOR_W_MAX, TABLE_W, TABLE_H, SEAT_W, SEAT_H, COL_PITCH,
     WALL_H, CARPET_Y,
     SLOT_SEC, INTERMISSION, MAX_WALK, WALK_SEC, SWAP_SEC, SEATS_PER_TABLE,

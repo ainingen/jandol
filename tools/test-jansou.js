@@ -515,6 +515,92 @@ function eq(a, b, name) {
   eq(tl.map((e) => e.t + e.kind).join(' '), '1arrive 3leave 3arrive 3interrupt 5slotEnd', '同時刻でも種類の順を保って差さる');
 }
 
+/* ============================================================
+   第5段階：内装・卓の型・宣伝の段階（spec.md §10）
+   ============================================================ */
+{
+  global.STYLES = global.STYLES || { a: 1 };
+  const { Jansou } = require('../src/jansou.js');
+
+  /* --- **数値は変えない。**引き継ぎ書 §4 の実測がこれに乗っている --- */
+  eq(Jansou.INTERIOR.map((x) => x.mul).join(','), '1,1.12,1.26,1.42,1.6', '内装の mul は据え置き');
+  eq(Jansou.INTERIOR.map((x) => x.cost).join(','), '0,400000,1000000,2500000,6000000', '内装の cost は据え置き');
+  eq(Jansou.AUTO.map((x) => x.rot).join(','), '1,1.25,1.5', '卓の型の rot は据え置き');
+  eq(Jansou.SIGN.map((x) => x.pull).join(','), '0,0.1,0.22', '宣伝の pull は据え置き');
+  eq(Jansou.SIGN.map((x) => x.ev).join(','), '0.2,0.28,0.36', '宣伝の ev は据え置き');
+  [Jansou.INTERIOR, Jansou.AUTO, Jansou.SIGN].forEach((arr, i) => {
+    arr.forEach((x) => ok(typeof x.see === 'string' && x.see.length > 0,
+      ['内装', '卓の型', '宣伝'][i] + ' ' + x.lv + ' に「見えるもの」がある'));
+  });
+
+  /* --- 段階を上げると絵が増える（矩形の数で見る） --- */
+  const F = JansouFloor;
+  const made = [];
+  global.document = {
+    createElementNS: () => {
+      const n = { attrs: {}, children: [], setAttribute: (k, v) => { n.attrs[k] = v; },
+        appendChild: (c) => { n.children.push(c); made.push(c); return c; } };
+      return n;
+    },
+  };
+  function countRoom(parlor) {
+    made.length = 0;
+    const g = global.document.createElementNS();
+    F.drawWall(g, 190, parlor); F.drawCarpet(g, 190, parlor); F.drawFixtures(g, 190, parlor);
+    return g.children.length;
+  }
+  const base = { interior: 1, auto: 1, sign: 1 };
+  const counts = [1, 2, 3, 4, 5].map((lv) => countRoom(Object.assign({}, base, { interior: lv })));
+  for (let i = 1; i < counts.length; i++) {
+    ok(counts[i] > counts[i - 1], '内装' + (i + 1) + 'で絵が増える', counts[i - 1] + '→' + counts[i]);
+  }
+  /* 看板は段階1で「貼り紙」を描くので、数ではなく**灯りの色**で見る。
+     1 貼り紙だけ（灯らない）／2 GIRLS が桃色に灯る／3 ★ MAHJONG の水色とLEDが入る */
+  /* 内装1で見る。内装3以上だと指名パネルの色（水色・黄・緑）が混ざって、
+     看板が灯ったのかパネルの色なのか区別できない */
+  function wallColors(sign) {
+    made.length = 0;
+    const g = global.document.createElementNS();
+    F.drawWall(g, 190, { interior: 1, sign });
+    return new Set(made.map((r) => r.attrs.fill));
+  }
+  const c1 = wallColors(1), c2 = wallColors(2), c3 = wallColors(3);
+  ok(!c1.has(F.PAL.neonPink), '宣伝1では看板が灯らない');
+  ok(c1.has('#e8dcc8'), '宣伝1は貼り紙が貼ってある');
+  ok(c2.has(F.PAL.neonPink), '宣伝2で GIRLS が灯る');
+  ok(!c2.has(F.PAL.neonCyan), '宣伝2ではまだ MAHJONG は灯らない');
+  ok(c3.has(F.PAL.neonCyan) && c3.has(F.PAL.neonYellow), '宣伝3で ★ MAHJONG が灯る');
+  ok(c3.has(F.PAL.neonGreen), '宣伝3で壁の下端にLEDが入る');
+  /* 卓の型で卓の絵が増える */
+  const tcount = [1, 2, 3].map((lv) => {
+    made.length = 0;
+    const g = global.document.createElementNS();
+    F.drawTable(g, { x: 10, y: 60 }, 'normal', lv);
+    return g.children.length;
+  });
+  for (let i = 1; i < tcount.length; i++) {
+    ok(tcount[i] > tcount[i - 1], '卓の型' + (i + 1) + 'で卓の絵が増える', tcount[i - 1] + '→' + tcount[i]);
+  }
+  /* どの組み合わせでも描けて、矩形が床からはみ出さない */
+  for (let iv = 1; iv <= 5; iv++) for (let au = 1; au <= 3; au++) for (let sg = 1; sg <= 3; sg++) {
+    made.length = 0;
+    const g = global.document.createElementNS();
+    const parlor = { interior: iv, auto: au, sign: sg };
+    F.drawWall(g, 190, parlor); F.drawCarpet(g, 190, parlor); F.drawFixtures(g, 190, parlor);
+    F.layout(8, 190).forEach((t) => F.drawTable(g, t, 'normal', au));
+    const tag = `内装${iv}/卓${au}/宣伝${sg}`;
+    ok(g.children.length > 0, tag + ' が描ける');
+    let out = 0;
+    made.forEach((r) => {
+      const a = r.attrs;
+      if (a.x == null) return;
+      if (+a.x < 0 || +a.x + (+a.width || 0) > 190 || +a.y < 0 || +a.y + (+a.height || 0) > F.FLOOR_H) out++;
+    });
+    eq(out, 0, tag + ' の絵が床からはみ出さない');
+  }
+  delete global.document;
+}
+
 /* ============================================================ */
 console.log('通過 ' + pass + ' 件');
 if (fails.length) {

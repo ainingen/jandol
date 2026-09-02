@@ -44,22 +44,26 @@ const Jansou = (() => {
   const TABLE_MAX = 8;
   const TABLE_COST = { 3: 300000, 4: 500000, 5: 800000, 6: 1200000, 7: 1800000, 8: 2500000 };
 
+  /* 内装・卓の型・宣伝。**数値（mul / rot / pull / ev）は変えないこと。**
+     引き継ぎ書 §4 の実測がこれに乗っている。
+     name と see はガールズ雀荘に合わせて改めたもので、
+     see はその段階で**フロアに現れるもの**（§10。買った手応えを絵で見せる） */
   const INTERIOR = [
-    { lv: 1, name: '中古の椅子と蛍光灯', mul: 1.00, cost: 0 },
-    { lv: 2, name: '落ち着いた照明',     mul: 1.12, cost: 400000 },
-    { lv: 3, name: '革張りの椅子',       mul: 1.26, cost: 1000000 },
-    { lv: 4, name: '金屏風の個室',       mul: 1.42, cost: 2500000 },
-    { lv: 5, name: '業界人が通う名店',   mul: 1.60, cost: 6000000 },
+    { lv: 1, name: '裸電球と丸椅子',       see: '板張りの床',                 mul: 1.00, cost: 0 },
+    { lv: 2, name: 'カーペットと間接照明', see: 'アイボリーのカーペット',     mul: 1.12, cost: 400000 },
+    { lv: 3, name: 'ミラーボールと指名パネル', see: 'ミラーボール・指名ランキング', mul: 1.26, cost: 1000000 },
+    { lv: 4, name: 'スタンド花とソファ席', see: 'スタンド花・ソファ席',       mul: 1.42, cost: 2500000 },
+    { lv: 5, name: 'ドリンクカウンターの名店', see: 'カウンターとボトル棚',   mul: 1.60, cost: 6000000 },
   ];
   const AUTO = [
-    { lv: 1, name: '手積み',             rot: 1.00, cost: 0 },
-    { lv: 2, name: '全自動卓',           rot: 1.25, cost: 600000 },
-    { lv: 3, name: '点数表示付き全自動卓', rot: 1.50, cost: 1800000 },
+    { lv: 1, name: '手積み',             see: '木の卓',             rot: 1.00, cost: 0 },
+    { lv: 2, name: '全自動卓',           see: '紫の全自動卓',       rot: 1.25, cost: 600000 },
+    { lv: 3, name: '点数表示付き全自動卓', see: '点数表示の小窓つき', rot: 1.50, cost: 1800000 },
   ];
   const SIGN = [
-    { lv: 1, name: '手書きの貼り紙', pull: 0.00, ev: 0.20, cost: 0 },
-    { lv: 2, name: '通りに看板',     pull: 0.10, ev: 0.28, cost: 250000 },
-    { lv: 3, name: '雑誌に広告',     pull: 0.22, ev: 0.36, cost: 900000 },
+    { lv: 1, name: '手書きの貼り紙', see: '貼り紙だけ',           pull: 0.00, ev: 0.20, cost: 0 },
+    { lv: 2, name: '通りに看板',     see: 'GIRLS のネオン',       pull: 0.10, ev: 0.28, cost: 250000 },
+    { lv: 3, name: '雑誌に広告',     see: '★ MAHJONG とLED',     pull: 0.22, ev: 0.36, cost: 900000 },
   ];
 
   const BASE_WAGE = 4000;                                   // 出勤一人あたりの日当の底
@@ -309,23 +313,26 @@ const Jansou = (() => {
           now: `${parlor.tables * 4}席`, next: nextTable != null ? `増設 → ${parlor.tables + 1}つ` : null,
           cost: nextTable },
         { key: 'interior', label: `内装「${interior.name}」`,
-          now: `客足 ×${interior.mul.toFixed(2)}`,
+          now: `客足 ×${interior.mul.toFixed(2)}　${interior.see}`,
           next: nextInt ? `「${nextInt.name}」 ×${nextInt.mul.toFixed(2)}` : null,
-          cost: nextInt ? nextInt.cost : null },
+          cost: nextInt ? nextInt.cost : null,
+          gain: nextInt ? nextInt.see : null },
         { key: 'auto', label: `卓の型「${auto.name}」`,
-          now: `回転 ×${auto.rot.toFixed(2)}`,
+          now: `回転 ×${auto.rot.toFixed(2)}　${auto.see}`,
           next: nextAuto ? `「${nextAuto.name}」 ×${nextAuto.rot.toFixed(2)}` : null,
-          cost: nextAuto ? nextAuto.cost : null },
+          cost: nextAuto ? nextAuto.cost : null,
+          gain: nextAuto ? nextAuto.see : null },
         { key: 'sign', label: `宣伝「${sign.name}」`,
-          now: `新規客 +${Math.round(sign.pull * 100)}%`,
+          now: `新規客 +${Math.round(sign.pull * 100)}%　${sign.see}`,
           next: nextSign ? `「${nextSign.name}」 +${Math.round(nextSign.pull * 100)}%` : null,
-          cost: nextSign ? nextSign.cost : null },
+          cost: nextSign ? nextSign.cost : null,
+          gain: nextSign ? nextSign.see : null },
       ].map((f) => `<div class="jnFacil">
           <span class="jnFacilBody"><span class="jnFacilName">${esc(f.label)}</span>
           <span class="jnFacilNow">${esc(f.now)}</span></span>
           ${f.next ? `<button type="button" class="jnUp" data-up="${f.key}"
               ${(st.money || 0) >= f.cost ? '' : 'disabled'}>
-              ${esc(f.next)}<b>${yen(f.cost)}</b></button>`
+              ${esc(f.next)}${f.gain ? `<i>${esc(f.gain)}が出る</i>` : ''}<b>${yen(f.cost)}</b></button>`
             : `<span class="jnFacilMax">これ以上はありません</span>`}
         </div>`).join('');
 

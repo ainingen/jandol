@@ -159,5 +159,6 @@
 .jnBottleName i{font-style:normal;font-size:11px;color:var(--muted);margin-left:6px}
 .jnBottleSub{font-size:11px;color:var(--muted)}
 .jnBottleSub b{color:var(--gold);font-size:13px}
+.jnUp i{display:block;font-style:normal;font-size:10px;color:var(--muted);margin-top:2px}
 .jnUp.small{font-size:11px;padding:5px 9px}
 .jnUp.small b{font-size:11px}
