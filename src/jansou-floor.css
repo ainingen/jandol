@@ -155,6 +155,53 @@
 .jnCardBtn.gold{background:var(--jnGold);border-color:var(--jnGold);color:#2a0c22}
 .jnCardBtn:focus-visible{outline:2px solid var(--jnInk);outline-offset:2px}
 
+/* ---------- ボトル勝負のダイアログ（bottle-dialog.png が仕様） ---------- */
+.jnBottleWrap{align-items:center}
+.jnBottle{
+  --jnPanel:#542c4c; --jnInk:#fff6e0; --jnSub:#eebee1; --jnPink:#ff56b2; --jnGold:#ffce50;
+  max-width:420px;border:3px solid var(--jnGold);border-radius:14px;overflow:hidden;
+  background:var(--jnPanel);color:var(--jnInk);font-family:'MaruUI',system-ui,sans-serif;
+  box-shadow:0 12px 40px rgba(0,0,0,.6);
+}
+.jnBtHead{
+  display:flex;align-items:center;justify-content:space-between;gap:10px;
+  padding:12px 16px;background:var(--jnGold);color:#2a0c22;
+}
+.jnBtTitle{font-size:17px;font-weight:700}
+.jnBtRank{font-size:12px;padding:3px 10px;border-radius:12px;background:var(--jnPink);color:#fff6e0}
+.jnBtBody{padding:12px 16px 14px}
+.jnBtSub{font-size:11px;color:var(--jnSub);margin-bottom:8px;letter-spacing:.06em}
+.jnBtTop{display:flex;gap:12px;align-items:flex-start}
+.jnBtSprite{flex:none;padding:6px;border-radius:8px;border:2px solid var(--jnGold);background:#6e3c64;line-height:0}
+.jnBtWho{flex:1;min-width:0}
+.jnBtName{font-size:20px;font-weight:700;line-height:1.2}
+.jnBtMeta{font-size:11px;color:var(--jnSub);margin:3px 0 6px}
+.jnBtTalk{font-size:12.5px;padding:8px 10px;border-radius:8px;background:rgba(0,0,0,.28);border:1px solid rgba(255,255,255,.1)}
+.jnBtStake{
+  display:flex;gap:12px;align-items:center;margin-top:12px;padding:10px 12px;
+  border-radius:10px;border:1px solid rgba(255,255,255,.14);background:rgba(0,0,0,.22);
+}
+.jnBtBottle{flex:none;line-height:0}
+.jnBtStake dl{display:grid;grid-template-columns:auto 1fr;gap:5px 12px;margin:0;font-size:12px;flex:1}
+.jnBtStake dt{color:var(--jnSub);font-size:11px;align-self:center}
+.jnBtStake dd{margin:0}
+.jnBtStake dd.big{font-size:14px;font-weight:700;color:var(--jnGold)}
+.jnBtStake dd.plus{color:#96ffb4}
+.jnBtStake dd.minus{color:#ff9e9e}
+.jnBtBtns{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px}
+.jnBtBtn{
+  font:inherit;font-size:14px;font-weight:700;padding:9px 6px;border-radius:12px;cursor:pointer;
+  border:1px solid rgba(255,255,255,.18);background:#6e3c64;color:var(--jnInk);
+  display:flex;flex-direction:column;align-items:center;gap:2px;
+}
+.jnBtBtn span{font-size:10px;font-weight:400;color:var(--jnSub)}
+.jnBtBtn.gold{background:var(--jnGold);border-color:var(--jnGold);color:#2a0c22}
+.jnBtBtn.gold span{color:#5a3a10}
+.jnBtBtn[disabled]{opacity:.45;cursor:default}
+.jnBtBtn:focus-visible{outline:2px solid var(--jnInk);outline-offset:2px}
+.jnBtNotes{margin-top:10px;font-size:10.5px;color:var(--jnSub);line-height:1.7}
+.jnBtNotes b{color:var(--jnGold)}
+
 /* ---------- ティッカー ---------- */
 .jnFlTicker{
   min-height:1.4em;padding:5px 8px;border-radius:0 0 5px 5px;

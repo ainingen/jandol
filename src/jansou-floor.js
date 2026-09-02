@@ -646,6 +646,24 @@ const JansouFloor = (() => {
     return sv;
   }
 
+  /* ボトル勝負のダイアログ用。瓶を svg にして返す（§9） */
+  function bottleSvg(tier, px) {
+    const b = G.bottleOf(tier);
+    const sv = el('svg', { viewBox: '0 0 8 14', width: 8 * px, height: 14 * px,
+      'shape-rendering': 'crispEdges', 'aria-hidden': 'true' });
+    const col = (ch) => ({ o: PAL.ink, c: b.col.cap, b: b.col.body, l: b.col.label, h: '#ffffff' }[ch] || null);
+    gridRects(G.BOTTLE_SPRITE, col).forEach((r) => sv.appendChild(r));
+    return sv;
+  }
+
+  /* タイムラインに後から差す（挑戦の割り込みなど）。時刻と種類の順を保つ */
+  function insertEvent(timeline, e) {
+    let i = 0;
+    while (i < timeline.length && ((timeline[i].t - e.t) || (ORD[timeline[i].kind] - ORD[e.kind])) <= 0) i++;
+    timeline.splice(i, 0, e);
+    return timeline;
+  }
+
   /* 足元の楕円影。床が明るいので全スプライトに敷く（§4.4） */
   function shadowRects(w) {
     return [rect(1, 0, w - 2, 1, PAL.shadow), rect(0, -1, w, 1, PAL.shadow)];
@@ -1168,8 +1186,11 @@ const JansouFloor = (() => {
           const e = timeline[live.idx++];
           if (e.kind === 'interrupt') {
             waiting = true;
+            /* 挑戦者が居れば、その席に黄色い枠を出しておく */
+            if (e.node && e.node.guestId && live.seated.has(e.node.guestId)) live.highlight = e.node.guestId;
             paint();
-            try { await hooksRef.onInterrupt(e.node); } finally { waiting = false; }
+            try { await hooksRef.onInterrupt(e.node); }
+            finally { waiting = false; live.highlight = null; }
             continue;
           }
           applyEvent(e, hooksRef);
@@ -1286,7 +1307,7 @@ const JansouFloor = (() => {
   }
 
   return {
-    mount, fit, layout, seatsOf, gridRects, build, slotStartTimes, spriteSvg,
+    mount, fit, layout, seatsOf, gridRects, build, slotStartTimes, spriteSvg, bottleSvg, insertEvent,
     PAL, FLOOR_H, FLOOR_W_MAX, TABLE_W, TABLE_H, SEAT_W, SEAT_H, COL_PITCH,
     WALL_H, CARPET_Y,
     SLOT_SEC, INTERMISSION, MAX_WALK, WALK_SEC, SWAP_SEC, SEATS_PER_TABLE,

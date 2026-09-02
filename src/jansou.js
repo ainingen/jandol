@@ -128,7 +128,8 @@ const Jansou = (() => {
 
   /* ---------- イベント ---------- */
   const ARASHI_NAMES = ['流しの辰巳', '代打ちの梶', '鬼鳴きの巳代', '無敗を名乗る男'];
-  const ARASHI_STAKE = 100000;
+  /* 荒らしの賭けは金ではなくボトル（§9）。言い値は段階3〜4＝6〜12万円で、
+     以前の ARASHI_STAKE（10万円）と桁を揃えてある */
 
   function makeArashi(rep, rng) {
     rng = rng || Math.random;
@@ -350,6 +351,15 @@ const Jansou = (() => {
         <h2 class="jnSecT">設備</h2>
         <div class="jnFacils">${facil}</div>
 
+        <h2 class="jnSecT">ボトル在庫 <span class="jnSecNote">負けたときに店がおごるぶん。無ければその場で仕入れる</span></h2>
+        <div class="jnBottles">${JansouGuests.BOTTLES.map((b) => `<div class="jnBottleRow">
+          <span class="jnBottleIcon" data-bottle-icon="${b.tier}"></span>
+          <span class="jnBottleBody"><span class="jnBottleName">${esc(b.name)}<i>${esc(b.sub)}</i></span>
+            <span class="jnBottleSub">売値 ${yen(b.price)}　在庫 <b>${parlor.bottles[b.tier - 1] | 0}</b>本</span></span>
+          <button type="button" class="jnUp small" data-stock="${b.tier}" ${(st.money || 0) >= b.cost ? '' : 'disabled'}>
+            仕入れる<b>${yen(b.cost)}</b></button>
+        </div>`).join('')}</div>
+
         <div class="jnRun">
           <label class="jnJoin"><input type="checkbox" id="jnJoin" ${parlor.joinNight ? 'checked' : ''}>
             夜、自分も卓に着く（東風戦・卓をひとつ使う）</label>
@@ -394,6 +404,24 @@ const Jansou = (() => {
           setParlor(patch);
           render();
         });
+      });
+
+      /* ボトルの仕入れ */
+      root.querySelectorAll('[data-stock]').forEach((b) => {
+        b.addEventListener('click', () => {
+          const s = store.get();
+          const bt = JansouGuests.bottleOf(+b.dataset.stock);
+          if ((s.money || 0) < bt.cost) return;
+          const p = parlorOf(s);
+          const bottles = p.bottles.slice();
+          bottles[bt.tier - 1] = (bottles[bt.tier - 1] | 0) + 1;
+          store.set({ money: s.money - bt.cost });
+          setParlor({ bottles });
+          render();
+        });
+      });
+      root.querySelectorAll('[data-bottle-icon]').forEach((el) => {
+        if (typeof JansouFloor !== 'undefined') el.appendChild(JansouFloor.bottleSvg(+el.dataset.bottleIcon, 2));
       });
 
       root.querySelector('#jnJoin').addEventListener('change', (e) => {
@@ -620,8 +648,35 @@ const Jansou = (() => {
         timeline = interrupts.map((x) => ({ t: 0, kind: 'interrupt', node: x.node }));
       }
 
+      /* ---- ボトル勝負（§9）。誰が挑んでくるかも先に決める（§1） ----
+         一日に多くて一組。荒らしは pickEvent が唯一の発生源で、言い値だけここで決める */
+      let challenge = null;
+      if (typeof JansouFloor !== 'undefined' && typeof JansouGuests !== 'undefined') {
+        challenge = JansouGuests.pickChallenge(faces, parlor.regulars, { rep: parlor.rep }, rng);
+        if (challenge) {
+          const arr = timeline.find((e) => e.kind === 'arrive' && e.guestId === challenge.guestId);
+          if (arr) {
+            const reg = parlor.regulars[challenge.guestId];
+            const type = JansouGuests.BY_KEY[challenge.typeKey];
+            challenge.slot = arr.slot;
+            challenge.name = reg ? JansouGuests.displayName(reg) : type.alias;
+            challenge.visits = reg ? reg.visits + 1 : 1;
+            /* 実対局の相手。強さは卓の格に合わせる */
+            const strength = { nushi: 42, uchishi: 68, shachou: 36 }[challenge.kind] || 40;
+            challenge.chara = { id: 9300, name: challenge.name, guest: true, pop: 0, salary: 0,
+              rank: challenge.kind === 'uchishi' ? 'A' : 'C',
+              style: Object.keys(STYLES)[Math.floor(rng() * Object.keys(STYLES).length)],
+              comp: strength + rng() * 8 };
+            JansouFloor.insertEvent(timeline, { t: arr.t + 1.8, kind: 'interrupt',
+              node: { kind: 'bottle', guestId: challenge.guestId } });
+          } else challenge = null;
+        }
+      }
+      const arashiTier = ev && ev.kind === 'arashi' && typeof JansouGuests !== 'undefined'
+        ? JansouGuests.arashiTier(rng) : 0;
+
       return {
-        st0, parlor, list, slotWorkers, dayWorkers, day, ev, rolls, fillers,
+        st0, parlor, list, slotWorkers, dayWorkers, day, ev, rolls, fillers, challenge, arashiTier,
         closedTables, myTable, tableIdx, timeline, summary, faces, names,
         wages: dayWorkers.reduce((a, c) => a + wageOf(c), 0),
         util: utilOf(parlor.tables),
@@ -631,7 +686,8 @@ const Jansou = (() => {
     /* ---------- 再生 ---------- */
     async function playDay(plan) {
       const results = { extraMoney: 0, repDelta: 0, lines: [], favor: {}, buffsAdd: [],
-                        extraPlace: {}, myLine: null };
+                        extraPlace: {}, myLine: null,
+                        bottles: [0, 0, 0, 0, 0, 0], visitsBonus: {}, challenged: false, evicted: false };
       if (typeof JansouFloor === 'undefined') {
         for (const e of plan.timeline) if (e.kind === 'interrupt') await handleInterrupt(e.node, plan, results);
         return results;
@@ -681,48 +737,12 @@ const Jansou = (() => {
           R.lines.push(`${g.name} が来店（好感度 +4）`);
         }
       } else if (node.kind === 'arashi' && ev && ev.chara) {
-        const a = ev.chara;
-        const best = dayWorkers.slice().sort((x, y) => strengthOf(y, STYLES) - strengthOf(x, STYLES))[0];
-        const k = await ask({
-          title: '雀荘荒らしが現れた',
-          text: `「${a.name}」と名乗る打ち手が ${yen(ARASHI_STAKE)} を賭けろと騒いでいます。`,
-          choices: [
-            { key: 'me', label: '自分が受けて立つ', note: '実際に打つ' },
-            { key: 'ace', label: best ? `${best.name} に任せる` : 'エースに任せる',
-              note: '結果は自動処理', disabled: !best },
-            { key: 'no', label: '丁重にお引き取り願う', note: '評判が少し下がる' },
-          ],
-        });
-        if (k === 'me') {
-          const table = [playerCard(), a].concat(dayWorkers.slice(0, 2));
-          for (let i = 0; table.length < 4; i++) table.push(plan.fillers[i]);
-          const rank = await playOrSimulate(table, `${a.name} との腕試し`);
-          const mine = rank.find((r) => r.chara.id === 0);
-          const his = rank.find((r) => r.chara.id === a.id);
-          if (mine && his && mine.place < his.place) {
-            R.extraMoney += ARASHI_STAKE; R.repDelta += 6;
-            R.lines.push(`${a.name} を返り討ちにした（${signedYen(ARASHI_STAKE)}・評判 +6）`);
-          } else {
-            R.extraMoney -= ARASHI_STAKE; R.repDelta -= 3;
-            R.lines.push(`${a.name} に打ち負けた（${signedYen(-ARASHI_STAKE)}・評判 −3）`);
-          }
-        } else if (k === 'ace' && best) {
-          const table = [best, a].concat(dayWorkers.filter((c) => c.id !== best.id).slice(0, 2));
-          for (let i = 0; table.length < 4; i++) table.push(plan.fillers[i]);
-          const rank = simulateTable(table, STYLES);
-          const hers = rank.find((r) => r.chara.id === best.id);
-          const his = rank.find((r) => r.chara.id === a.id);
-          if (hers.place < his.place) {
-            R.extraMoney += ARASHI_STAKE; R.repDelta += 4;
-            R.lines.push(`${best.name} が ${a.name} を退けた（${signedYen(ARASHI_STAKE)}・評判 +4）`);
-          } else {
-            R.extraMoney -= ARASHI_STAKE; R.repDelta -= 3;
-            R.lines.push(`${best.name} が ${a.name} に敗れた（${signedYen(-ARASHI_STAKE)}・評判 −3）`);
-          }
-        } else {
-          R.repDelta -= 1;
-          R.lines.push(`${a.name} を追い返した（評判 −1）`);
-        }
+        /* 黙らせる一局。金は賭けない。負けたほうがボトルを入れる（§9.1）。
+           打たない解決策（用心棒・警察・主）を必ず残す（§9.3） */
+        await runBottle({ kind: 'arashi', tier: plan.arashiTier || 3, chara: ev.chara,
+          name: ev.chara.name, visits: 0, slot: 2 }, plan, R);
+      } else if (node.kind === 'bottle' && plan.challenge) {
+        await runBottle(plan.challenge, plan, R);
       } else if (node.kind === 'kosho') {
         const k = await ask({
           title: '卓がひとつ壊れた',
@@ -759,6 +779,118 @@ const Jansou = (() => {
         /* 同卓した子には実戦のぶんも経験が入る */
         rank.forEach((r) => { if (!r.chara.guest && r.chara.id !== 0) R.extraPlace[r.chara.id] = r.place; });
       }
+    }
+
+    /* ---------- ボトル勝負（§9）。ダイアログ → 実対局 → 結果 ----------
+       金は賭けない。勝てば客が入れて売上、負ければ店がおごって在庫が減る。
+       **代表が打てるのは1日1回**（§9.3）。二組目は「受けて立つ」が押せない */
+    async function runBottle(ch, plan, R) {
+      const G = JansouGuests;
+      const bottle = G.bottleOf(ch.tier);
+      const stock = parlorOf(store.get()).bottles[ch.tier - 1] | 0;
+      const nushiHere = plan.faces.some((f) => {
+        const r = plan.parlor.regulars[f.id];
+        return r && G.stageOf(r.visits || 0) >= 3 && f.id !== ch.guestId;
+      });
+      const k = await askBottle(ch, bottle, stock, R.challenged, nushiHere);
+      const night = plan.day.slots[2].sales;
+      const apply = (outcome) => {
+        const res = G.resolveBottle(ch.kind, ch.tier, outcome, stock, { nightSales: night });
+        R.extraMoney += res.extraMoney; R.repDelta += res.repDelta;
+        R.bottles[ch.tier - 1] += res.bottleDelta;
+        R.buffsAdd = R.buffsAdd.concat(res.buffs);
+        res.lines.forEach((l) => R.lines.push(l));
+        if (res.visitsBonus && ch.guestId) R.visitsBonus[ch.guestId] = (R.visitsBonus[ch.guestId] || 0) + res.visitsBonus;
+        if (res.evicted) R.evicted = true;
+      };
+
+      if (k === 'me') {
+        R.challenged = true;
+        setParlor({ challengedToday: true });
+        const mates = plan.slotWorkers[ch.slot != null ? ch.slot : 2].slice(0, 2);
+        const table = [playerCard(), ch.chara].concat(mates);
+        for (let i = 0; table.length < 4; i++) table.push(plan.fillers[i]);
+        const rank = await playOrSimulate(table, bottle.name + 'を賭けた一局');
+        const mine = rank.find((r) => r.chara.id === 0);
+        const his = rank.find((r) => r.chara.id === ch.chara.id);
+        apply(mine && his && mine.place < his.place ? 'win' : 'lose');
+      } else if (k === 'ace') {
+        const best = plan.dayWorkers.slice().sort((x, y) => strengthOf(y, STYLES) - strengthOf(x, STYLES))[0];
+        const table = [best, ch.chara].concat(plan.dayWorkers.filter((c) => c.id !== best.id).slice(0, 2));
+        for (let i = 0; table.length < 4; i++) table.push(plan.fillers[i]);
+        const rank = simulateTable(table, STYLES);
+        const hers = rank.find((r) => r.chara.id === best.id);
+        const his = rank.find((r) => r.chara.id === ch.chara.id);
+        apply(hers.place < his.place ? 'aceWin' : 'aceLose');
+      } else {
+        apply(k);   // refuse / guard / police / nushiShoo
+      }
+    }
+
+    function askBottle(ch, bottle, stock, challenged, nushiHere) {
+      return new Promise((resolve) => {
+        const G = JansouGuests;
+        const C = G.CHALLENGES[ch.kind];
+        const stars = '★'.repeat(bottle.stars);
+        const isArashi = ch.kind === 'arashi';
+        const buttons = [];
+        buttons.push({ key: 'me', label: '受けて立つ', gold: true, disabled: challenged,
+          note: challenged ? '今日はもう打ちました' : '実際に一半荘を打つ' });
+        if (isArashi) {
+          const best = roster()[0];
+          buttons.push({ key: 'ace', label: 'エースに任せる', note: '結果は自動処理', disabled: !best });
+          if (nushiHere) buttons.push({ key: 'nushiShoo', label: '主に任せる', note: '常連の主が追い返す' });
+          buttons.push({ key: 'guard', label: '用心棒を呼ぶ', note: '30,000円', disabled: (store.get().money || 0) < 30000 });
+          buttons.push({ key: 'police', label: '警察を呼ぶ', note: '評判 −2' });
+        } else {
+          buttons.push({ key: 'refuse', label: ch.kind === 'uchishi' ? '丁重に断る' : ch.kind === 'nushi' ? 'また今度に' : '丁重に断る',
+            note: ch.kind === 'uchishi' ? '評判 −1' : '何も起きない' });
+        }
+        const ov = document.createElement('div');
+        ov.className = 'popup jnBottleWrap';
+        ov.innerHTML = `<div class="popupBox jnBottle" role="dialog" aria-modal="true" aria-label="${esc(C.title)}">
+          <div class="jnBtHead"><span class="jnBtTitle">${esc(bottle.name)}を賭けた勝負</span>
+            <span class="jnBtRank">格 ${stars}</span></div>
+          <div class="jnBtBody">
+            <div class="jnBtSub">${esc(C.title)}</div>
+            <div class="jnBtTop">
+              <div class="jnBtSprite"></div>
+              <div class="jnBtWho">
+                <div class="jnBtName">${esc(ch.name)}</div>
+                <div class="jnBtMeta">${esc(C.who)}${ch.visits ? `・来店 ${ch.visits}回` : ''}</div>
+                <div class="jnBtTalk">${esc(C.talk)}</div>
+              </div>
+            </div>
+            <div class="jnBtStake">
+              <div class="jnBtBottle"></div>
+              <dl>
+                <dt>賭けるもの</dt><dd class="big">${esc(bottle.name)}（${esc(bottle.sub)}）1本</dd>
+                <dt>店のボトル在庫</dt><dd>${stock}本${stock ? '' : '（無ければ仕入れて出す）'}</dd>
+                <dt>勝てば</dt><dd class="plus">客が入れる <b>+${bottle.price.toLocaleString('ja-JP')}円</b></dd>
+                <dt>負ければ</dt><dd class="minus">${ch.kind === 'nushi' ? '失うものなし（主のおごり）'
+                  : `店がおごる <b>在庫 −1本</b>${stock ? '' : `（仕入れ ${bottle.cost.toLocaleString('ja-JP')}円）`}`}</dd>
+              </dl>
+            </div>
+            <div class="jnBtBtns">${buttons.map((b) =>
+              `<button type="button" class="jnBtBtn${b.gold ? ' gold' : ''}" data-key="${b.key}" ${b.disabled ? 'disabled' : ''}>
+                ${esc(b.label)}<span>${esc(b.note || '')}</span></button>`).join('')}</div>
+            <div class="jnBtNotes">
+              <div>※ 受けると実際に一半荘を打ちます。${ch.kind === 'uchishi' ? '断ると評判が少し下がります。' : '断っても評判は下がりません。'}</div>
+              <div>※ 代表が打てるのは <b>1日1回</b> まで（${challenged ? '今日はもう打ちました' : '今日はまだ打っていません'}）</div>
+            </div>
+          </div>
+        </div>`;
+        ov.querySelector('.jnBtSprite').appendChild(JansouFloor.spriteSvg(
+          ch.kind === 'nushi' ? 'nushi' : ch.kind === 'arashi' ? 'arashi' : ch.typeKey, 5));
+        ov.querySelector('.jnBtBottle').appendChild(JansouFloor.bottleSvg(ch.tier, 6));
+        document.body.appendChild(ov);
+        ov.addEventListener('click', (e) => {
+          const b = e.target.closest('[data-key]');
+          if (!b || b.disabled) return;
+          ov.remove();
+          resolve(b.dataset.key);
+        });
+      });
     }
 
     /* ---------- 締め（純関数。store には触らない） ----------
@@ -839,6 +971,34 @@ const Jansou = (() => {
         lines.push(p.stage === 1 ? `${nm} が顔なじみになった`
           : p.stage === 2 ? `${nm} が常連になった` : `${nm} がこの店の主になった`);
       });
+      /* 主に勝つと忠誠が上がる（来店回数が進む）。§9.1 */
+      Object.keys(results.visitsBonus || {}).forEach((id) => {
+        if (reg.regulars[id]) reg.regulars[id] = Object.assign({}, reg.regulars[id],
+          { visits: (reg.regulars[id].visits || 0) + results.visitsBonus[id] });
+      });
+      /* 常連の主は客を呼ぶ（§6.1）。既存の buffs（取材と同じ経路）で翌日の客足に +4%ずつ、三人まで */
+      if (typeof JansouGuests !== 'undefined') {
+        const nushis = (plan.faces || []).filter((f) => {
+          const r = reg.regulars[f.id]; return r && JansouGuests.stageOf(r.visits || 0) >= 3;
+        }).length;
+        if (nushis) {
+          buffs0.push({ kind: 'pull', val: 0.04 * Math.min(3, nushis), days: 1 });
+          lines.push(`主が客を呼んでいる（明日の客足 +${4 * Math.min(3, nushis)}%）`);
+        }
+        /* 推しが辞めていたら乗り換える。今日の推し（出勤者から選ばれた子）に */
+        const rosterIds = new Set((plan.list || []).map((c) => c.id));
+        (plan.faces || []).forEach((f) => {
+          const r = reg.regulars[f.id];
+          if (!r || r.typeKey !== 'oshifan' || r.favTalent == null || rosterIds.has(r.favTalent)) return;
+          if (f.favTalent != null && rosterIds.has(f.favTalent)) {
+            reg.regulars[f.id] = Object.assign({}, r, { favTalent: f.favTalent });
+            const nm = (plan.list.find((c) => c.id === f.favTalent) || {}).name || '';
+            lines.push(`${JansouGuests.displayName(r)} の推しが ${nm} に変わった`);
+          }
+        });
+      }
+      /* ボトル在庫 */
+      const bottles = pNow.bottles.map((n, i) => Math.max(0, (n | 0) + ((results.bottles || [])[i] | 0)));
 
       const favor = Object.assign({}, stNow.favor || {}, results.favor);
       const patch = {
@@ -846,7 +1006,7 @@ const Jansou = (() => {
         comp, compMax, grades, favor,
         parlor: Object.assign(pNow, {
           day: parlor.day + 1, rep, buffs, log, challengedToday: false,
-          regulars: reg.regulars, seen: reg.seen,
+          regulars: reg.regulars, seen: reg.seen, bottles,
           total: {
             days: parlor.total.days + 1,
             sales: parlor.total.sales + day.sales,

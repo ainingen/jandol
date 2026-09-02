@@ -442,6 +442,79 @@ function eq(a, b, name) {
   }
 }
 
+/* ============================================================
+   第4段階：ボトル勝負（spec.md §9）
+   ============================================================ */
+{
+  const G = JansouGuests, F = JansouFloor;
+  function seeded(seed) {
+    let x = (seed | 0) || 1;
+    return () => { x ^= x << 13; x ^= x >>> 17; x ^= x << 5; x |= 0; return ((x >>> 0) % 100000) / 100000; };
+  }
+
+  /* --- 6段階の値段は §9.2 のとおり --- */
+  eq(G.BOTTLES.length, 6, 'ボトルは6段階');
+  eq(G.BOTTLES.map((b) => b.price).join(','), '12000,30000,60000,120000,300000,800000', '売値は §9.2 のとおり');
+  G.BOTTLES.forEach((b) => ok(b.cost < b.price, b.name + ' の仕入れ値は売値より安い'));
+  ok(G.BOTTLE_SPRITE.length === 14 && G.BOTTLE_SPRITE.every((l) => l.length === 8), '瓶の絵は8×14');
+
+  /* --- 荒らしの言い値は段階3〜4（10万円と桁が揃う） --- */
+  for (let i = 1; i <= 50; i++) { const t = G.arashiTier(seeded(i)); ok(t === 3 || t === 4, '荒らしの言い値は3か4', t); }
+
+  /* --- 挑戦者の抽選：一日に多くて一組、卓ごとの段階の範囲 --- */
+  const regs = { 'kaisha#1': { typeKey: 'kaisha', visits: 35 }, 'shachou#2': { typeKey: 'shachou', visits: 12 },
+                 'shachou#3': { typeKey: 'shachou', visits: 31 } };
+  const faces = [{ id: 'kaisha#1', typeKey: 'kaisha' }, { id: 'uchishi#4', typeKey: 'uchishi' },
+                 { id: 'shachou#2', typeKey: 'shachou' }, { id: 'shachou#3', typeKey: 'shachou' }, { id: 'inkyo#9', typeKey: 'inkyo' }];
+  const seenKinds = {};
+  for (let i = 1; i <= 300; i++) {
+    const c = G.pickChallenge(faces, regs, { rep: 50 }, seeded(i));
+    if (!c) continue;
+    seenKinds[c.kind] = (seenKinds[c.kind] || 0) + 1;
+    ok(['nushi', 'uchishi', 'shachou'].indexOf(c.kind) >= 0, '挑戦の種類', c.kind);
+    ok(c.kind !== 'arashi', '荒らしは抽選から出ない（pickEvent が唯一の発生源）');
+    if (c.kind === 'nushi') { eq(c.tier, 1, '主はビール'); eq(c.guestId, 'kaisha#1', '主は段階3の常連'); }
+    if (c.kind === 'uchishi') ok(c.tier === 2 || c.tier === 3, '打ち師はハウス〜日本酒', c.tier);
+    if (c.kind === 'shachou') {
+      ok(c.tier >= 4 && c.tier <= 6, '社長はワイン〜タワー', c.tier);
+      if (c.guestId === 'shachou#2') ok(c.tier === 5, '常連（段階2）の社長はシャンパン', c.tier);
+      if (c.guestId === 'shachou#3') ok(c.tier === 5 || c.tier === 6, '主の社長はシャンパンかタワー', c.tier);
+    }
+  }
+  ok(seenKinds.nushi && seenKinds.uchishi && seenKinds.shachou, '三種とも出る', JSON.stringify(seenKinds));
+  ok(!G.pickChallenge([{ id: 'inkyo#1', typeKey: 'inkyo' }], {}, { rep: 50 }, seeded(1)), '挑まない客だけなら無し');
+  ok(!G.pickChallenge([{ id: 'uchishi#1', typeKey: 'uchishi' }], {}, { rep: 10 }, seeded(1)), '評判30未満に打ち師は挑まない');
+
+  /* --- 結果：金は賭けない。負けたほうがボトルを入れる --- */
+  let r = G.resolveBottle('shachou', 5, 'win', 0, {});
+  eq(r.extraMoney, 300000, '勝てば客が入れる（+売値）'); eq(r.bottleDelta, 0, '勝ったとき在庫は減らない');
+  r = G.resolveBottle('shachou', 5, 'lose', 3, {});
+  eq(r.extraMoney, 0, '在庫があれば負けても金は動かない'); eq(r.bottleDelta, -1, '負ければ店がおごる（在庫 −1）');
+  r = G.resolveBottle('shachou', 5, 'lose', 0, {});
+  eq(r.extraMoney, -100000, '在庫が無ければ仕入れ費を引く'); eq(r.bottleDelta, 0, '在庫はマイナスにならない');
+  r = G.resolveBottle('shachou', 6, 'win', 0, {});
+  ok(r.buffs.length === 1 && r.buffs[0].kind === 'pull', 'タワーは翌日以降の客足が増える');
+  r = G.resolveBottle('nushi', 1, 'lose', 0, {});
+  eq(r.extraMoney + r.bottleDelta + r.repDelta, 0, '主に負けても失うものなし');
+  r = G.resolveBottle('nushi', 1, 'win', 0, {});
+  eq(r.visitsBonus, 2, '主に勝つと忠誠が上がる');
+  eq(G.resolveBottle('uchishi', 2, 'refuse', 0, {}).repDelta, -1, '断って評判が下がるのは果たし状だけ');
+  eq(G.resolveBottle('shachou', 4, 'refuse', 0, {}).repDelta, 0, '社長を断っても評判は下がらない');
+  eq(G.resolveBottle('nushi', 1, 'refuse', 0, {}).repDelta, 0, '主を断っても評判は下がらない');
+  /* 荒らし：打たない解決策 */
+  eq(G.resolveBottle('arashi', 3, 'guard', 0, {}).extraMoney, -30000, '用心棒は3万円');
+  eq(G.resolveBottle('arashi', 3, 'police', 0, {}).repDelta, -2, '警察は評判 −2');
+  ok(G.resolveBottle('arashi', 3, 'nushiShoo', 0, {}).evicted, '主が追い返す');
+  r = G.resolveBottle('arashi', 4, 'lose', 0, { nightSales: 100000 });
+  eq(r.extraMoney, -40000 - 10000, '荒らしに負けると仕入れ費と夜の売上の1割');
+  ok(G.resolveBottle('arashi', 4, 'win', 0, {}).extraMoney === 120000, '荒らしに勝てば言い値のボトルが入る');
+
+  /* --- タイムラインへの差し込みが順を保つ --- */
+  const tl = [{ t: 1, kind: 'arrive' }, { t: 3, kind: 'leave' }, { t: 3, kind: 'arrive' }, { t: 5, kind: 'slotEnd' }];
+  F.insertEvent(tl, { t: 3, kind: 'interrupt' });
+  eq(tl.map((e) => e.t + e.kind).join(' '), '1arrive 3leave 3arrive 3interrupt 5slotEnd', '同時刻でも種類の順を保って差さる');
+}
+
 /* ============================================================ */
 console.log('通過 ' + pass + ' 件');
 if (fails.length) {

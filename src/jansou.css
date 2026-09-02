@@ -145,3 +145,19 @@
   font-size:11.5px;color:var(--muted);text-align:left;
 }
 .jnRepGrowth em{font-style:normal;color:var(--gold)}
+
+/* ---------- ボトル在庫（ボトル勝負で負けたときにおごるぶん。§9） ---------- */
+.jnSecNote{font-size:11px;letter-spacing:0;color:var(--muted);margin-left:8px;font-weight:400}
+.jnBottles{display:grid;gap:6px}
+.jnBottleRow{
+  display:flex;align-items:center;gap:10px;padding:7px 10px;
+  background:var(--panel);border:1px solid var(--gold-dim);border-radius:5px;
+}
+.jnBottleIcon{flex:none;width:16px;line-height:0}
+.jnBottleBody{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.jnBottleName{font-size:13px;color:var(--ivory)}
+.jnBottleName i{font-style:normal;font-size:11px;color:var(--muted);margin-left:6px}
+.jnBottleSub{font-size:11px;color:var(--muted)}
+.jnBottleSub b{color:var(--gold);font-size:13px}
+.jnUp.small{font-size:11px;padding:5px 9px}
+.jnUp.small b{font-size:11px}

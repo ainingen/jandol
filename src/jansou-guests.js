@@ -447,6 +447,131 @@ const JansouGuests = (() => {
     return { regulars: trim(regulars), seen: trimSeen(seen), promoted };
   }
 
+  /* ============================================================
+     ボトル勝負（spec.md §9）
+     金は賭けない。負けたほうがボトルを入れる。
+     ここは純粋なデータと関数だけ。ダイアログと実対局は jansou.js
+     ============================================================ */
+  const BOTTLES = [
+    { tier: 1, name: 'ビール', sub: '常連の一杯', price: 12000, cost: 4000, stars: 1,
+      col: { body: '#e8c25a', label: '#fff6e0', cap: '#c8a44a' } },
+    { tier: 2, name: 'ハウスボトル', sub: '焼酎キープ', price: 30000, cost: 10000, stars: 2,
+      col: { body: '#dcdce6', label: '#7a86a8', cap: '#8a8aa0' } },
+    { tier: 3, name: '日本酒', sub: '四合瓶', price: 60000, cost: 20000, stars: 3,
+      col: { body: '#3e9670', label: '#fff6e0', cap: '#f05454' } },
+    { tier: 4, name: 'ワイン', sub: '赤の一本', price: 120000, cost: 40000, stars: 4,
+      col: { body: '#8a2a48', label: '#f0d8b0', cap: '#5c1c30' } },
+    { tier: 5, name: 'シャンパン', sub: 'ドンペリ', price: 300000, cost: 100000, stars: 5,
+      col: { body: '#e6d28a', label: '#2a2020', cap: '#c8a44a' } },
+    { tier: 6, name: 'タワー', sub: 'シャンパンタワー', price: 800000, cost: 260000, stars: 5,
+      col: { body: '#fff6e0', label: '#ff56b2', cap: '#ffe86e' } },
+  ];
+  const bottleOf = (tier) => BOTTLES[Math.max(1, Math.min(6, tier | 0)) - 1];
+
+  /* 瓶のドット絵。8列×14行。o 輪郭 / c 栓 / b 瓶 / l ラベル / h ハイライト */
+  const BOTTLE_SPRITE = [
+    '...cc...',
+    '...cc...',
+    '..obbo..',
+    '..obbo..',
+    '.obbbbo.',
+    'obbhbbbo',
+    'obbhbbbo',
+    'ollllllo',
+    'ollllllo',
+    'obbbbbbo',
+    'obbbbbbo',
+    'obbbbbbo',
+    'obbbbbbo',
+    '.oooooo.',
+  ];
+
+  /* 4つの卓（§9.1）。tiers は賭かるボトルの段階の範囲 */
+  const CHALLENGES = {
+    nushi:   { title: 'いつもの人と一局', tiers: [1, 1], who: '常連の主',
+               talk: '「今日も来たよ。ビール一本、どうだい」' },
+    uchishi: { title: '名指しの果たし状', tiers: [2, 3], who: '打ち師',
+               talk: '「代表と打たせてもらいたい。負けたほうが一本入れる、で」' },
+    arashi:  { title: '黙らせる一局', tiers: [3, 4], who: '荒らし',
+               talk: '「金は野暮だ。負けたほうが一本入れる。それでどうだ、代表」' },
+    shachou: { title: 'ボトルを賭ける', tiers: [4, 6], who: '社長',
+               talk: '「いい卓じゃないか。一本賭けて打とう」' },
+  };
+
+  /* 今日の挑戦者を選ぶ（純関数。乱数は rng だけ）。一日に多くて一組。
+     faces … 今日来る顔 [{id, typeKey}]。regulars … 常連。opts.rep … 評判
+     荒らしはここでは選ばない（pickEvent が唯一の発生源。§9.4） */
+  function pickChallenge(faces, regulars, opts, rng) {
+    regulars = regulars || {};
+    const cands = [];
+    (faces || []).forEach((f) => {
+      const reg = regulars[f.id];
+      const stage = reg ? stageOf(reg.visits || 0) : 0;
+      /* 型を先に見る。段階3の社長は「いつもの人」ではなく、タワーを賭ける大一番の候補 */
+      if (f.typeKey === 'shachou') cands.push({ kind: 'shachou', face: f, stage });
+      else if (f.typeKey === 'uchishi' && (opts.rep || 0) >= 30) cands.push({ kind: 'uchishi', face: f, stage });
+      else if (stage >= 3) cands.push({ kind: 'nushi', face: f, stage });
+    });
+    const rolled = cands.filter(() => rng() < 0.5);
+    if (!rolled.length) return null;
+    const c = rolled[Math.floor(rng() * rolled.length)];
+    let tier = 1;
+    if (c.kind === 'uchishi') tier = rng() < 0.5 ? 2 : 3;
+    else if (c.kind === 'shachou') {
+      /* 常連の格が上がるほど賭かるボトルの格も上がる（§9.2）。タワーは主だけ、しかも稀 */
+      tier = 4 + (c.stage >= 2 ? 1 : 0) + (c.stage >= 3 && rng() < 0.25 ? 1 : 0);
+    }
+    return { kind: c.kind, guestId: c.face.id, typeKey: c.face.typeKey, tier: Math.min(6, tier), stage: c.stage };
+  }
+  /* 荒らしの言い値。ARASHI_STAKE（10万）と桁を揃えて段階3〜4（§9.4） */
+  function arashiTier(rng) { return rng() < 0.5 ? 3 : 4; }
+
+  /* 勝負の結果を数字に落とす（純関数）。
+       outcome … win / lose / refuse / guard / police / nushiShoo / aceWin / aceLose
+       stock   … その段階の在庫本数
+       ctx     … { nightSales }
+     返すもの … { extraMoney, repDelta, bottleDelta, buffs, lines, visitsBonus, evicted }
+     負けて店がおごるとき、在庫が無ければ仕入れ費を引く（§9.4） */
+  function resolveBottle(kind, tier, outcome, stock, ctx) {
+    const b = bottleOf(tier);
+    const r = { extraMoney: 0, repDelta: 0, bottleDelta: 0, buffs: [], lines: [], visitsBonus: 0, evicted: false };
+    const treat = () => {
+      if ((stock | 0) > 0) { r.bottleDelta = -1; return b.name + 'を一本おごった（在庫 −1）'; }
+      r.extraMoney -= b.cost;
+      return b.name + 'を仕入れておごった（−' + b.cost.toLocaleString('ja-JP') + '円）';
+    };
+    const sold = () => { r.extraMoney += b.price; return b.name + 'が入った（+' + b.price.toLocaleString('ja-JP') + '円）'; };
+    const who = CHALLENGES[kind] ? CHALLENGES[kind].who : '客';
+
+    if (kind === 'nushi') {
+      if (outcome === 'win') { r.lines.push('主に勝った。' + sold()); r.repDelta += 1; r.visitsBonus = 2; }
+      else if (outcome === 'lose') r.lines.push('主に負けた。「今日は俺のおごりだ」— 失うものは無い');
+    } else if (kind === 'uchishi') {
+      if (outcome === 'win') { r.lines.push('打ち師を下した。' + sold() + '・評判 +8'); r.repDelta += 8; }
+      else if (outcome === 'lose') { r.lines.push('打ち師に負けた。' + treat() + '・評判 −4'); r.repDelta -= 4; }
+      else if (outcome === 'refuse') { r.lines.push('果たし状を断った（評判 −1）'); r.repDelta -= 1; }
+    } else if (kind === 'arashi') {
+      if (outcome === 'win') { r.lines.push('荒らしを返り討ちにした。' + sold() + '・評判 +6'); r.repDelta += 6; r.evicted = true; }
+      else if (outcome === 'lose') {
+        const lost = Math.round(((ctx && ctx.nightSales) || 0) * 0.1);
+        r.extraMoney -= lost;
+        r.lines.push('荒らしに負けた。' + treat() + '・客が引いて夜の売上が飛んだ（−' + lost.toLocaleString('ja-JP') + '円）・評判 −3');
+        r.repDelta -= 3;
+      } else if (outcome === 'aceWin') { r.lines.push('エースが荒らしを退けた。' + sold() + '・評判 +4'); r.repDelta += 4; r.evicted = true; }
+      else if (outcome === 'aceLose') { r.lines.push('エースが荒らしに敗れた。' + treat() + '・評判 −3'); r.repDelta -= 3; }
+      else if (outcome === 'guard') { r.extraMoney -= 30000; r.lines.push('用心棒に追い出してもらった（−30,000円）'); r.evicted = true; }
+      else if (outcome === 'police') { r.repDelta -= 2; r.lines.push('警察を呼んで追い出した（店が騒ぎになって評判 −2）'); r.evicted = true; }
+      else if (outcome === 'nushiShoo') { r.lines.push('主が荒らしを追い返した'); r.evicted = true; }
+    } else if (kind === 'shachou') {
+      if (outcome === 'win') {
+        r.lines.push(who + 'に勝った。' + sold());
+        r.repDelta += tier >= 6 ? 5 : 2;
+        if (tier >= 6) { r.buffs.push({ kind: 'pull', val: 0.2, days: 3 }); r.lines.push('シャンパンタワーで店中が沸いた（評判 +5・三日間 客足が伸びる）'); }
+      } else if (outcome === 'lose') r.lines.push(who + 'に負けた。' + treat());
+    }
+    return r;
+  }
+
   /* seen も同じく上限で落とす（回数の少ない順） */
   function trimSeen(seen) {
     const keys = Object.keys(seen);
@@ -462,6 +587,7 @@ const JansouGuests = (() => {
     SEI, MEI_M, MEI_F, NIJINA,
     grid, makeGuest, displayName, bumpVisit, stageOf, stageInfo, trim, trimSeen,
     faceId, typeOfFace, pickFace, likeOf, bumpRegulars,
+    BOTTLES, BOTTLE_SPRITE, CHALLENGES, bottleOf, pickChallenge, arashiTier, resolveBottle,
   };
 })();
 
