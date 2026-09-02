@@ -86,6 +86,7 @@ const Jansou = (() => {
       speed: [1, 2, 4].indexOf(p.speed | 0) >= 0 ? p.speed | 0 : 1,
       bottles: Array.isArray(p.bottles) && p.bottles.length === 6 ? p.bottles.map((n) => n | 0) : [0, 0, 0, 0, 0, 0],
       regulars: p.regulars && typeof p.regulars === 'object' ? p.regulars : {},
+      seen: p.seen && typeof p.seen === 'object' ? p.seen : {},   // 一見さんの回数だけ（§7）
       challengedToday: !!p.challengedToday,
     };
   }
@@ -595,14 +596,25 @@ const Jansou = (() => {
       if (ev && ev.kind === 'shuzai') interrupts.push({ slot: 1, at: 8, node: { kind: 'shuzai' } });
       if (parlor.joinNight) interrupts.push({ slot: 2, at: 1, node: { kind: 'joinNight' } });
 
-      let timeline = [], summary = null;
+      let timeline = [], summary = null, faces = [], names = {};
       if (typeof JansouFloor !== 'undefined') {
         const built = JansouFloor.build(day, {
           fees: SLOTS.map((s) => s.fee), tableIdx,
           slotStaff: slotWorkers.map((w) => w.map((c) => c.id)),
           bonuses, interrupts,
+          regulars: parlor.regulars, seen: parlor.seen,
+          /* 荒らしは pickEvent が唯一の発生源（§9.4）。客タイプ「荒らし」はその姿 */
+          visitor: ev && ev.kind === 'arashi' ? { slot: 2, at: 6, typeKey: 'arashi', name: ev.chara.name, stay: 6 } : null,
         }, rng);
         timeline = built.timeline; summary = built.summary;
+        faces = summary.faces || [];
+        /* 今日来た顔の名前を**先に**作っておく（§1）。締めで3回目に達した顔だけが
+           この名前で常連になる。使わなかった名前は捨てる */
+        faces.forEach((f) => {
+          if (parlor.regulars[f.id]) return;
+          const g = JansouGuests.makeGuest(f.typeKey, rng);
+          names[f.id] = { sei: g.sei, mei: g.mei, nijina: g.nijina, sex: g.sex };
+        });
       } else {
         /* フロアが無い環境（テストなど）。割り込みだけ順に並べる */
         timeline = interrupts.map((x) => ({ t: 0, kind: 'interrupt', node: x.node }));
@@ -610,7 +622,7 @@ const Jansou = (() => {
 
       return {
         st0, parlor, list, slotWorkers, dayWorkers, day, ev, rolls, fillers,
-        closedTables, myTable, tableIdx, timeline, summary,
+        closedTables, myTable, tableIdx, timeline, summary, faces, names,
         wages: dayWorkers.reduce((a, c) => a + wageOf(c), 0),
         util: utilOf(parlor.tables),
       };
@@ -639,6 +651,7 @@ const Jansou = (() => {
           try { await handleInterrupt(node, plan, results); }
           finally { el.classList.remove('paused'); }
         },
+        onGuestTap: (g) => showGuestCard(g, plan),
       });
       return results;
     }
@@ -813,12 +826,27 @@ const Jansou = (() => {
         day: parlor.day + 1, guests: day.guests, sales: day.sales, profit,
       }).slice(-7);
 
+      /* 常連。今日来た顔を数え、3回目に達した顔だけ名前つきで登録する（§7）。
+         「この客を覚える」で日中に登録されたぶんは stNow.parlor に入っている */
+      const pNow = parlorOf(stNow);
+      const meta = {};
+      (plan.faces || []).forEach((f) => { meta[f.id] = { typeKey: f.typeKey, favTalent: f.favTalent }; });
+      const reg = typeof JansouGuests !== 'undefined'
+        ? JansouGuests.bumpRegulars(pNow.regulars, pNow.seen, (plan.faces || []).map((f) => f.id), plan.names || {}, meta)
+        : { regulars: pNow.regulars, seen: pNow.seen, promoted: [] };
+      reg.promoted.slice(0, 3).forEach((p) => {
+        const nm = JansouGuests.displayName(p.guest);
+        lines.push(p.stage === 1 ? `${nm} が顔なじみになった`
+          : p.stage === 2 ? `${nm} が常連になった` : `${nm} がこの店の主になった`);
+      });
+
       const favor = Object.assign({}, stNow.favor || {}, results.favor);
       const patch = {
         money: (stNow.money || 0) + profit,
         comp, compMax, grades, favor,
-        parlor: Object.assign(parlorOf(stNow), {
+        parlor: Object.assign(pNow, {
           day: parlor.day + 1, rep, buffs, log, challengedToday: false,
+          regulars: reg.regulars, seen: reg.seen,
           total: {
             days: parlor.total.days + 1,
             sales: parlor.total.sales + day.sales,
@@ -828,6 +856,76 @@ const Jansou = (() => {
         }),
       };
       return { patch, profit, extraMoney, growth, lines };
+    }
+
+    /* ---------- 客カード（§8。customer-card.png が仕様） ----------
+       タップで再生が止まり、閉じると再開する（止める・再開は floor 側）。
+       「この客を覚える」は regulars への強制登録＝段階1へ */
+    function showGuestCard(g, plan) {
+      return new Promise((resolve) => {
+        const G = JansouGuests;
+        const type = G.BY_KEY[g.typeKey] || G.TYPES[0];
+        const cat = G.CAT[type.cat];
+        const pNow = parlorOf(store.get());
+        const reg = pNow.regulars[g.guestId] || null;
+        /* 今日の来店を1回に数えて見せる（締めで実際に加算される） */
+        const visits = reg ? (reg.visits || 0) + 1 : (pNow.seen[g.guestId] || 0) + 1;
+        const info = G.stageInfo(visits);
+        const shown = reg ? G.displayName(Object.assign({}, reg, { visits })) : type.alias;
+        const isNushi = reg && info.stage >= 3;
+        const fav = g.favTalent != null ? (roster().find((c) => c.id === g.favTalent) || {}).name : null;
+        const canRemember = !reg && !g.transient && plan.names && plan.names[g.guestId];
+
+        const ov = document.createElement('div');
+        ov.className = 'popup jnCardWrap';
+        ov.innerHTML = `<div class="popupBox jnCard" role="dialog" aria-modal="true" aria-label="${esc(shown)}"
+            style="--jnCat:${cat.color}">
+          <div class="jnCardHead"><span class="jnCardType">${esc(isNushi ? '常連の主' : type.name)}</span>
+            <span class="jnCardChip">${esc(type.personality)}</span></div>
+          <div class="jnCardBody">
+            <div class="jnCardTop">
+              <div class="jnCardSprite"></div>
+              <div class="jnCardWho">
+                <div class="jnCardName">${esc(shown)}${g.count > 1 ? `<small>ほか${g.count - 1}人</small>` : ''}</div>
+                <div class="jnCardStage">${esc(info.label)}</div>
+                <div class="jnCardVisits">来店 <b>${visits}</b>回
+                  <span class="jnCardTrack"><span class="jnCardFill" style="width:${Math.round(info.progress * 100)}%"></span></span></div>
+                <div class="jnCardNext">${info.next
+                  ? `あと${info.next.left}回で${esc(info.next.name)}（${esc(info.next.gain)}）` : 'この店の主'}</div>
+              </div>
+            </div>
+            <dl class="jnCardRows">
+              <dt>お目当て</dt><dd>${fav ? esc(fav) : '—'}</dd>
+              <dt>今夜のお勘定</dt><dd>${yen(g.amount || 0)}</dd>
+              <dt>この店の好み</dt><dd class="like">${esc(G.likeOf(type))}</dd>
+            </dl>
+            <div class="jnCardTalk">${esc(type.talk)}</div>
+            <div class="jnCardBtns">
+              ${canRemember ? '<button type="button" class="jnCardBtn gold" data-key="remember">この客を覚える</button>' : ''}
+              <button type="button" class="jnCardBtn" data-key="close">とじる</button>
+            </div>
+          </div>
+        </div>`;
+        ov.querySelector('.jnCardSprite').appendChild(JansouFloor.spriteSvg(g.look || g.typeKey, 6));
+        document.body.appendChild(ov);
+        ov.addEventListener('click', (e) => {
+          const b = e.target.closest('[data-key]');
+          if (!b) return;
+          if (b.dataset.key === 'remember' && canRemember) {
+            const p = parlorOf(store.get());
+            const regulars = Object.assign({}, p.regulars);
+            regulars[g.guestId] = Object.assign({
+              typeKey: g.typeKey, visits: Math.max(G.STAGE[1].visits, visits) - 1,   // 締めで+1される
+              favTalent: g.favTalent != null ? g.favTalent : null,
+            }, plan.names[g.guestId]);
+            const seen = Object.assign({}, p.seen);
+            delete seen[g.guestId];
+            setParlor({ regulars: G.trim(regulars), seen });
+          }
+          ov.remove();
+          resolve();
+        });
+      });
     }
 
     /* ---------- 結果。時間帯の内訳は再生で見せたので、締めだけ（§12） ---------- */

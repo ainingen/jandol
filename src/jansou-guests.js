@@ -355,6 +355,56 @@ const JansouGuests = (() => {
     return { promoted: after > before ? after : null, stage: after };
   }
 
+  /* ---------- 顔の池 ----------
+     同じ客が日をまたいで再訪できるように、タイプごとに FACES 人ぶんの
+     「顔」を用意して、その中から来る人を選ぶ。顔の id は 'タイプ#番号'。
+     一見さんの名前は保存しない。名前が要るのは段階1（3回目）から。
+
+     来店回数は parlor.seen（id → 回数。段階0のあいだだけ、数だけ）で数え、
+     3回目に達したときに初めて regulars に名前つきで登録する（§7）。
+     seen は id と小さな整数だけなので、200件でも2KBに満たない */
+  const FACES = 40;                 // タイプごとの顔の数。終盤の夜（82人）でも尽きにくい数
+  const MAX_SEEN = 200;             // 段階0の回数を覚えておく上限
+
+  function faceId(typeKey, n) { return typeKey + '#' + n; }
+  function typeOfFace(id) { return String(id).split('#')[0]; }
+
+  /* 来る顔を選ぶ。知っている顔（常連 → 顔なじみ候補）を優先して、
+     残りは池から。知っている顔は再訪しやすくしないと常連が育たない */
+  function pickFace(typeKey, regulars, seen, rng) {
+    const known = [];
+    Object.keys(regulars || {}).forEach((id) => { if (typeOfFace(id) === typeKey) known.push(id); });
+    Object.keys(seen || {}).forEach((id) => { if (typeOfFace(id) === typeKey && !(regulars && regulars[id])) known.push(id); });
+    if (known.length && rng() < 0.55) return known[Math.floor(rng() * known.length)];
+    return faceId(typeKey, Math.floor(rng() * FACES));
+  }
+
+  /* この店の好み。タイプの性格から一言で */
+  const LIKES = {
+    stay: '長居できる席が好き', base: '駅から近いのが気に入っている', daily: '昼の静けさが気に入っている',
+    group: 'にぎやかな卓が好き', teach: '教えてもらえるのがうれしい', tip: '内装が気に入っている',
+    repGate: '評判を見て来た', oshi: '推しが出ている日しか来ない', bottle: 'いい卓と高い酒が好き',
+    drive: '酒があれば満足', arashi: '賭けられる相手を探している', poach: '雀ドルを値踏みしている',
+    block: '話を聞いてくれる人を探している', impatient: '待たされるのが嫌い', rival: '設備を見に来ている',
+    challenge: '強い相手を探している', nushi: 'この店が居場所', press: 'ネタを探している',
+    master: '教えたがっている', stream: '映える店が好き', comeback: '昔を思い出しに来ている',
+    invite: '運営の堅さを見ている',
+  };
+  function likeOf(type) { return LIKES[(type.effect || {}).kind] || '居心地のいい店が好き'; }
+
+  /* 段階の説明と、次の段階までの残り */
+  function stageInfo(visits) {
+    const st = stageOf(visits);
+    const next = STAGE[st + 1] || null;
+    const names = ['一見さん', '顔なじみ', '常連', '主'];
+    const gains = ['名字が分かる', 'フルネームが分かる', '二つ名がつく', ''];
+    return {
+      stage: st, label: STAGE[st].label, name: names[st],
+      next: next ? { visits: next.visits, left: next.visits - visits, name: names[st + 1], gain: gains[st] } : null,
+      progress: next ? (visits - STAGE[st].visits) / (next.visits - STAGE[st].visits) : 1,
+    };
+  }
+
   /* 常連の記録。一見さん（段階0）は保存しない。
      上限200人、超えたら訪問回数の少ない順に落とす（§7） */
   function trim(regulars) {
@@ -366,10 +416,52 @@ const JansouGuests = (() => {
     return out;
   }
 
+  /* 一日の来店を常連の記録に反映する（純関数。store には触らない）。
+       ids   … 今日来た顔の id（同じ人は一日に一度だけ数える）
+       names … 今日はじめて名前が要るかもしれない顔の名前（prepareDay で先に作る）
+       meta  … id → {typeKey, favTalent}
+     3回目に達した顔だけを regulars に登録し、seen から外す。
+     一見さん（1〜2回）は seen に回数だけ残る（§7） */
+  function bumpRegulars(regulars, seen, ids, names, meta) {
+    regulars = Object.assign({}, regulars || {});
+    seen = Object.assign({}, seen || {});
+    const promoted = [];
+    Array.from(new Set(ids)).forEach((id) => {
+      if (regulars[id]) {
+        const r = Object.assign({}, regulars[id]);
+        const before = stageOf(r.visits || 0);
+        r.visits = (r.visits || 0) + 1;
+        if (stageOf(r.visits) > before) promoted.push({ id, stage: stageOf(r.visits), guest: r });
+        regulars[id] = r;
+        return;
+      }
+      seen[id] = (seen[id] || 0) + 1;
+      if (seen[id] >= STAGE[1].visits && names && names[id]) {
+        const m = (meta && meta[id]) || {};
+        regulars[id] = Object.assign({ typeKey: m.typeKey || typeOfFace(id), visits: seen[id],
+          favTalent: m.favTalent || null }, names[id]);
+        promoted.push({ id, stage: 1, guest: regulars[id] });
+        delete seen[id];
+      }
+    });
+    return { regulars: trim(regulars), seen: trimSeen(seen), promoted };
+  }
+
+  /* seen も同じく上限で落とす（回数の少ない順） */
+  function trimSeen(seen) {
+    const keys = Object.keys(seen);
+    if (keys.length <= MAX_SEEN) return seen;
+    keys.sort((a, b) => (seen[a] || 0) - (seen[b] || 0));
+    const out = Object.assign({}, seen);
+    keys.slice(0, keys.length - MAX_SEEN).forEach((k) => { delete out[k]; });
+    return out;
+  }
+
   return {
-    TYPES, BY_KEY, CAT, INK, SHADOW, BODY, HAIR, DECO, STAGE, MAX_REGULARS,
+    TYPES, BY_KEY, CAT, INK, SHADOW, BODY, HAIR, DECO, STAGE, MAX_REGULARS, MAX_SEEN, FACES,
     SEI, MEI_M, MEI_F, NIJINA,
-    grid, makeGuest, displayName, bumpVisit, stageOf, trim,
+    grid, makeGuest, displayName, bumpVisit, stageOf, stageInfo, trim, trimSeen,
+    faceId, typeOfFace, pickFace, likeOf, bumpRegulars,
   };
 })();
 

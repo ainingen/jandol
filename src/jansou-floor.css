@@ -98,6 +98,63 @@
 /* 割り込みで止まっているあいだ、フロアを少し沈める */
 .jnFloor.paused .jnFlStage{filter:brightness(.7)}
 
+/* ---------- 客の当たり判定（UI層。§8） ----------
+   透明なボタンを客の上に置く。座標は floorToScreen を通して JS が入れる */
+.jnFlHits{position:absolute;inset:0;pointer-events:none}
+.jnFlHit{
+  position:absolute;pointer-events:auto;cursor:pointer;
+  background:transparent;border:0;padding:0;margin:0;border-radius:3px;
+}
+.jnFlHit:focus-visible{outline:2px solid var(--jnGold)}
+
+/* ---------- 客カード（customer-card.png が仕様） ---------- */
+.jnCardWrap{align-items:center}
+.jnCard{
+  /* カードは body 直下に出すので、.jnFloor の変数が届かない。ここで持つ */
+  --jnWallLow:#241028; --jnPanel:#542c4c; --jnInk:#fff6e0; --jnSub:#eebee1;
+  --jnPink:#ff56b2; --jnGold:#ffce50;
+  --jnCat:#60e8ff;
+  max-width:400px;border:3px solid var(--jnCat);border-radius:14px;overflow:hidden;
+  background:var(--jnPanel);color:var(--jnInk);font-family:'MaruUI',system-ui,sans-serif;
+  box-shadow:0 12px 40px rgba(0,0,0,.6);
+}
+.jnCardHead{
+  display:flex;align-items:center;justify-content:space-between;gap:10px;
+  padding:12px 16px;background:var(--jnCat);color:#2a0c22;
+}
+.jnCardType{font-size:18px;font-weight:700;letter-spacing:.04em}
+.jnCardChip{font-size:12px;padding:3px 12px;border-radius:12px;background:#fff6e0;color:#2a0c22}
+.jnCardBody{padding:14px 16px 16px}
+.jnCardTop{display:flex;gap:14px;align-items:flex-start}
+.jnCardSprite{
+  flex:none;padding:8px;border-radius:8px;border:2px solid var(--jnCat);
+  background:#6e3c64;line-height:0;
+}
+.jnCardWho{flex:1;min-width:0}
+.jnCardName{font-size:22px;font-weight:700;line-height:1.2;word-break:break-all}
+.jnCardName small{font-size:12px;font-weight:400;color:var(--jnSub);margin-left:6px}
+.jnCardStage{font-size:12px;color:var(--jnSub);margin:4px 0 8px}
+.jnCardVisits{font-size:13px;display:flex;align-items:center;gap:8px}
+.jnCardVisits b{font-size:15px;color:var(--jnGold)}
+.jnCardTrack{flex:1;height:9px;border-radius:5px;background:rgba(0,0,0,.35);overflow:hidden}
+.jnCardFill{display:block;height:100%;background:var(--jnGold)}
+.jnCardNext{font-size:11px;color:var(--jnSub);margin-top:4px}
+.jnCardRows{display:grid;grid-template-columns:auto 1fr;gap:8px 14px;margin:14px 0 0;font-size:13px}
+.jnCardRows dt{color:var(--jnSub);font-size:12px;align-self:center}
+.jnCardRows dd{margin:0;color:var(--jnGold);font-weight:700}
+.jnCardRows dd.like{color:#96ffb4}
+.jnCardTalk{
+  margin-top:12px;padding:10px 12px;border-radius:8px;
+  background:rgba(0,0,0,.28);border:1px solid rgba(255,255,255,.1);font-size:13px;
+}
+.jnCardBtns{display:flex;gap:10px;margin-top:14px}
+.jnCardBtn{
+  flex:1;font:inherit;font-size:15px;font-weight:700;padding:11px 8px;border-radius:24px;cursor:pointer;
+  border:1px solid rgba(255,255,255,.18);background:#6e3c64;color:var(--jnInk);
+}
+.jnCardBtn.gold{background:var(--jnGold);border-color:var(--jnGold);color:#2a0c22}
+.jnCardBtn:focus-visible{outline:2px solid var(--jnInk);outline-offset:2px}
+
 /* ---------- ティッカー ---------- */
 .jnFlTicker{
   min-height:1.4em;padding:5px 8px;border-radius:0 0 5px 5px;

@@ -133,9 +133,11 @@ const JansouFloor = (() => {
 
      build(day, opts, rng) -> { timeline, summary }
        day   … Jansou.computeDay() の結果（slots[i].guests / sales / full）
-       opts  … { fees:[昼,夕,夜の場代], tableIdx:[使える卓の番号], staff:[{id,name}],
+       opts  … { fees:[昼,夕,夜の場代], tableIdx:[使える卓の番号],
                  slotStaff:[[id...]×3], bonuses:[{slot, at, amount, label}],
-                 interrupts:[{slot, at, node}] }
+                 interrupts:[{slot, at, node}],
+                 regulars:{id→常連}, seen:{id→回数},   … 顔の選択に使う（§7）
+                 visitor:{slot, at, typeKey, stay} }  … 帳簿に載らない来訪者（荒らし）
        rng   … 0〜1 を返す関数
 
      帳簿層で守ること:
@@ -153,7 +155,8 @@ const JansouFloor = (() => {
   /* 種類ごとの並び順。同時刻なら 退店 → 到着 → 支払い の順に消化する。
      退店を先にしないと swap の席が空かない */
   const ORD = { slotStart: 0, leave: 1, arrive: 2, full: 3, pay: 4, bonus: 5,
-                staffMove: 6, nominate: 7, interrupt: 8, slotEnd: 9, dayEnd: 10 };
+                staffMove: 6, nominate: 7, visitor: 8, interrupt: 9, visitorLeave: 10,
+                slotEnd: 11, dayEnd: 12 };
 
   function slotStartTimes() {
     const out = [];
@@ -237,16 +240,20 @@ const JansouFloor = (() => {
 
     const G = typeof JansouGuests !== 'undefined' ? JansouGuests
       : (typeof require === 'function' ? require('./jansou-guests.js').JansouGuests : null);
+    const usedToday = new Set();
 
     for (let si = 0; si < SLOT_SEC.length; si++) {
       const D = SLOT_SEC[si], t0 = starts[si];
       const slot = day.slots[si];
       const guests = slot.guests | 0, sales = slot.sales | 0;
       const fee = fees[si];
-      push({ t: t0, kind: 'slotStart', slot: si });
+      const onDuty = (opts.slotStaff && opts.slotStaff[si]) || [];
+      push({ t: t0, kind: 'slotStart', slot: si, staff: onDuty.slice() });
 
-      /* ---- 到着イベントを人数ぶん組む（群は人数を消費） ---- */
-      const pool = G.TYPES.filter((x) => x.weight > 0 && x.slots.indexOf(si) >= 0);
+      /* ---- 到着イベントを人数ぶん組む（群は人数を消費） ----
+         推しファンは、推しになれる子が出勤している帯にしか来ない（§6.1。見た目だけ） */
+      const pool = G.TYPES.filter((x) => x.weight > 0 && x.slots.indexOf(si) >= 0 &&
+        !(x.key === 'oshifan' && !onDuty.length));
       const single = pool.filter((x) => !(x.effect && x.effect.kind === 'group'));
       const pickFrom = (arr) => {
         const W = arr.reduce((a, x) => a + x.weight, 0);
@@ -261,7 +268,29 @@ const JansouFloor = (() => {
         const gsize = tp.effect && tp.effect.kind === 'group' ? tp.effect.val : 1;
         if (gsize > left) tp = pickFrom(single);           // 「カップル1人」は作らない
         const count = tp.effect && tp.effect.kind === 'group' ? tp.effect.val : 1;
-        arrivals.push({ type: tp, count });
+        /* 誰が来るか。**同じ人は一日に一度だけ。** かぶったら引き直し、
+           それでもかぶれば池を順に見て空いている顔、それも無ければその日限りの
+           id（覚えない）にする。id が重なると席の追い出しや支払いが二重になる */
+        let face = G.pickFace(tp.key, opts.regulars, opts.seen, rng);
+        for (let r = 0; r < 3 && usedToday.has(face); r++) face = G.pickFace(tp.key, opts.regulars, opts.seen, rng);
+        let transient = false;
+        if (usedToday.has(face)) {
+          face = null;
+          for (let n = 0; n < G.FACES; n++) {
+            const cand = G.faceId(tp.key, n);
+            if (!usedToday.has(cand)) { face = cand; break; }
+          }
+          if (!face) { face = tp.key + '#d' + si + '-' + arrivals.length; transient = true; }
+        }
+        usedToday.add(face);
+        const reg = opts.regulars && opts.regulars[face];
+        const favTalent = tp.key === 'oshifan'
+          ? ((reg && reg.favTalent != null && onDuty.indexOf(reg.favTalent) >= 0) ? reg.favTalent
+            : onDuty[Math.floor(rng() * onDuty.length)])
+          : null;
+        arrivals.push({ type: tp, count, face, favTalent, transient,
+          /* 主（段階3）になった常連は、常連の主の姿で描く */
+          look: reg && G.stageOf(reg.visits || 0) >= 3 ? 'nushi' : tp.key });
         left -= count;
       }
       const N = arrivals.length;
@@ -278,7 +307,7 @@ const JansouFloor = (() => {
       arrivals.forEach((a, k) => {
         const t = t0 + D * Math.pow((k + 0.5) / N, 0.8);
         release(t);
-        const guestId = 'g' + si + '-' + k;
+        const guestId = a.face;
         let seats = pickSeats(a.count);
         let mode = 'swap', evict = null;
         if (seats) {
@@ -307,7 +336,8 @@ const JansouFloor = (() => {
         });
         if (mode === 'walk') walkN++; else swapN++;
         lastTable = table;
-        push({ t, kind: 'arrive', slot: si, guestId, typeKey: a.type.key, count: a.count,
+        push({ t, kind: 'arrive', slot: si, guestId, typeKey: a.type.key, look: a.look, count: a.count,
+               amount: amounts[k], favTalent: a.favTalent, transient: a.transient || undefined,
                table, seat: seatNo,
                seats: seats.map((s) => ({ table: tableIdx[(s / SEATS_PER_TABLE) | 0], seat: s % SEATS_PER_TABLE })),
                mode, evict });
@@ -318,7 +348,6 @@ const JansouFloor = (() => {
       });
 
       /* ---- スタッフの動き（種から、2.5〜4秒間隔） ---- */
-      const onDuty = (opts.slotStaff && opts.slotStaff[si]) || [];
       if (onDuty.length) {
         let t = t0 + 1.5 + rng() * 1.5, r = 0;
         while (t < t0 + D - 1) {
@@ -340,6 +369,14 @@ const JansouFloor = (() => {
       (opts.interrupts || []).filter((x) => x.slot === si).forEach((x) => {
         push({ t: t0 + Math.min(D - 0.5, x.at != null ? x.at : 1), kind: 'interrupt', node: x.node });
       });
+      /* 帳簿に載らない来訪者（荒らし）。入口に現れて、割り込みのあと去る。
+         guests にも sales にも数えない（§5.3 の厳密一致を崩さない） */
+      if (opts.visitor && opts.visitor.slot === si) {
+        const v = opts.visitor;
+        const tv = t0 + Math.max(0, (v.at != null ? v.at : 5) - 1.5);
+        push({ t: tv, kind: 'visitor', typeKey: v.typeKey, name: v.name || '' });
+        push({ t: Math.min(t0 + D - 0.2, tv + (v.stay || 6)), kind: 'visitorLeave' });
+      }
 
       push({ t: t0 + D, kind: 'slotEnd', slot: si, guests, sales });
       summary.perSlot.push({ guests, sales, arrives: N, walks: walkN, swaps: swapN });
@@ -353,6 +390,14 @@ const JansouFloor = (() => {
     /* 同時刻は ORD の順。sort は安定なので、同種は入れた順のまま */
     ev.sort((a, b) => (a.t - b.t) || (ORD[a.kind] - ORD[b.kind]));
     summary.duration = dayEndT;
+    /* 今日来た顔（同じ人は一度）。jansou.js が名前を用意し、締めで常連に反映する */
+    summary.faces = [];
+    const seenFace = new Set();
+    ev.forEach((e) => {
+      if (e.kind !== 'arrive' || e.transient || seenFace.has(e.guestId)) return;
+      seenFace.add(e.guestId);
+      summary.faces.push({ id: e.guestId, typeKey: e.typeKey, favTalent: e.favTalent });
+    });
     return { timeline: ev, summary };
   }
 
@@ -591,6 +636,16 @@ const JansouFloor = (() => {
     return null;
   }
 
+  /* 客カード用。スプライトを svg にして返す（等倍DOMの中に置く） */
+  function spriteSvg(typeKey, px) {
+    const t = G.BY_KEY[typeKey] || G.TYPES[0];
+    const sv = el('svg', { viewBox: '0 0 12 17', width: 12 * px, height: 17 * px,
+      'shape-rendering': 'crispEdges', 'aria-hidden': 'true' });
+    shadowRects(SEAT_W).forEach((r) => { r.setAttribute('y', +r.getAttribute('y') + 16); sv.appendChild(r); });
+    gridRects(G.grid(t.key, 0), guestColor(t)).forEach((r) => sv.appendChild(r));
+    return sv;
+  }
+
   /* 足元の楕円影。床が明るいので全スプライトに敷く（§4.4） */
   function shadowRects(w) {
     return [rect(1, 0, w - 2, 1, PAL.shadow), rect(0, -1, w, 1, PAL.shadow)];
@@ -630,12 +685,14 @@ const JansouFloor = (() => {
       '<span class="jnFlSales"></span><span class="jnFlSpeed">' +
       [1, 2, 4].map((v) => '<button type="button" class="jnFlSp" data-speed="' + v + '">×' + v + '</button>').join('') +
       '<button type="button" class="jnFlSp skip" data-skip="1" hidden>スキップ</button></span></div>' +
-      '<div class="jnFlStage"><div class="jnFlUi"></div></div>' +
+      '<div class="jnFlStage"><div class="jnFlUi"></div><div class="jnFlHits"></div></div>' +
       '<div class="jnFlTicker"></div>';
     host.appendChild(wrap);
 
     const stage = wrap.querySelector('.jnFlStage');
     const ui = wrap.querySelector('.jnFlUi');
+    const hits = wrap.querySelector('.jnFlHits');
+    const hitEls = new Map();      // guestId:seat -> div。作り直さず位置だけ動かす
     let svg = null, roomG = null, lightG = null, actG = null, defs = null;
     let scale = 3, floorW = FLOOR_W_MAX;
     let tables = [];
@@ -666,12 +723,15 @@ const JansouFloor = (() => {
       seated: new Map(), walkers: [], leavers: [], pops: [], flashes: [],
       staff: new Map(), hearts: new Set(),
       slot: -1, sales: 0, extra: 0, ticker: '', full: false, dayNo: 0, headNote: '',
+      visitor: null, highlight: null, paused: false, queue: [],
     };
     function resetLive() {
       live.clock = 0; live.real = 0; live.idx = 0; live.skipping = false;
       live.seated = new Map(); live.walkers = []; live.leavers = []; live.pops = []; live.flashes = [];
       live.staff = new Map(); live.hearts = new Set();
       live.slot = -1; live.sales = 0; live.extra = 0; live.ticker = ''; live.full = false;
+      live.visitor = null; live.highlight = null; live.paused = false; live.queue = [];
+      hitEls.forEach((d) => d.remove()); hitEls.clear();
     }
 
     function entrance() { return { x: (floorW >> 1) - 6, y: FLOOR_H - 20 }; }
@@ -780,6 +840,15 @@ const JansouFloor = (() => {
             fill: '#ff56b2', opacity: 0.10 }));
         });
       }
+      /* タップした客の枠（customer-card.png の黄色い枠） */
+      if (live.highlight) {
+        const g = live.seated.get(live.highlight);
+        const p = g && seatPos(g.seats[0].table, g.seats[0].seat);
+        if (p) {
+          lightG.appendChild(el('rect', { x: p.x - 1, y: p.y - 1, width: SEAT_W + 2, height: SEAT_H + 2,
+            fill: 'none', stroke: PAL.tableCall, 'stroke-width': 1 }));
+        }
+      }
       /* 席の入れ替わりの光（swap） */
       live.flashes.forEach((f) => {
         lightG.appendChild(el('rect', { x: f.x, y: f.y, width: SEAT_W, height: SEAT_H,
@@ -798,7 +867,7 @@ const JansouFloor = (() => {
           const p = seatPos(s.table, s.seat);
           if (!p) return;
           const frame = (Math.floor(c * 1.6 + (s.table * 4 + s.seat) * 0.7) % 3) === 0 ? 1 : 0;
-          putGuest(g.typeKey, p.x, p.y, frame);
+          putGuest(g.look || g.typeKey, p.x, p.y, frame);
         });
       });
       /* 歩いている客（入る／出る）。足は進み具合から */
@@ -813,12 +882,14 @@ const JansouFloor = (() => {
       /* 入口の待ち客。次に来る swap を最大2人まで見せる（§5.4） */
       const door = entrance();
       live.queue.forEach((q, i) => putGuest(q.typeKey, door.x + 14 + i * 9, door.y + 2, 0));
+      /* 帳簿に載らない来訪者（荒らし）。入口の脇に立つ */
+      if (live.visitor) putGuest(live.visitor.typeKey, door.x - 18, door.y - 2, Math.floor(c * 2) % 2);
 
       /* スタッフの体。接客中は体を揺らす（時刻だけから） */
       live.staff.forEach((s, id) => {
         const p = Math.min(1, (c - s.t0) / 1.0);
         s.x = s.fx + (s.tx - s.fx) * p; s.y = s.fy + (s.ty - s.fy) * p;
-        const bob = p >= 1 ? (Math.floor(c * 2 + id) % 2) : 0;
+        const bob = p >= 1 && !s.leaving ? (Math.floor(c * 2 + id) % 2) : 0;
         const sh = el('g', { transform: 'translate(' + Math.round(s.x) + ',' + (Math.round(s.y) + 7) + ')' });
         shadowRects(9).forEach((r) => sh.appendChild(r));
         actG.appendChild(sh);
@@ -904,7 +975,32 @@ const JansouFloor = (() => {
       });
     }
 
-    function paint() { drawLight(); drawActors(); drawUi(); }
+    /* 当たり判定。客ごとに透明なボタンを置き、位置だけ更新する。
+       毎フレーム作り直すと押した瞬間に消えて取りこぼす（速度ボタンで実際に起きた） */
+    function drawHits() {
+      const keep = new Set();
+      live.seated.forEach((g, id) => {
+        g.seats.forEach((s, j) => {
+          const p = seatPos(s.table, s.seat);
+          if (!p) return;
+          const key = id + ':' + j;
+          keep.add(key);
+          let d = hitEls.get(key);
+          if (!d) {
+            d = document.createElement('button');
+            d.type = 'button'; d.className = 'jnFlHit'; d.dataset.guest = id;
+            d.setAttribute('aria-label', '客を見る');
+            hits.appendChild(d); hitEls.set(key, d);
+          }
+          const q = floorToScreen(p.x, p.y);
+          d.style.left = Math.round(q.x) + 'px'; d.style.top = Math.round(q.y) + 'px';
+          d.style.width = (SEAT_W * scale) + 'px'; d.style.height = (SEAT_H * scale) + 'px';
+        });
+      });
+      hitEls.forEach((d, key) => { if (!keep.has(key)) { d.remove(); hitEls.delete(key); } });
+    }
+
+    function paint() { drawLight(); drawActors(); drawUi(); drawHits(); }
 
     /* ---------- 静止画（第一段の見せ方） ---------- */
     function render(state) {
@@ -944,12 +1040,38 @@ const JansouFloor = (() => {
     function applyEvent(e, hooks) {
       const c = live.clock;
       switch (e.kind) {
-        case 'slotStart':
+        case 'slotStart': {
           live.slot = e.slot; live.full = false;
           live.ticker = SLOT_NAMES[e.slot] + 'の営業（' + SLOT_HOURS[e.slot] + '）';
+          /* 帯のシフトどおりに出入りする。昼だけの子は夜には居ない */
+          const want = new Set(e.staff || []);
+          live.staff.forEach((s, id) => {
+            if (want.has(id) || s.leaving) return;
+            const door = entrance();
+            s.fx = s.x; s.fy = s.y; s.tx = door.x; s.ty = door.y; s.t0 = c; s.leaving = true; s.at = null;
+            live.hearts.delete(id);
+            if (live.skipping) live.staff.delete(id);
+          });
+          (e.staff || []).forEach((id, i) => {
+            if (live.staff.has(id) && !live.staff.get(id).leaving) return;
+            const door = entrance();
+            const table = i % Math.max(1, tables.length);
+            live.staff.set(id, { x: door.x, y: door.y, fx: door.x, fy: door.y, tx: door.x, ty: door.y,
+              t0: c, at: null, table, leaving: false });
+            moveStaff(id, table);
+          });
+          break;
+        }
+        case 'visitor':
+          live.visitor = { typeKey: e.typeKey, name: e.name };
+          live.ticker = (e.name ? e.name + ' が' : '') + '入口で騒いでいる';
+          break;
+        case 'visitorLeave':
+          live.visitor = null;
           break;
         case 'arrive': {
-          const seatOne = () => live.seated.set(e.guestId, { typeKey: e.typeKey, count: e.count, seats: e.seats });
+          const seatOne = () => live.seated.set(e.guestId, { typeKey: e.typeKey, look: e.look, count: e.count,
+            seats: e.seats, amount: e.amount, favTalent: e.favTalent, transient: e.transient });
           const to = seatPos(e.seats[0].table, e.seats[0].seat) || entrance();
           yieldSeats(e.seats);
           if (e.mode === 'walk' && !live.skipping) {
@@ -1013,6 +1135,7 @@ const JansouFloor = (() => {
     function advance(dt) {
       live.real += dt;
       const c = live.clock;
+      live.staff.forEach((s, id) => { if (s.leaving && c - s.t0 >= 1.0) live.staff.delete(id); });
       live.walkers = live.walkers.filter((w) => {
         if (c - w.t0 >= w.dur) { w.seat(); return false; }
         return true;
@@ -1089,7 +1212,7 @@ const JansouFloor = (() => {
           if (!live.playing) return;
           const dt = Math.min(0.1, (now - prev) / 1000);
           prev = now;
-          if (!waiting) {
+          if (!waiting && !live.paused) {
             if (live.skipping) {
               live.clock = duration;
               live.walkers.forEach((w) => w.seat());
@@ -1112,6 +1235,27 @@ const JansouFloor = (() => {
 
     function setSpeed(v) { live.speed = v; }
     function skip() { if (live.playing) live.skipping = true; }
+    function pause() { live.paused = true; }
+    function resume() { live.paused = false; }
+
+    /* 客をタップ → 止めて → カード（jansou.js が描く）→ 閉じたら再開 */
+    hits.addEventListener('click', async (e) => {
+      const b = e.target.closest('[data-guest]');
+      if (!b || !live.playing || !hooksRef || !hooksRef.onGuestTap || live.paused) return;
+      const id = b.dataset.guest;
+      const g = live.seated.get(id);
+      if (!g) return;
+      pause();
+      live.highlight = id;
+      paint();
+      try {
+        await hooksRef.onGuestTap({ guestId: id, typeKey: g.typeKey, look: g.look, count: g.count,
+          amount: g.amount, favTalent: g.favTalent, seats: g.seats, transient: g.transient });
+      } finally {
+        live.highlight = null;
+        resume();
+      }
+    });
 
     wrap.addEventListener('click', (e) => {
       const b = e.target.closest('[data-speed]');
@@ -1127,7 +1271,7 @@ const JansouFloor = (() => {
     window.addEventListener('resize', onResize);
 
     return {
-      el: wrap, render, play, setSpeed, skip,
+      el: wrap, render, play, setSpeed, skip, pause, resume,
       floorToScreen, screenToFloor,
       get scale() { return scale; },
       get floorW() { return floorW; },
@@ -1142,7 +1286,7 @@ const JansouFloor = (() => {
   }
 
   return {
-    mount, fit, layout, seatsOf, gridRects, build, slotStartTimes,
+    mount, fit, layout, seatsOf, gridRects, build, slotStartTimes, spriteSvg,
     PAL, FLOOR_H, FLOOR_W_MAX, TABLE_W, TABLE_H, SEAT_W, SEAT_H, COL_PITCH,
     WALL_H, CARPET_Y,
     SLOT_SEC, INTERMISSION, MAX_WALK, WALK_SEC, SWAP_SEC, SEATS_PER_TABLE,

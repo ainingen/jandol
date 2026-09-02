@@ -345,6 +345,103 @@ function eq(a, b, name) {
   console.log('  終盤の演出モード: 歩く ' + Math.round(100 * w / (w + s)) + '% / 席で入れ替わる ' + Math.round(100 * s / (w + s)) + '%');
 }
 
+/* ============================================================
+   第3段階：顔の池・常連の登録・推しファンの条件・来訪者・帯のスタッフ
+   ============================================================ */
+{
+  const G = JansouGuests, F = JansouFloor;
+  const { Jansou } = require('../src/jansou.js');
+  function seeded(seed) {
+    let x = (seed | 0) || 1;
+    return () => { x ^= x << 13; x ^= x >>> 17; x ^= x << 5; x |= 0; return ((x >>> 0) % 100000) / 100000; };
+  }
+
+  /* --- 顔の id --- */
+  eq(G.typeOfFace(G.faceId('kaisha', 7)), 'kaisha', '顔の id からタイプが戻る');
+  ok(G.pickFace('madam', {}, {}, seeded(3)).indexOf('madam#') === 0, '池から引いた顔は同じタイプ');
+  eq(G.pickFace('madam', {}, {}, seeded(3)), G.pickFace('madam', {}, {}, seeded(3)), '種が同じなら同じ顔');
+  /* 知っている顔が居ればそちらが混ざる（100回引いて一度も出ないことはない） */
+  {
+    const rng = seeded(9); let hit = 0;
+    for (let i = 0; i < 100; i++) if (G.pickFace('kaisha', { 'kaisha#3': { visits: 5 } }, {}, rng) === 'kaisha#3') hit++;
+    ok(hit > 20 && hit < 90, '知っている顔は再訪しやすい', hit);
+  }
+
+  /* --- 常連の登録（純関数） --- */
+  const names = { 'kaisha#1': { sei: '佐藤', mei: '健一', nijina: '速攻の', sex: 'male' } };
+  const meta = { 'kaisha#1': { typeKey: 'kaisha', favTalent: null } };
+  let r = G.bumpRegulars({}, {}, ['kaisha#1'], names, meta);
+  eq(r.seen['kaisha#1'], 1, '1回目は seen に回数だけ');
+  ok(!r.regulars['kaisha#1'], '1回目は常連にならない');
+  r = G.bumpRegulars(r.regulars, r.seen, ['kaisha#1', 'kaisha#1'], names, meta);
+  eq(r.seen['kaisha#1'], 2, '同じ日に二度居ても1回と数える');
+  ok(!r.regulars['kaisha#1'], '2回目もまだ一見さん');
+  r = G.bumpRegulars(r.regulars, r.seen, ['kaisha#1'], names, meta);
+  ok(!!r.regulars['kaisha#1'], '3回目で常連に登録される');
+  eq(r.regulars['kaisha#1'].sei, '佐藤', '登録された名前は先に用意したもの');
+  eq(r.regulars['kaisha#1'].visits, 3, '登録時の回数は3');
+  ok(!('kaisha#1' in r.seen), '登録されたら seen から外れる');
+  eq(r.promoted.length, 1, '昇格の通知が1件');
+  eq(G.displayName(r.regulars['kaisha#1']), '佐藤さん', '3回目の表示は名字だけ');
+  /* 名前が用意されていない顔は登録されない（一見さんのまま） */
+  const r2 = G.bumpRegulars({}, { 'inkyo#2': 2 }, ['inkyo#2'], {}, {});
+  ok(!r2.regulars['inkyo#2'] && r2.seen['inkyo#2'] === 3, '名前が無ければ登録しない');
+  /* 常連の回数が進み、10回でフルネーム、30回で二つ名 */
+  let reg = { 'madam#4': { typeKey: 'madam', visits: 9, sei: '井上', mei: '恵子', nijina: '三色の', sex: 'female' } };
+  r = G.bumpRegulars(reg, {}, ['madam#4'], {}, {});
+  eq(G.displayName(r.regulars['madam#4']), '井上恵子', '10回でフルネーム');
+  eq(r.promoted[0] && r.promoted[0].stage, 2, '常連への昇格通知');
+  reg = { 'madam#4': { typeKey: 'madam', visits: 29, sei: '井上', mei: '恵子', nijina: '三色の', sex: 'female' } };
+  r = G.bumpRegulars(reg, {}, ['madam#4'], {}, {});
+  eq(G.displayName(r.regulars['madam#4']), '三色の井上恵子', '30回で二つ名つき');
+  /* 上限。seen は200、regulars は200 */
+  const bigSeen = {}; for (let i = 0; i < 230; i++) bigSeen['gakusei#' + i] = 1 + (i % 2);
+  eq(Object.keys(G.trimSeen(bigSeen)).length, 200, 'seen は200件まで');
+  const bigReg = {}; for (let i = 0; i < 205; i++) bigReg['kaisha#' + i] = { visits: 3 + i };
+  const r3 = G.bumpRegulars(bigReg, {}, [], {}, {});
+  eq(Object.keys(r3.regulars).length, 200, 'regulars は200人まで');
+  ok(!r3.regulars['kaisha#0'] && !!r3.regulars['kaisha#204'], '落ちるのは回数の少ないほう');
+
+  /* --- ビルダー：推しファン・来訪者・帯のスタッフ・同じ人は一日に一度 --- */
+  const fees = Jansou.SLOTS.map((s) => s.fee);
+  const cfg = { tables: 8, interior: 5, auto: 3, sign: 3, rep: 85, slotPop: [300, 400, 500], slotWorkers: [8, 10, 12] };
+  for (let seed = 1; seed <= 15; seed++) {
+    const day = Jansou.computeDay(cfg, seeded(seed));
+    const tl = F.build(day, { fees, tableIdx: [0, 1, 2, 3, 4, 5, 6, 7],
+      slotStaff: [[], [7, 8], [7, 8, 9]],
+      visitor: { slot: 2, at: 6, typeKey: 'arashi', name: '流しの辰巳', stay: 6 } }, seeded(seed * 7)).timeline;
+    /* 昼はスタッフが居ないので推しファンは来ない */
+    ok(!tl.some((e) => e.kind === 'arrive' && e.slot === 0 && e.typeKey === 'oshifan'), 'seed' + seed + ' 推しになれる子が居ない帯に推しファンは来ない');
+    tl.filter((e) => e.kind === 'arrive' && e.typeKey === 'oshifan').forEach((e) => {
+      ok([7, 8, 9].indexOf(e.favTalent) >= 0, 'seed' + seed + ' 推しファンの推しは出勤している子', e.favTalent);
+    });
+    /* 来訪者は帳簿に載らない */
+    eq(tl.filter((e) => e.kind === 'visitor').length, 1, 'seed' + seed + ' 来訪者が1回');
+    eq(tl.filter((e) => e.kind === 'visitorLeave').length, 1, 'seed' + seed + ' 来訪者が去る');
+    for (let si = 0; si < 3; si++) {
+      const cnt = tl.filter((e) => e.kind === 'arrive' && e.slot === si).reduce((a, e) => a + e.count, 0);
+      eq(cnt, day.slots[si].guests, 'seed' + seed + ' 帯' + si + ' 来訪者を数えても Σcount=guests');
+    }
+    /* slotStart が帯のスタッフを持つ */
+    const starts = tl.filter((e) => e.kind === 'slotStart');
+    eq(JSON.stringify(starts.map((e) => e.staff)), JSON.stringify([[], [7, 8], [7, 8, 9]]), 'seed' + seed + ' 帯ごとの出勤者');
+    /* 同じ人は一日に一度 */
+    const ids = tl.filter((e) => e.kind === 'arrive').map((e) => e.guestId);
+    eq(new Set(ids).size, ids.length, 'seed' + seed + ' 同じ客が一日に二度来ない');
+    /* 到着の amount は支払いと同じ額 */
+    const pays = {}; tl.filter((e) => e.kind === 'pay').forEach((e) => { pays[e.guestId] = e.amount; });
+    tl.filter((e) => e.kind === 'arrive').forEach((e) => eq(pays[e.guestId], e.amount, 'seed' + seed + ' 到着の額＝支払い ' + e.guestId));
+  }
+  /* 主（段階3）の常連は nushi の姿で来る */
+  {
+    const day = Jansou.computeDay(cfg, seeded(2));
+    const regs = {}; for (let n = 0; n < 40; n++) regs['kaisha#' + n] = { typeKey: 'kaisha', visits: 31, sei: 'a', mei: 'b', nijina: 'c' };
+    const tl = F.build(day, { fees, tableIdx: [0, 1, 2, 3], slotStaff: [[1], [1], [1]], regulars: regs }, seeded(4)).timeline;
+    const ks = tl.filter((e) => e.kind === 'arrive' && e.typeKey === 'kaisha' && !e.transient);
+    ok(ks.length > 0 && ks.every((e) => e.look === 'nushi'), '30回通った会社帰りは主の姿', ks.length);
+  }
+}
+
 /* ============================================================ */
 console.log('通過 ' + pass + ' 件');
 if (fails.length) {
