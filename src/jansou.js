@@ -73,7 +73,7 @@ const Jansou = (() => {
   /* ---------- セーブの既定値 ---------- */
   function normalize(p) {
     p = p || {};
-    return {
+    const out = {
       open: !!p.open,
       day: p.day | 0,
       tables: Math.min(TABLE_MAX, Math.max(2, p.tables | 0 || 2)),
@@ -93,6 +93,21 @@ const Jansou = (() => {
       seen: p.seen && typeof p.seen === 'object' ? p.seen : {},   // 一見さんの回数だけ（§7）
       challengedToday: !!p.challengedToday,
     };
+    /* 卓の自由配置（placement.md §2）。**既存セーブには無い。**
+       毎回ここで突き合わせる（冪等）。floor が無ければ、いままでと同じ絵を組む。
+       模様替えをしていない店（auto）は、卓や内装が変わるたびに組み直す */
+    out.floor = typeof JansouFloor !== 'undefined' && JansouFloor.reconcile
+      ? JansouFloor.reconcile(p.floor, { tables: out.tables, interior: out.interior })
+      : (p.floor || null);
+    return out;
+  }
+
+  /* 自分の卓（夜に代表が着く卓）。placement.md §2.1 の floor.mine を優先し、
+     指していなければ**いままでどおり最後の卓**にする */
+  function myTableOf(parlor, usable) {
+    if (!parlor.joinNight || usable <= 0) return -1;
+    const m = parlor.floor && parlor.floor.mine;
+    return Number.isInteger(m) && m >= 0 && m < usable ? m : usable - 1;
   }
 
   /* ---------- 一日の売上（純関数） ----------
@@ -461,9 +476,9 @@ const Jansou = (() => {
       let closedTables = 0;
       parlor.buffs.forEach((b) => { if (b.kind === 'closed') closedTables += b.val; });
 
-      const count = JansouFloor.layout(parlor.tables, 200).length;
+      const count = JansouFloor.tablesOf(parlor.floor).length;
       const usable = Math.max(0, count - closedTables);
-      const myTable = parlor.joinNight && usable > 0 ? usable - 1 : -1;
+      const myTable = myTableOf(parlor, usable);
 
       /* 夜の時間帯に出る客から、評判に応じた入りぐあいで席を埋める */
       const pool = JansouGuests.TYPES.filter((t) => t.weight > 0 && t.slots.indexOf(2) >= 0);
@@ -617,7 +632,7 @@ const Jansou = (() => {
 
       /* 使える卓。閉鎖した卓は後ろから、自分の卓はその手前 */
       const usable = Math.max(1, parlor.tables - closedTables);
-      const myTable = parlor.joinNight ? usable - 1 : -1;
+      const myTable = myTableOf(parlor, usable);
       const tableIdx = [];
       for (let i = 0; i < usable; i++) if (i !== myTable) tableIdx.push(i);
 

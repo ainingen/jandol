@@ -37,6 +37,8 @@ function eq(a, b, name) {
    倍率とフロア幅（spec.md §4.1 の決定）
    ============================================================ */
 {
+  /* 論理フロアは200で固定。floorW は**見えている窓の幅**（placement.md §3）。
+     店の中身がほぼ全部入る倍率を選ぶので、ここの値は自由配置の前と変わらない */
   const cases = [
     [380, 2, 190],   // 縦持ち
     [600, 3, 200],   // 中くらい
@@ -55,44 +57,203 @@ function eq(a, b, name) {
     const f = JansouFloor.fit(w);
     ok(Number.isInteger(f.scale) && f.scale >= 2 && f.scale <= 4, '倍率が2〜4の整数 幅' + w, f.scale);
     ok(f.floorW * f.scale <= w, 'はみ出さない 幅' + w, f.floorW * f.scale);
+    /* マス目の192pxが2倍で入る幅（384px〜）なら、隠れるのは左右の余白＋8pxまで。
+       それより狭いところは横送りで見る（placement.md §3） */
+    if (w >= 384) {
+      ok(JansouFloor.FLOOR_W - f.floorW - JansouFloor.GX0 * 2 <= 8,
+        '中身がほぼ全部見える 幅' + w, f.floorW);
+    }
   }
 }
 
 /* ============================================================
-   卓の配置（卓2〜8が床に収まり、重ならない）
+   マス目と設置物（docs/design/jansou/placement.md §1・§2）
    ============================================================ */
 {
-  const W = JansouFloor.TABLE_W, H = JansouFloor.TABLE_H;
-  [160, 175, 190, 200].forEach((floorW) => {
-    for (let n = 2; n <= 8; n++) {
-      const ts = JansouFloor.layout(n, floorW);
-      eq(ts.length, n, '卓の数 卓' + n + ' 幅' + floorW);
+  const F = JansouFloor;
+  const W = F.TABLE_W, H = F.TABLE_H;
+  const size = (kind) => F.KINDS[kind];
+  const rectOf = (it) => ({ x: it.x, y: it.y, w: size(it.kind).w, h: size(it.kind).h });
+  const hit = (a, b) => {
+    const ra = rectOf(a), rb = rectOf(b);
+    return ra.x < rb.x + rb.w && rb.x < ra.x + ra.w && ra.y < rb.y + rb.h && rb.y < ra.y + ra.h;
+  };
 
-      ts.forEach((t, i) => {
-        ok(t.x >= 0 && t.x + W <= floorW, '卓が横にはみ出さない 卓' + n + '/' + i + ' 幅' + floorW, t.x);
-        ok(t.y >= JansouFloor.CARPET_Y && t.y + H <= JansouFloor.FLOOR_H,
-          '卓が縦にはみ出さない 卓' + n + '/' + i, t.y);
+  /* マス目が床に収まっている */
+  ok(F.GX0 + F.COLS * F.GRID <= F.FLOOR_W, 'マス目が横に収まる', F.GX0 + F.COLS * F.GRID);
+  ok(F.GY0 + F.ROWS * F.GRID <= F.FLOOR_H, 'マス目が縦に収まる', F.GY0 + F.ROWS * F.GRID);
+  ok(F.GY0 >= F.CARPET_Y, 'マス目が壁にめり込まない', F.GY0);
+
+  /* ---- 卓2〜8 × 内装1〜5：置いたものが床に収まり、重ならない ---- */
+  for (let n = 2; n <= 8; n++) {
+    for (let iv = 1; iv <= 5; iv++) {
+      const fl = F.autoPlace({ tables: n, interior: iv });
+      const tag = '卓' + n + '/内装' + iv;
+      eq(F.tablesOf(fl).length, n, tag + ' 卓の数');
+      eq(fl.items.filter((it) => it.kind === 'sofa').length, iv >= 4 ? 1 : 0, tag + ' ソファ');
+      eq(fl.items.filter((it) => it.kind === 'counter').length, iv >= 5 ? 1 : 0, tag + ' カウンター');
+
+      fl.items.forEach((it, i) => {
+        const s = size(it.kind);
+        ok(it.x >= 0 && it.x + s.w <= F.COLS, tag + ' 横に収まる ' + i, it.x);
+        ok(it.y >= 0 && it.y + s.h <= F.ROWS, tag + ' 縦に収まる ' + i, it.y);
+        ok(!hit(it, F.DOOR), tag + ' 入口に掛からない ' + i, it.x + ',' + it.y);
+        for (let j = i + 1; j < fl.items.length; j++) {
+          ok(!hit(it, fl.items[j]), tag + ' 重ならない ' + i + '-' + j);
+        }
       });
 
-      /* 卓どうしが重ならない */
-      for (let a = 0; a < ts.length; a++) {
-        for (let b = a + 1; b < ts.length; b++) {
-          const hit = Math.abs(ts[a].x - ts[b].x) < W && Math.abs(ts[a].y - ts[b].y) < H;
-          ok(!hit, '卓が重ならない 卓' + n + ' ' + a + '-' + b + ' 幅' + floorW);
+      /* **席は4つとも必ずある。**狭い幅で上の2席が消える問題はここで消えている */
+      F.tablesOf(fl).forEach((t, ti) => {
+        const seats = F.seatsOf(t);
+        eq(seats.length, 4, tag + ' 卓' + ti + ' の席は4つ');
+        seats.forEach((s, si) => {
+          ok(s.x >= 0 && s.x + F.SEAT_W <= F.FLOOR_W, tag + ' 席が横に収まる ' + ti + '/' + si, s.x);
+          ok(s.y >= F.CARPET_Y - 1 && s.y + F.SEAT_H <= F.FLOOR_H, tag + ' 席が床の中 ' + ti + '/' + si, s.y);
+        });
+        ok(t.y >= F.CARPET_Y && t.y + H <= F.FLOOR_H, tag + ' 卓が床の中 ' + ti, t.y);
+      });
+
+      /* 客どうし・卓どうしが重ならない（席まで含めた見た目の判定） */
+      const boxes = F.tablesOf(fl).map((t) => ({ x: t.x - W / 2, y: t.y }));
+      for (let i = 0; i < boxes.length; i++) {
+        for (let j = i + 1; j < boxes.length; j++) {
+          const hit2 = Math.abs(boxes[i].x - boxes[j].x) < W && Math.abs(boxes[i].y - boxes[j].y) < H;
+          ok(!hit2, tag + ' 卓の絵が重ならない ' + i + '-' + j);
         }
       }
-
-      /* 席も床の中に居ること。壁にめり込むと客が消える */
-      ts.forEach((t) => {
-        JansouFloor.seatsOf(t).forEach((s, si) => {
-          ok(s.x >= -1 && s.x + JansouFloor.SEAT_W <= floorW + 1,
-            '席が横にはみ出さない 卓' + n + ' 席' + si + ' 幅' + floorW, s.x);
-          ok(s.y >= JansouFloor.CARPET_Y - JansouFloor.SEAT_H,
-            '席が壁にめり込まない 卓' + n + ' 席' + si, s.y);
-        });
-      });
     }
+  }
+
+  /* ---- 移行：既存プレイヤーの店が、いままでと同じ絵で再現される ----
+     旧 layout()（幅200）をここに写して突き合わせる。
+     卓7・8の3行目だけは入口を避けて左右に振るので、そこは形が変わる
+     （それが今回直している「3行目とソファ・カウンターが同じ高さ」） */
+  function oldLayout(tables) {
+    const floorW = 200, PITCH = 60, SEAT_H = 16, CARPET_Y = 37, FLOOR_H = 164;
+    const cols = Math.max(1, Math.min(3, Math.floor(floorW / PITCH)));
+    const rows = Math.ceil(tables / cols);
+    const top = CARPET_Y + SEAT_H;
+    const availH = (FLOOR_H - 6) - top;
+    const pitchY = rows <= 1 ? 0 : Math.min(52, Math.floor((availH - H) / (rows - 1)));
+    const blockH = (rows - 1) * pitchY + H;
+    const y0 = top + Math.min(8, Math.max(0, Math.floor((availH - blockH) / 2)));
+    const out = [];
+    let left = tables;
+    for (let r = 0; r < rows; r++) {
+      const k = Math.min(cols, left);
+      left -= k;
+      const x0 = Math.round((floorW - k * PITCH) / 2);
+      for (let c = 0; c < k; c++) {
+        out.push({ x: x0 + c * PITCH + Math.round((PITCH - W) / 2), y: y0 + r * pitchY, row: r });
+      }
+    }
+    return out;
+  }
+
+  for (let n = 2; n <= 8; n++) {
+    const before = oldLayout(n);
+    const after = F.tablesOf(JansouFloor.reconcile(null, { tables: n, interior: 1 }));
+    const tag = '移行 卓' + n;
+    eq(after.length, before.length, tag + ' 卓の数が同じ');
+
+    /* 行の分かれ方（1行3卓、余りは最後の行）が同じ */
+    const rowsB = {}, rowsA = {};
+    before.forEach((t, i) => { (rowsB[t.row] = rowsB[t.row] || []).push(i); });
+    after.forEach((t, i) => { (rowsA[t.gy] = rowsA[t.gy] || []).push(i); });
+    const keyB = Object.keys(rowsB).map((k) => rowsB[k].join(',')).join('|');
+    const keyA = Object.keys(rowsA).sort((x, y) => x - y).map((k) => rowsA[k].join(',')).join('|');
+    eq(keyA, keyB, tag + ' 行の分かれ方が同じ');
+
+    /* 並び順（左から右・上から下）が同じ */
+    for (let i = 1; i < after.length; i++) {
+      const sameRow = after[i].gy === after[i - 1].gy;
+      ok(sameRow ? after[i].x > after[i - 1].x : after[i].gy > after[i - 1].gy,
+        tag + ' 並び順 ' + i);
+    }
+
+    /* 位置のずれ。3行になる卓7・8の3行目だけは入口を避けるので別扱い */
+    const lastRow = Math.max.apply(null, before.map((t) => t.row));
+    before.forEach((t, i) => {
+      const moved = n >= 7 && t.row === lastRow;
+      const dx = Math.abs(after[i].x - t.x), dy = Math.abs(after[i].y - t.y);
+      ok(dy <= 4, tag + ' 縦のずれが小さい ' + i, dy);
+      if (!moved) ok(dx <= 16, tag + ' 横のずれが小さい ' + i, dx);
+    });
+  }
+
+  /* 卓7・8では、3行目の卓とソファ・カウンターが同じ高さに並ばない（今回の直し） */
+  [7, 8].forEach((n) => {
+    const fl = F.autoPlace({ tables: n, interior: 5 });
+    const lows = F.tablesOf(fl).filter((t) => t.gy >= 10);
+    fl.items.filter((it) => it.kind === 'sofa' || it.kind === 'counter').forEach((it) => {
+      lows.forEach((t) => {
+        const apart = it.x + size(it.kind).w <= t.gx || t.gx + F.KINDS.table.w <= it.x;
+        ok(apart, '卓' + n + ' 3行目と' + it.kind + 'が重ならない');
+      });
+    });
   });
+
+  /* ---- reconcile：冪等で、既存セーブを壊さない ---- */
+  {
+    const mk = (t, iv) => JansouFloor.reconcile(null, { tables: t, interior: iv });
+    for (let n = 2; n <= 8; n++) {
+      const once = mk(n, 5);
+      const twice = JansouFloor.reconcile(once, { tables: n, interior: 5 });
+      eq(JSON.stringify(twice), JSON.stringify(once), '突き合わせが冪等 卓' + n);
+    }
+    /* 壊れた項目は落として置き直す。数は必ず合う */
+    const broken = { v: 1, auto: false, items: [
+      { id: 1, kind: 'table', x: 0, y: 0 },
+      { id: 2, kind: 'table', x: 0, y: 0 },        // 重なり
+      { id: 3, kind: 'table', x: 99, y: 0 },       // 範囲外
+      { id: 4, kind: 'table', x: 10, y: 13 },      // 入口の上
+      { id: 5, kind: 'nazo', x: 3, y: 3 },         // 知らない種類
+      { id: 6, kind: 'sofa', x: 21, y: 0 },
+    ], next: 7, mine: 99 };
+    const fixed = JansouFloor.reconcile(broken, { tables: 4, interior: 4 });
+    eq(F.tablesOf(fixed).length, 4, '壊れたセーブでも卓の数が合う');
+    eq(fixed.items.filter((it) => it.kind === 'sofa').length, 1, '壊れたセーブでもソファは1つ');
+    ok(!fixed.items.some((it) => it.kind === 'nazo'), '知らない種類は落ちる');
+    eq(fixed.mine, null, '指していない自分の卓は null');
+    fixed.items.forEach((it, i) => {
+      for (let j = i + 1; j < fixed.items.length; j++) ok(!hit(it, fixed.items[j]), '直したあとも重ならない');
+      ok(!hit(it, F.DOOR), '直したあとも入口に掛からない');
+    });
+    /* 模様替え済み（auto:false）の店は、卓を増やしても置いたものが動かない */
+    const kept = JansouFloor.reconcile(fixed, { tables: 6, interior: 4 });
+    eq(F.tablesOf(kept).length, 6, '卓を増やすと6つになる');
+    F.tablesOf(fixed).forEach((t, i) => {
+      const k = F.tablesOf(kept)[i];
+      ok(k.gx === t.gx && k.gy === t.gy, '模様替え済みの卓は動かない ' + i);
+    });
+    /* 自動配置のままの店は、卓が増えると組み直す（＝いままでの絵） */
+    const auto4 = JansouFloor.reconcile(null, { tables: 4, interior: 1 });
+    const auto5 = JansouFloor.reconcile(auto4, { tables: 5, interior: 1 });
+    eq(JSON.stringify(F.tablesOf(auto5).map((t) => [t.gx, t.gy])),
+      JSON.stringify(F.tablesOf(F.autoPlace({ tables: 5, interior: 1 })).map((t) => [t.gx, t.gy])),
+      '自動配置のままなら組み直す');
+    /* 自分の卓は範囲の中だけ残る */
+    eq(JansouFloor.reconcile({ v: 1, auto: true, items: [], next: 1, mine: 1 },
+      { tables: 4, interior: 1 }).mine, 1, '自分の卓は残る');
+  }
+
+  /* ---- canPlace / freeCell ---- */
+  {
+    const fl = F.autoPlace({ tables: 2, interior: 1 });
+    ok(!F.canPlace(fl, { kind: 'table', x: 5, y: 1 }), '重なる場所には置けない');
+    ok(!F.canPlace(fl, { kind: 'table', x: 10, y: 10 }), '入口に掛かる場所には置けない');
+    ok(!F.canPlace(fl, { kind: 'table', x: F.COLS - 3, y: 0 }), '範囲外には置けない');
+    ok(F.canPlace(fl, { kind: 'table', x: 0, y: 10 }), '空いていれば置ける');
+    ok(F.canPlace(fl, { kind: 'table', x: 5, y: 1 }, 1), '自分自身は避ける相手に数えない');
+    ok(!F.freeCell(fl, 10, 13), '入口のマスは空いていない');
+    ok(F.freeCell(fl, 0, 14), '何も無いマスは空いている');
+    ok(!F.freeCell(fl, -1, 0), '範囲外は空いていない');
+    /* 卓のまわりのマスは、卓そのものと重ならない */
+    F.tablesOf(fl).forEach((t) => {
+      F.ringCells(fl, t).forEach((c) => ok(F.freeCell(fl, c.x, c.y), '卓のまわりのマスは空いている'));
+    });
+  }
 }
 
 /* ============================================================
@@ -546,7 +707,8 @@ function eq(a, b, name) {
   function countRoom(parlor) {
     made.length = 0;
     const g = global.document.createElementNS();
-    F.drawWall(g, 190, parlor); F.drawCarpet(g, 190, parlor); F.drawFixtures(g, 190, parlor);
+    const fl = F.autoPlace({ tables: 2, interior: parlor.interior });
+    F.drawWall(g, parlor); F.drawCarpet(g, parlor); F.drawFixtures(g, fl, parlor);
     return g.children.length;
   }
   const base = { interior: 1, auto: 1, sign: 1 };
@@ -561,7 +723,7 @@ function eq(a, b, name) {
   function wallColors(sign) {
     made.length = 0;
     const g = global.document.createElementNS();
-    F.drawWall(g, 190, { interior: 1, sign });
+    F.drawWall(g, { interior: 1, sign });
     return new Set(made.map((r) => r.attrs.fill));
   }
   const c1 = wallColors(1), c2 = wallColors(2), c3 = wallColors(3);
@@ -586,15 +748,16 @@ function eq(a, b, name) {
     made.length = 0;
     const g = global.document.createElementNS();
     const parlor = { interior: iv, auto: au, sign: sg };
-    F.drawWall(g, 190, parlor); F.drawCarpet(g, 190, parlor); F.drawFixtures(g, 190, parlor);
-    F.layout(8, 190).forEach((t) => F.drawTable(g, t, 'normal', au));
+    const fl = F.autoPlace({ tables: 8, interior: iv });
+    F.drawWall(g, parlor); F.drawCarpet(g, parlor); F.drawFixtures(g, fl, parlor);
+    F.tablesOf(fl).forEach((t) => F.drawTable(g, t, 'normal', au));
     const tag = `内装${iv}/卓${au}/宣伝${sg}`;
     ok(g.children.length > 0, tag + ' が描ける');
     let out = 0;
     made.forEach((r) => {
       const a = r.attrs;
       if (a.x == null) return;
-      if (+a.x < 0 || +a.x + (+a.width || 0) > 190 || +a.y < 0 || +a.y + (+a.height || 0) > F.FLOOR_H) out++;
+      if (+a.x < 0 || +a.x + (+a.width || 0) > F.FLOOR_W || +a.y < 0 || +a.y + (+a.height || 0) > F.FLOOR_H) out++;
     });
     eq(out, 0, tag + ' の絵が床からはみ出さない');
   }

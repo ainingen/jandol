@@ -55,77 +55,243 @@ const JansouFloor = (() => {
 
   /* ---------- フロアの寸法（§4.7 の実測） ---------- */
   const FLOOR_H = 164;
-  const FLOOR_W_MAX = 200;
+  const FLOOR_W = 200;      // 論理フロアの幅。**端末によらず固定**（placement.md §1.1）
+  const FLOOR_W_MAX = FLOOR_W;
   const WALL_H = 35;        // 壁 0〜34
   const EDGE_Y = 35;        // 床の縁（巾木）35〜36
   const CARPET_Y = 37;      // カーペット 37〜163
 
   const TABLE_W = 30, TABLE_H = 20;   // 卓（実測）
-  const COL_PITCH = 60;               // 卓の横の間隔（卓30＋左右の席）
+  const COL_PITCH = 60;               // 卓の横の間隔（旧レイアウトの名残。互換のため残す）
   const SEAT_W = 12, SEAT_H = 16;     // 客スプライト
 
-  /* ---------- 倍率とフロア幅（§4.1） ----------
+  /* ---------- 倍率と、見えるフロアの幅（§4.1） ----------
      倍率 s は 160*s <= 使える幅 を満たす最大の整数（2〜4に丸める）。
-     フロア幅は min(200, floor(使える幅 / s))。高さは164固定 */
+     **floorW は「窓の幅」であって、フロアの幅ではない。**
+     論理フロアは常に 200 で、狭いときは横にずらして見る（placement.md §3） */
   function fit(availW) {
-    let s = 2;
-    for (let i = 4; i >= 2; i--) { if (160 * i <= availW) { s = i; break; } }
+    const fw = (i) => Math.min(FLOOR_W, Math.floor(availW / i));
+    /* 隠れるぶんのうち、**物が置ける範囲**がどれだけ削れるか。
+       左右 4px ずつは余白の絨毯なので、そこは削れても構わない */
+    const lost = (i) => Math.max(0, (FLOOR_W - fw(i)) - GX0 * 2);
+    /* **横送りは狭いときの手段であって、既定ではない。**
+       店の中身がほぼ全部入る倍率があれば、そちらを選ぶ。
+       削れるのが 8px までなら許す（席の絵は12px。半分は超えない） */
+    let s = 0;
+    for (let i = 4; i >= 2; i--) { if (lost(i) <= 8) { s = i; break; } }
+    /* どの倍率でも入らない狭さ（〜360px）。従来どおり 160px が入る倍率にして、
+       残りは横送りで見る（placement.md §3） */
+    if (!s) for (let i = 4; i >= 2; i--) { if (160 * i <= availW) { s = i; break; } }
+    if (!s) s = 2;
     /* **下限でクランプしないこと。** floor(幅/倍率) を上回る値を返すと
-       そのぶん枠からはみ出す。狭いときはフロアが細くなるのが正しい */
-    return { scale: s, floorW: Math.min(FLOOR_W_MAX, Math.floor(availW / s)) };
+       そのぶん枠からはみ出す。狭いときは窓が細くなるのが正しい */
+    return { scale: s, floorW: fw(s) };
   }
 
-  /* ---------- 卓の配置（卓2〜8） ----------
-     1行あたり最大3卓。3行必要なときだけ縦の間隔を詰める */
-  function layout(tables, floorW) {
-    const cols = Math.max(1, Math.min(3, Math.floor(floorW / COL_PITCH)));
-    const rows = Math.ceil(tables / cols);
+  /* ============================================================
+     マス目と設置物（placement.md §1・§2）
 
-    /* 縦の間隔は**行数から決める**。狭い幅（2列）で卓8だと4行になり、
-       固定の間隔では床からはみ出す。上には席の帯（16px）が要る */
-    const top = CARPET_Y + SEAT_H;
-    const availH = (FLOOR_H - 6) - top;
-    const pitchY = rows <= 1 ? 0
-      : Math.min(52, Math.floor((availH - TABLE_H) / (rows - 1)));
-    const blockH = (rows - 1) * pitchY + TABLE_H;
-    /* 上寄せ。中央に置くと卓2の日に床の上半分がただの空き地に見える。
-       下の余りは入口・ソファ・カウンターが埋めていく（§10） */
-    const y0 = top + Math.min(8, Math.max(0, Math.floor((availH - blockH) / 2)));
+     8px 角のマス目を 24列 × 15行。原点は (4, 38)。
+     設置物はマス単位で `parlor.floor.items` に保存する。
+     **卓の足元は席4つを含めた 7×5 マス**なので、置けた卓には必ず4席が描ける。
+     狭い幅で上の2席が消える問題は、ここで構造的に無くなる。
+     ============================================================ */
+  const GRID = 8;
+  const GX0 = 4, GY0 = 38;            // マス目の原点（floor px）。壁35＋巾木2の下
+  const COLS = 24, ROWS = 15;         // 4+24*8=196<=200、38+15*8=158<=164
+  const TABLE_DX = 13, TABLE_DY = 17; // 足元の左上から見た卓（30×20）の位置
 
-    /* 間隔が詰まった配置では卓の上に席を置かない。
-       置くと上の卓に客がめり込む */
-    const tight = pitchY > 0 && pitchY < 40;
+  const KINDS = {
+    table:   { w: 7, h: 5, name: '卓' },
+    sofa:    { w: 3, h: 3, name: 'ソファ席' },
+    counter: { w: 3, h: 3, name: 'ドリンクカウンター' },
+    plant:   { w: 1, h: 2, name: '観葉植物' },
+    door:    { w: 4, h: 2, name: '入口' },
+  };
+  /* 入口は固定。動かせないし、上に物は置けない */
+  const DOOR = { id: 0, kind: 'door', x: 10, y: 13 };
 
-    const out = [];
-    let left = tables;
-    for (let r = 0; r < rows; r++) {
-      const n = Math.min(cols, left);
-      left -= n;
-      const spanW = n * COL_PITCH;
-      const x0 = Math.round((floorW - spanW) / 2);
-      for (let c = 0; c < n; c++) {
-        out.push({
-          idx: out.length,
-          x: x0 + c * COL_PITCH + Math.round((COL_PITCH - TABLE_W) / 2),
-          y: y0 + r * pitchY,
-          tight,
-        });
+  const cellX = (gx) => GX0 + gx * GRID;
+  const cellY = (gy) => GY0 + gy * GRID;
+  const sizeOf = (kind) => KINDS[kind] || KINDS.plant;
+
+  function overlaps(a, b) {
+    const sa = sizeOf(a.kind), sb = sizeOf(b.kind);
+    return a.x < b.x + sb.w && b.x < a.x + sa.w && a.y < b.y + sb.h && b.y < a.y + sa.h;
+  }
+  function inBounds(it) {
+    const s = sizeOf(it.kind);
+    return it.x >= 0 && it.y >= 0 && it.x + s.w <= COLS && it.y + s.h <= ROWS;
+  }
+  function covers(it, gx, gy) {
+    const s = sizeOf(it.kind);
+    return gx >= it.x && gx < it.x + s.w && gy >= it.y && gy < it.y + s.h;
+  }
+  /* そこに置けるか。範囲内・入口に掛からない・他と重ならない（純関数） */
+  function canPlace(floor, it, ignoreId) {
+    if (!it || !KINDS[it.kind] || it.kind === 'door') return false;
+    if (!Number.isInteger(it.x) || !Number.isInteger(it.y)) return false;
+    if (!inBounds(it) || overlaps(it, DOOR)) return false;
+    const items = (floor && floor.items) || [];
+    return !items.some((o) => o.id !== ignoreId && overlaps(it, o));
+  }
+  /* そのマスに何も無いか（スタッフの立ち位置に使う） */
+  function freeCell(floor, gx, gy) {
+    if (gx < 0 || gy < 0 || gx >= COLS || gy >= ROWS) return false;
+    if (covers(DOOR, gx, gy)) return false;
+    return !((floor && floor.items) || []).some((o) => covers(o, gx, gy));
+  }
+
+  /* ---------- 自動配置（placement.md §2.3） ----------
+     **既存プレイヤーの店をそのまま再現するためのもの。**
+     旧 layout() の「1行3卓・行を中央に寄せる」をマス目の上でなぞる。
+     卓7・8だけは3行目が入口に当たるので左右に振る（旧レイアウトはここで
+     ソファ・カウンターと同じ高さに並んでいた。それがこの作業で直る） */
+  const ROWS_FOR = (n) => (n <= 3 ? [1] : n <= 6 ? [1, 7] : [0, 5, 10]);
+  const TAIL_COLS = [0, 14];                    // 3行目は入口を避けて左右へ
+  const SOFA_SPOTS = [[0, 12], [21, 9], [21, 0], [7, 10]];
+  const COUNTER_SPOTS = [[20, 12], [21, 12], [21, 3], [10, 10]];
+
+  function scanSpot(floor, kind) {
+    for (let gy = 0; gy < ROWS; gy++) {
+      for (let gx = 0; gx < COLS; gx++) {
+        if (canPlace(floor, { kind, x: gx, y: gy })) return { x: gx, y: gy };
       }
     }
+    return null;
+  }
+  function spotFor(floor, kind, spots) {
+    for (const [x, y] of spots || []) {
+      if (canPlace(floor, { kind, x, y })) return { x, y };
+    }
+    return scanSpot(floor, kind);
+  }
+  function addItem(floor, kind, x, y) {
+    floor.items.push({ id: floor.next++, kind, x, y });
+  }
+
+  function autoPlace(opts) {
+    opts = opts || {};
+    const n = Math.max(0, Math.min(8, opts.tables | 0));
+    const lv = opts.interior | 0;
+    const rows = ROWS_FOR(n);
+    /* 3行のときは右の帯（3列）をソファとカウンターに空けておく */
+    const span = rows.length >= 3 ? COLS - 3 : COLS;
+    const floor = { v: 1, auto: true, items: [], next: 1, mine: null };
+    let left = n;
+    rows.forEach((gy, r) => {
+      const k = Math.min(3, left);
+      left -= k;
+      const tail = r === rows.length - 1 && rows.length >= 3 && k < 3;
+      const x0 = Math.floor((span - k * 7) / 2);
+      for (let i = 0; i < k; i++) addItem(floor, 'table', tail ? TAIL_COLS[i] : x0 + i * 7, gy);
+    });
+    if (lv >= 4) { const p = spotFor(floor, 'sofa', SOFA_SPOTS); if (p) addItem(floor, 'sofa', p.x, p.y); }
+    if (lv >= 5) { const p = spotFor(floor, 'counter', COUNTER_SPOTS); if (p) addItem(floor, 'counter', p.x, p.y); }
+    return floor;
+  }
+
+  /* ---------- セーブとの突き合わせ（placement.md §2.2。純関数・冪等） ----------
+     normalize() から毎回通す。**ここが壊れると進行中の店が消える。**
+       ・floor が無い（既存セーブ）→ autoPlace で今までと同じ絵を組む
+       ・auto（模様替えをしていない）→ 卓数・内装が変わったら組み直す
+       ・auto でない → 置いてあるものを尊重し、数だけ合わせる */
+  function countOf(floor, kind) {
+    return floor.items.filter((it) => it.kind === kind).length;
+  }
+  function fixCount(floor, kind, want, spots) {
+    const mine = floor.items.filter((it) => it.kind === kind);
+    for (let i = mine.length - 1; i >= want; i--) {
+      floor.items.splice(floor.items.indexOf(mine[i]), 1);
+    }
+    for (let i = mine.length; i < want; i++) {
+      const p = spotFor(floor, kind, spots);
+      if (!p) break;
+      addItem(floor, kind, p.x, p.y);
+    }
+  }
+  function validMine(mine, tables) {
+    return Number.isInteger(mine) && mine >= 0 && mine < tables ? mine : null;
+  }
+  function tableSpots(floor) {
+    /* 卓を足すときの置き場所。autoPlace と同じ並びを先に見る */
+    const out = [];
+    [[0, 5, 10], [1, 7], [1]].forEach((rows) => rows.forEach((gy) => {
+      [0, 7, 14, 1, 8, 15, 5, 12].forEach((gx) => out.push([gx, gy]));
+    }));
     return out;
   }
 
-  /* 卓のまわりの席。左・右と、余裕があれば上に2つ */
+  function reconcile(floor, opts) {
+    opts = opts || {};
+    const n = Math.max(0, Math.min(8, opts.tables | 0));
+    const lv = opts.interior | 0;
+    const wantSofa = lv >= 4 ? 1 : 0, wantCounter = lv >= 5 ? 1 : 0;
+    const src = floor && typeof floor === 'object' ? floor : {};
+    const srcItems = Array.isArray(src.items) ? src.items : null;
+    const auto = src.auto !== false || !srcItems;
+
+    let out;
+    if (auto) {
+      out = autoPlace({ tables: n, interior: lv });
+      /* 観葉植物は自動配置の対象外。置いてあって、まだ置ける場所なら残す */
+      (srcItems || []).forEach((raw) => {
+        if (!raw || raw.kind !== 'plant') return;
+        const it = { id: out.next, kind: 'plant', x: raw.x | 0, y: raw.y | 0 };
+        if (canPlace(out, it)) { out.items.push(it); out.next++; }
+      });
+    } else {
+      out = { v: 1, auto: false, items: [], next: 1, mine: null };
+      /* 置ける順に拾い直す。範囲外・重なり・入口に掛かるものは落として置き直す */
+      srcItems.forEach((raw) => {
+        if (!raw || !KINDS[raw.kind] || raw.kind === 'door') return;
+        const it = { id: out.next, kind: raw.kind, x: raw.x | 0, y: raw.y | 0 };
+        if (!canPlace(out, it)) return;
+        out.items.push(it); out.next++;
+      });
+      fixCount(out, 'table', n, tableSpots(out));
+      fixCount(out, 'sofa', wantSofa, SOFA_SPOTS);
+      fixCount(out, 'counter', wantCounter, COUNTER_SPOTS);
+      out.items.forEach((it, i) => { it.id = i + 1; });
+      out.next = out.items.length + 1;
+    }
+    out.mine = validMine(src.mine, countOf(out, 'table'));
+    return out;
+  }
+
+  /* ---------- 卓と席 ---------- */
+  /* 置いてある卓を並び順に。x,y は卓（30×20）の左上の floor px */
+  function tablesOf(floor) {
+    const out = [];
+    ((floor && floor.items) || []).forEach((it) => {
+      if (it.kind !== 'table') return;
+      out.push({ idx: out.length, id: it.id, gx: it.x, gy: it.y,
+                 x: cellX(it.x) + TABLE_DX, y: cellY(it.y) + TABLE_DY });
+    });
+    return out;
+  }
+  function itemsOf(floor, kind) {
+    return ((floor && floor.items) || []).filter((it) => it.kind === kind);
+  }
+  /* 卓のまわりの席。**4つとも必ずある**（足元がそのぶん確保されている） */
   function seatsOf(t) {
-    const seats = [
+    return [
       { x: t.x - SEAT_W - 1, y: t.y + 1, face: 1 },
       { x: t.x + TABLE_W + 1, y: t.y + 1, face: -1 },
+      { x: t.x + 3, y: t.y - SEAT_H, face: 1 },
+      { x: t.x + TABLE_W - SEAT_W - 3, y: t.y - SEAT_H, face: 1 },
     ];
-    if (!t.tight) {
-      seats.push({ x: t.x + 3, y: t.y - SEAT_H, face: 1 });
-      seats.push({ x: t.x + TABLE_W - SEAT_W - 3, y: t.y - SEAT_H, face: 1 });
+  }
+  /* 卓の足元をぐるりと囲むマスのうち、何も無いもの（スタッフの立ち位置。§1.3） */
+  function ringCells(floor, t) {
+    const s = KINDS.table, out = [];
+    for (let gy = t.gy - 1; gy <= t.gy + s.h; gy++) {
+      for (let gx = t.gx - 1; gx <= t.gx + s.w; gx++) {
+        const edge = gx === t.gx - 1 || gx === t.gx + s.w || gy === t.gy - 1 || gy === t.gy + s.h;
+        if (edge && freeCell(floor, gx, gy)) out.push({ x: gx, y: gy });
+      }
     }
-    return seats;
+    return out;
   }
 
   /* ============================================================
@@ -483,15 +649,15 @@ const JansouFloor = (() => {
      ============================================================ */
   /* 壁。**SIGN が看板、INTERIOR がパネルとミラーボール**（§10）。
      買い足すほど girls-ivory.png の完成形に近づく */
-  function drawWall(g, floorW, parlor) {
+  function drawWall(g, parlor) {
     const sign = parlor.sign | 0, lv = parlor.interior | 0;
-    g.appendChild(rect(0, 0, floorW, WALL_H, PAL.wall));
-    g.appendChild(rect(0, WALL_H - 3, floorW, 3, PAL.wallLow));
+    g.appendChild(rect(0, 0, FLOOR_W, WALL_H, PAL.wall));
+    g.appendChild(rect(0, WALL_H - 3, FLOOR_W, 3, PAL.wallLow));
 
     /* 壁の下端のLED。宣伝3から灯る */
     if (sign >= 3) {
       const led = [PAL.neonCyan, PAL.neonPink, PAL.neonYellow, PAL.neonGreen];
-      for (let x = 1; x < floorW; x += 3) {
+      for (let x = 1; x < FLOOR_W; x += 3) {
         g.appendChild(rect(x, WALL_H - 2, 1, 1, led[(x / 3 | 0) % led.length]));
       }
     }
@@ -516,13 +682,13 @@ const JansouFloor = (() => {
     }
 
     /* ミラーボールの紐（玉は drawActors が回す）。内装3から */
-    if (lv >= 3) g.appendChild(rect(Math.min(floorW - 9, 110), 0, 1, 9, '#6a5a70'));
+    if (lv >= 3) g.appendChild(rect(Math.min(FLOOR_W - 9, 110), 0, 1, 9, '#6a5a70'));
 
     /* スタンド花。**奥の壁に立てる。**床に置くと卓が3行になったとき
        客や卓の裏に隠れて、買った手応えが出ない（実際に隠れた）。
        看板とパネルとミラーボールを避けて、壁の右側に二基 */
     if (lv >= 4) {
-      [floorW - 30, floorW - 15].forEach((fx) => {
+      [FLOOR_W - 30, FLOOR_W - 15].forEach((fx) => {
         const fy = 17;
         g.appendChild(rect(fx + 3, fy + 8, 2, 12, '#e8dcc8'));
         g.appendChild(rect(fx, fy + 18, 8, 2, '#e8dcc8'));
@@ -543,37 +709,37 @@ const JansouFloor = (() => {
   }
 
   /* 床。**内装1は板張り、2から §4.7 のカーペット**（§10） */
-  function drawCarpet(g, floorW, parlor) {
+  function drawCarpet(g, parlor) {
     if ((parlor.interior | 0) < 2) {
-      g.appendChild(rect(0, EDGE_Y, floorW, 2, '#6a5a4a'));
-      g.appendChild(rect(0, CARPET_Y, floorW, FLOOR_H - CARPET_Y, PAL.plankA));
+      g.appendChild(rect(0, EDGE_Y, FLOOR_W, 2, '#6a5a4a'));
+      g.appendChild(rect(0, CARPET_Y, FLOOR_W, FLOOR_H - CARPET_Y, PAL.plankA));
       /* 板の継ぎ目。**長い横板に見せる。**縦の継ぎ目を短い周期で入れると
          煉瓦に見えてしまうので、板一枚につき1本だけ、間隔を空けて置く */
       for (let y = CARPET_Y + 8, row = 0; y < FLOOR_H; y += 8, row++) {
-        g.appendChild(rect(0, y, floorW, 1, PAL.plankSeam));
+        g.appendChild(rect(0, y, FLOOR_W, 1, PAL.plankSeam));
         /* 木目。板ごとに位置をずらす（時刻に依らない固定の並び） */
         for (let k = 0; k < 2; k++) {
-          const x = (row * 37 + k * 79 + 11) % (floorW - 20) + 6;
+          const x = (row * 37 + k * 79 + 11) % (FLOOR_W - 20) + 6;
           g.appendChild(rect(x, y - 5, 10, 1, PAL.plankGrain));
         }
         /* 板の継ぎ目（縦）。1行に1本だけ */
-        const bx = (row * 53 + 17) % (floorW - 8) + 4;
+        const bx = (row * 53 + 17) % (FLOOR_W - 8) + 4;
         g.appendChild(rect(bx, y - 7, 1, Math.min(7, FLOOR_H - (y - 7)), PAL.plankSeam));
       }
       return;
     }
-    g.appendChild(rect(0, EDGE_Y, floorW, 2, PAL.edge));
-    g.appendChild(rect(0, CARPET_Y, floorW, FLOOR_H - CARPET_Y, PAL.carpetA));
+    g.appendChild(rect(0, EDGE_Y, FLOOR_W, 2, PAL.edge));
+    g.appendChild(rect(0, CARPET_Y, FLOOR_W, FLOOR_H - CARPET_Y, PAL.carpetA));
     /* 4×4の市松（周期8） */
     for (let y = CARPET_Y; y < FLOOR_H; y += 4) {
-      for (let x = 0; x < floorW; x += 4) {
+      for (let x = 0; x < FLOOR_W; x += 4) {
         const on = (((x / 4) | 0) + (((y - CARPET_Y) / 4) | 0)) % 2 === 0;
-        if (on) g.appendChild(rect(x, y, Math.min(4, floorW - x), Math.min(4, FLOOR_H - y), PAL.carpetB));
+        if (on) g.appendChild(rect(x, y, Math.min(4, FLOOR_W - x), Math.min(4, FLOOR_H - y), PAL.carpetB));
       }
     }
     /* 菱形の柄を周期8で散らす */
     for (let y = CARPET_Y + 6; y < FLOOR_H - 2; y += 8) {
-      for (let x = 4; x < floorW - 2; x += 8) {
+      for (let x = 4; x < FLOOR_W - 2; x += 8) {
         g.appendChild(rect(x + 1, y, 2, 1, PAL.carpetPat));
         g.appendChild(rect(x, y + 1, 4, 1, PAL.carpetPat));
         g.appendChild(rect(x + 1, y + 2, 2, 1, PAL.carpetPat));
@@ -623,34 +789,42 @@ const JansouFloor = (() => {
     }
   }
 
-  /* 床の設備。**内装の段階で増えていく**（§10）。
-       1 板張りの床だけ（素っ気ない部屋）
-       2 カーペット（drawCarpet）
-       3 ミラーボール・指名パネル（drawWall / drawActors）
-       4 スタンド花・ソファ席
-       5 ドリンクカウンターとボトル棚 → girls-ivory.png の完成形 */
-  function drawFixtures(g, floorW, parlor) {
+  /* 床の設備。**置いてあるものを描く**（placement.md §4）。
+     どれも足元のマスに収まる大きさで描き直してある（ソファ・カウンターは 24px 幅）。
+     内装の段階との対応（spec.md §10）は normalize() が持つ：
+       4 でソファ席、5 でドリンクカウンターが `floor.items` に入る */
+  function drawFixtures(g, floor, parlor) {
     const lv = parlor.interior | 0;
     /* 入口のマット。内装1は素の板張りなので敷かない */
-    if (lv >= 2) g.appendChild(rect((floorW >> 1) - 16, FLOOR_H - 6, 32, 4, '#c86ab0'));
-    /* ソファ席 */
-    if (lv >= 4) {
-      const sx = 3, sy = FLOOR_H - 30;
-      g.appendChild(rect(sx, sy, 30, 18, '#b8508e'));
-      g.appendChild(rect(sx + 1, sy + 3, 13, 13, '#d46aa8'));
-      g.appendChild(rect(sx + 16, sy + 3, 13, 13, '#d46aa8'));
-    }
-    /* ドリンクカウンターとボトル棚 */
-    if (lv >= 5) {
-      const cx = floorW - 34, cy = FLOOR_H - 30;
-      g.appendChild(rect(cx, cy, 31, 20, PAL.panel));
-      g.appendChild(rect(cx + 1, cy + 1, 29, 5, '#6e3c64'));
+    if (lv >= 2) g.appendChild(rect(cellX(DOOR.x), FLOOR_H - 6, 32, 4, '#c86ab0'));
+
+    itemsOf(floor, 'sofa').forEach((it) => {
+      const sx = cellX(it.x), sy = cellY(it.y);
+      g.appendChild(rect(sx, sy + 5, 24, 18, '#b8508e'));
+      g.appendChild(rect(sx + 1, sy + 8, 10, 13, '#d46aa8'));
+      g.appendChild(rect(sx + 13, sy + 8, 10, 13, '#d46aa8'));
+    });
+
+    itemsOf(floor, 'counter').forEach((it) => {
+      const cx = cellX(it.x), cy = cellY(it.y);
+      g.appendChild(rect(cx, cy + 3, 24, 20, PAL.panel));
+      g.appendChild(rect(cx + 1, cy + 4, 22, 5, '#6e3c64'));
       const cols = ['#96f0ff', '#ff56b2', '#ffe86e', '#96ffb4'];
-      cols.forEach((c, i) => g.appendChild(rect(cx + 3 + i * 7, cy + 8, 5, 5, c)));
+      cols.forEach((c, i) => g.appendChild(rect(cx + 2 + i * 5, cy + 11, 4, 4, c)));
       for (let i = 0; i < 4; i++) {
-        g.appendChild(rect(cx + 4 + i * 7, cy + 14, 3, 5, i % 2 ? '#dcd0c0' : '#c8a44a'));
+        g.appendChild(rect(cx + 2 + i * 5, cy + 17, 3, 5, i % 2 ? '#dcd0c0' : '#c8a44a'));
       }
-    }
+    });
+
+    /* 観葉植物（1×2マス）。花道コンボのための小物 */
+    itemsOf(floor, 'plant').forEach((it) => {
+      const px = cellX(it.x), py = cellY(it.y);
+      g.appendChild(rect(px + 1, py + 10, 6, 5, '#a4603c'));
+      g.appendChild(rect(px + 1, py + 9, 6, 1, '#c07850'));
+      g.appendChild(rect(px + 3, py + 5, 2, 5, '#3c8450'));
+      [[0, 3], [5, 3], [1, 1], [4, 0], [2, 4]].forEach(([dx, dy]) =>
+        g.appendChild(rect(px + dx, py + dy, 3, 3, '#4aa464')));
+    });
   }
 
   /* ============================================================
@@ -758,7 +932,9 @@ const JansouFloor = (() => {
       '<span class="jnFlSales"></span><span class="jnFlSpeed">' +
       [1, 2, 4].map((v) => '<button type="button" class="jnFlSp" data-speed="' + v + '">×' + v + '</button>').join('') +
       '<button type="button" class="jnFlSp skip" data-skip="1" hidden>スキップ</button></span></div>' +
-      '<div class="jnFlStage"><div class="jnFlUi"></div><div class="jnFlHits"></div></div>' +
+      '<div class="jnFlStage"><div class="jnFlUi"></div><div class="jnFlHits"></div>' +
+      '<button type="button" class="jnFlPan left" data-pan="-1" aria-label="左を見る" hidden></button>' +
+      '<button type="button" class="jnFlPan right" data-pan="1" aria-label="右を見る" hidden></button></div>' +
       '<div class="jnFlTicker"></div>';
     host.appendChild(wrap);
 
@@ -766,16 +942,37 @@ const JansouFloor = (() => {
     const ui = wrap.querySelector('.jnFlUi');
     const hits = wrap.querySelector('.jnFlHits');
     const hitEls = new Map();      // guestId:seat -> div。作り直さず位置だけ動かす
+    const panL = wrap.querySelector('.jnFlPan.left');
+    const panR = wrap.querySelector('.jnFlPan.right');
     let svg = null, roomG = null, lightG = null, actG = null, defs = null;
-    let scale = 3, floorW = FLOOR_W_MAX;
+    let scale = 3, floorW = FLOOR_W;
+    let panX = null;               // 見えている左端（floor px）。null は「まだ決めていない」
     let tables = [];
+    let floor = null;              // 置いてあるもの（parlor.floor）
     let parlor = {};
     let staffList = [];
     const made = {};
 
-    /* **フロア座標→画面座標はここだけ。** UI層は全部これを通す（§8） */
-    function floorToScreen(fx, fy) { return { x: fx * scale, y: fy * scale }; }
-    function screenToFloor(px, py) { return { x: px / scale, y: py / scale }; }
+    /* **フロア座標→画面座標はここだけ。** UI層は全部これを通す（§8）。
+       横送り（placement.md §3）もここに乗せる。**単位は floor px** なので
+       画面では倍率の整数倍だけ動き、ニアレストネイバーが崩れない */
+    function floorToScreen(fx, fy) { return { x: (fx - panX) * scale, y: fy * scale }; }
+    function screenToFloor(px, py) { return { x: px / scale + panX, y: py / scale }; }
+
+    const panMax = () => Math.max(0, FLOOR_W - floorW);
+    function clampPan() {
+      const max = panMax();
+      if (panX == null) panX = Math.round(max / 2);      // 既定は中央
+      panX = Math.max(0, Math.min(max, Math.round(panX)));
+    }
+    function applyPan() {
+      if (svg) svg.style.left = (-panX * scale) + 'px';
+      const max = panMax();
+      /* 隠れているのがほぼ余白だけなら、横送りの矢印は出さない（つまんで動かすのは効く） */
+      const show = max > GX0 * 2 + 4;
+      panL.hidden = !show; panR.hidden = !show;
+      panL.disabled = panX <= 0; panR.disabled = panX >= max;
+    }
 
     function measure() {
       /* **測るのは mount に渡された枠。** wrap は width:max-content なので、
@@ -785,6 +982,7 @@ const JansouFloor = (() => {
       scale = f.scale; floorW = f.floorW;
       stage.style.width = (floorW * scale) + 'px';
       stage.style.height = (FLOOR_H * scale) + 'px';
+      clampPan();
     }
 
     /* ---------- 再生の状態 ----------
@@ -807,7 +1005,8 @@ const JansouFloor = (() => {
       hitEls.forEach((d) => d.remove()); hitEls.clear();
     }
 
-    function entrance() { return { x: (floorW >> 1) - 6, y: FLOOR_H - 20 }; }
+    /* 入口。**論理フロアの固定位置**（入口のマスの中）。窓の幅では動かない */
+    function entrance() { return { x: cellX(DOOR.x) + 10, y: FLOOR_H - 20 }; }
     /* 席の描画位置。詰まった配置では上の2席が無いので null（描かない） */
     function seatPos(table, seat) {
       const t = tables[table];
@@ -839,16 +1038,24 @@ const JansouFloor = (() => {
           if (!taken.has(ti + ':' + i)) return { x: ss[i].x + 1, y: ss[i].y + 9, at: ti + ':' + i };
         }
       }
-      /* **どこも埋まっていたら通路へ。ここで同じ場所に重ねない。**
-         丸写真が重なると誰が誰だか分からなくなる（実際に4人重なった）。
-         通路は卓の下すぐ。床の下端に置くと店の隅に取り残されて見える */
-      const lastY = tables.reduce((a, t) => Math.max(a, t.y), 0);
-      const aisleY = Math.min(FLOOR_H - 16, lastY + TABLE_H + 4);
-      for (let i = 0; i < 8; i++) {
-        const key = 'aisle:' + i;
-        if (!taken.has(key)) return { x: Math.min(floorW - 10, 8 + i * 22), y: aisleY, at: key };
+      /* **どこも埋まっていたら卓のまわりの空いているマスへ**（placement.md §1.3）。
+         ここで同じ場所に重ねない。丸写真が重なると誰が誰だか分からなくなる
+         （実際に4人重なった）。詰めて置くとスタッフが入口に溜まる */
+      for (const ti of order) {
+        for (const c of ringCells(floor, tables[ti])) {
+          const key = 'c:' + c.x + ':' + c.y;
+          if (!taken.has(key)) return { x: cellX(c.x), y: cellY(c.y) + 1, at: key };
+        }
       }
-      return { x: Math.min(floorW - 10, 8), y: aisleY, at: null };
+      /* それでも空きが無ければ入口のわき。床の下端に置くと店の隅に取り残されて見える */
+      const door = entrance();
+      for (let i = 0; i < 6; i++) {
+        const key = 'door:' + i;
+        if (!taken.has(key)) {
+          return { x: Math.max(2, Math.min(FLOOR_W - 12, door.x - 30 + i * 12)), y: door.y, at: key };
+        }
+      }
+      return { x: door.x, y: door.y, at: null };
     }
     function moveStaff(id, table) {
       const s = live.staff.get(id);
@@ -868,9 +1075,11 @@ const JansouFloor = (() => {
       measure();
       if (svg) svg.remove();
       for (const k in made) delete made[k];
+      /* **描くのは常に論理フロアの 200×164。** 窓が狭いときは横に送って見る
+         （placement.md §3）。ここで幅を変えると、端末ごとに絵が変わってしまう */
       svg = el('svg', {
-        class: 'jnFlPix', viewBox: '0 0 ' + floorW + ' ' + FLOOR_H,
-        width: floorW * scale, height: FLOOR_H * scale,
+        class: 'jnFlPix', viewBox: '0 0 ' + FLOOR_W + ' ' + FLOOR_H,
+        width: FLOOR_W * scale, height: FLOOR_H * scale,
         'shape-rendering': 'crispEdges', 'aria-hidden': 'true',
       });
       defs = el('defs', {});
@@ -878,10 +1087,11 @@ const JansouFloor = (() => {
       roomG = el('g', {}); lightG = el('g', {}); actG = el('g', {});
       svg.appendChild(roomG); svg.appendChild(actG); svg.appendChild(lightG);
 
-      drawWall(roomG, floorW, parlor);
-      drawCarpet(roomG, floorW, parlor);
-      drawFixtures(roomG, floorW, parlor);
-      tables = layout(parlor.tables || 2, floorW);
+      floor = reconcile(parlor.floor, { tables: parlor.tables || 2, interior: parlor.interior });
+      drawWall(roomG, parlor);
+      drawCarpet(roomG, parlor);
+      drawFixtures(roomG, floor, parlor);
+      tables = tablesOf(floor);
       const closed = live.closedTables || 0;
       tables.forEach((t, i) => {
         t.kind = i >= tables.length - closed ? 'closed'
@@ -893,6 +1103,7 @@ const JansouFloor = (() => {
       gridRects(STAFF_BODY, staffColor).forEach((r) => gg.appendChild(r));
       defs.appendChild(gg);
       stage.insertBefore(svg, ui);
+      applyPan();
     }
 
     function guestDef(typeKey, frame) {
@@ -917,10 +1128,10 @@ const JansouFloor = (() => {
     function drawLight() {
       while (lightG.firstChild) lightG.removeChild(lightG.firstChild);
       if (live.slot === 1) {
-        lightG.appendChild(el('rect', { x: 0, y: CARPET_Y, width: floorW, height: FLOOR_H - CARPET_Y,
+        lightG.appendChild(el('rect', { x: 0, y: CARPET_Y, width: FLOOR_W, height: FLOOR_H - CARPET_Y,
           fill: '#ffb478', opacity: 0.07 }));
       } else if (live.slot === 2) {
-        lightG.appendChild(el('rect', { x: 0, y: CARPET_Y, width: floorW, height: FLOOR_H - CARPET_Y,
+        lightG.appendChild(el('rect', { x: 0, y: CARPET_Y, width: FLOOR_W, height: FLOOR_H - CARPET_Y,
           fill: '#301634', opacity: 0.16 }));
         tables.forEach((t) => {
           if (t.kind === 'closed') return;
@@ -992,7 +1203,7 @@ const JansouFloor = (() => {
       });
       /* ミラーボールは回る（内装3から） */
       if ((parlor.interior | 0) >= 3) {
-        const cx = Math.min(floorW - 9, 110), cy = 14, ph = Math.floor(c * 4) % 2;
+        const cx = Math.min(FLOOR_W - 9, 110), cy = 14, ph = Math.floor(c * 4) % 2;
         for (let y = -3; y <= 3; y++) for (let x = -3; x <= 3; x++) {
           if (Math.abs(x) + Math.abs(y) > 4) continue;
           if ((x + y + ph) % 2 === 0) actG.appendChild(rect(cx + x, cy + y, 1, 1, '#ffffff'));
@@ -1352,7 +1563,26 @@ const JansouFloor = (() => {
       const b = e.target.closest('[data-speed]');
       if (b) { setSpeed(+b.dataset.speed); if (opts.onSpeed) opts.onSpeed(+b.dataset.speed); if (!live.playing) drawUi(); return; }
       if (e.target.closest('[data-skip]')) skip();
+      const p = e.target.closest('[data-pan]');
+      if (p) { panX += (+p.dataset.pan) * 24; clampPan(); applyPan(); paint(); }
     });
+
+    /* ---------- 横送り（placement.md §3） ----------
+       論理フロアは 200 固定なので、窓が狭いときは**床をつまんで動かす**。
+       客のボタンの上から始めたときは動かさない（タップを取りこぼす） */
+    let drag = null;
+    stage.addEventListener('pointerdown', (e) => {
+      if (panMax() <= 0 || (e.target.closest && e.target.closest('button'))) return;
+      drag = { x: e.clientX, from: panX };
+      try { stage.setPointerCapture(e.pointerId); } catch (err) { /* 古い実装 */ }
+    });
+    stage.addEventListener('pointermove', (e) => {
+      if (!drag) return;
+      panX = drag.from - (e.clientX - drag.x) / scale;
+      clampPan(); applyPan(); paint();
+    });
+    ['pointerup', 'pointercancel', 'pointerleave'].forEach((k) =>
+      stage.addEventListener(k, () => { drag = null; }));
 
     let tid = null;
     const onResize = () => {
@@ -1377,9 +1607,12 @@ const JansouFloor = (() => {
   }
 
   return {
-    mount, fit, layout, seatsOf, gridRects, build, slotStartTimes, spriteSvg, bottleSvg, insertEvent,
+    mount, fit, seatsOf, gridRects, build, slotStartTimes, spriteSvg, bottleSvg, insertEvent,
+    /* マス目と設置物（placement.md §1・§2）。純関数 */
+    autoPlace, reconcile, canPlace, freeCell, tablesOf, itemsOf, ringCells, cellX, cellY,
+    KINDS, DOOR, GRID, COLS, ROWS, GX0, GY0,
     drawWall, drawCarpet, drawFixtures, drawTable,
-    PAL, FLOOR_H, FLOOR_W_MAX, TABLE_W, TABLE_H, SEAT_W, SEAT_H, COL_PITCH,
+    PAL, FLOOR_H, FLOOR_W, FLOOR_W_MAX, TABLE_W, TABLE_H, SEAT_W, SEAT_H, COL_PITCH,
     WALL_H, CARPET_Y,
     SLOT_SEC, INTERMISSION, MAX_WALK, WALK_SEC, SWAP_SEC, SEATS_PER_TABLE,
   };

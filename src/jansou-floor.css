@@ -54,12 +54,31 @@
   position:relative;margin:0 auto;
   border:2px solid var(--jnPink);background:var(--jnWall);
   line-height:0;                       /* svgの下に隙間を作らない */
+  /* 論理フロアは200px固定で、ここは「窓」。狭い幅では横に送って見る
+     （docs/design/jansou/placement.md §3）。幅と高さはJSが入れる */
+  overflow:hidden;touch-action:pan-y;
 }
 .jnFlPix{
-  display:block;
+  position:absolute;top:0;left:0;
   /* 整数倍のニアレストネイバー相当にする。補間が入るとドット絵が台無しになる */
   shape-rendering:crispEdges;image-rendering:pixelated;
 }
+
+/* 横送りの矢印。狭い幅のときだけ出る。文字は書体に無いので図形で描く */
+.jnFlPan{
+  position:absolute;top:50%;transform:translateY(-50%);
+  width:18px;height:34px;padding:0;border:0;border-radius:4px;cursor:pointer;
+  background:rgba(42,12,34,.55);
+}
+.jnFlPan.left{left:2px}
+.jnFlPan.right{right:2px}
+.jnFlPan::before{
+  content:"";position:absolute;top:50%;left:50%;width:0;height:0;
+  border-top:6px solid transparent;border-bottom:6px solid transparent;
+}
+.jnFlPan.left::before{transform:translate(-60%,-50%);border-right:8px solid var(--jnInk)}
+.jnFlPan.right::before{transform:translate(-40%,-50%);border-left:8px solid var(--jnInk)}
+.jnFlPan:disabled{opacity:.25;cursor:default}
 .jnFlUi{
   position:absolute;inset:0;line-height:1.2;
   pointer-events:none;                 /* 当たり判定を置く要素だけ個別に戻す */
