@@ -42,6 +42,7 @@ const Jansou = (() => {
   ];
 
   const TABLE_MAX = 8;
+  const PLANT_COST = 20000;          // 観葉植物（模様替えで置く小物。placement.md §4）
   const TABLE_COST = { 3: 300000, 4: 500000, 5: 800000, 6: 1200000, 7: 1800000, 8: 2500000 };
 
   /* 内装・卓の型・宣伝。**数値（mul / rot / pull / ev）は変えないこと。**
@@ -351,6 +352,8 @@ const Jansou = (() => {
             : `<span class="jnFacilMax">これ以上はありません</span>`}
         </div>`).join('');
 
+      const tableItems = typeof JansouFloor !== 'undefined' ? JansouFloor.tablesOf(parlor.floor).length : parlor.tables;
+
       const recent = parlor.log.slice(-5).reverse().map((l) =>
         `<div class="jnLogRow"><span>${l.day}日目</span><span>${l.guests}人</span>
          <b class="${l.profit >= 0 ? 'plus' : 'minus'}">${signedYen(l.profit)}</b></div>`).join('');
@@ -372,6 +375,9 @@ const Jansou = (() => {
 
         <h2 class="jnSecT">設備</h2>
         <div class="jnFacils">${facil}</div>
+        <div class="jnFacilFoot">
+          <button type="button" class="jnUp wide" id="jnEdit">模様替え<i>卓や設備を自分で置く（いま ${tableItems}つ）</i></button>
+        </div>
 
         <h2 class="jnSecT">ボトル在庫 <span class="jnSecNote">負けたときに店がおごるぶん。無ければその場で仕入れる</span></h2>
         <div class="jnBottles">${JansouGuests.BOTTLES.map((b) => `<div class="jnBottleRow">
@@ -450,6 +456,8 @@ const Jansou = (() => {
         setParlor({ joinNight: e.target.checked });
       });
       root.querySelector('#jnRun').addEventListener('click', () => { runDay(); });
+      const editBtn = root.querySelector('#jnEdit');
+      if (editBtn) editBtn.addEventListener('click', () => { renderEdit(); });
 
       mountFloor(root.querySelector('#jnFloorHost'), parlor, list);
     }
@@ -460,14 +468,79 @@ const Jansou = (() => {
        客の並びは日ごとに決まる見た目だけのもので、収支には一切触らない */
     let floorCtl = null;
 
-    function mountFloor(host, parlor, list) {
+    function mountFloor(host, parlor, list, editing) {
       if (!host || typeof JansouFloor === 'undefined' || typeof JansouGuests === 'undefined') return;
       if (floorCtl) { floorCtl.destroy(); floorCtl = null; }
 
       floorCtl = JansouFloor.mount(host, {
-        onSpeed: (v) => { setParlor({ speed: v }); floorCtl.render(previewState(parlor, list)); },
+        onSpeed: (v) => { setParlor({ speed: v }); floorCtl.render(previewState(parlorOf(store.get()), list)); },
       });
+      if (editing) { floorCtl.setEdit(true, editHooks()); return; }
       floorCtl.render(previewState(parlor, list));
+    }
+
+    /* ---------- 模様替え（placement.md §7。第二段） ----------
+       専用の画面にする。シフトや設備の段と同じ画面に置くと、
+       狭い幅で操作の段がフロアから離れてしまう */
+    function renderEdit() {
+      const st = store.get();
+      const parlor = parlorOf(st);
+      if (floorCtl) { floorCtl.destroy(); floorCtl = null; }
+      root.innerHTML = `
+        <h1 class="jnTitle">模様替え</h1>
+        <p class="jnLead">卓と設備を自分で置けます。動かすたびに保存されます。
+        卓は席4つぶんの広さを使うので、<b>点が打ってあるところ</b>が空いている場所です。
+        置ける場所は緑、置けない場所は赤、<b>ものの上に重ねると水色（入れ替え）</b>になります。</p>
+        <div id="jnFloorHost"></div>`;
+      mountFloor(root.querySelector('#jnFloorHost'), parlor, roster(), true);
+      scrollTop();
+    }
+    function scrollTop() {
+      /* 画面を替えたら中身の先頭へ。window.scrollTo ではなく #scroll の中を戻す
+         （docs/HANDOVER.md §5「表紙は画面の高さに収める」） */
+      const sc = document.getElementById('scroll');
+      if (sc) sc.scrollTop = 0;
+    }
+
+    /* 模様替えのあいだ、金の出し入れと保存はここが持つ。
+       フロア側は「何をしたか」を渡してくるだけ（配置の判定はフロア側の純関数） */
+    function editHooks() {
+      const tablesNow = () => parlorOf(store.get()).tables;
+      return {
+        parlor: () => parlorOf(store.get()),
+        money: () => store.get().money || 0,
+        priceOf: (kind) => {
+          if (kind === 'table') {
+            const n = tablesNow();
+            return n < TABLE_MAX ? { cost: TABLE_COST[n + 1] } : null;
+          }
+          if (kind === 'plant') return { cost: PLANT_COST };
+          return null;
+        },
+        /* 撤去で戻るのは半額（placement.md §2.4）。卓はいまの卓数の増設費が基準 */
+        refundOf: (kind) => {
+          if (kind === 'table') return Math.round((TABLE_COST[tablesNow()] || 0) / 2);
+          if (kind === 'plant') return Math.round(PLANT_COST / 2);
+          return 0;
+        },
+        canSell: (kind) => (kind === 'table' ? tablesNow() > 2 : kind === 'plant'),
+        commit: (floor, change) => {
+          const s0 = store.get();
+          const p = parlorOf(s0);
+          const patch = { floor };
+          let money = s0.money || 0;
+          if (change.kind === 'buy') {
+            money -= change.cost || 0;
+            if (change.itemKind === 'table') patch.tables = Math.min(TABLE_MAX, p.tables + 1);
+          } else if (change.kind === 'sell') {
+            money += change.refund || 0;
+            if (change.itemKind === 'table') patch.tables = Math.max(2, p.tables - 1);
+          }
+          store.set({ money });
+          setParlor(patch);
+        },
+        onDone: () => { render(); },
+      };
     }
 
     /* 見た目だけの並びを作る。日をまたぐと変わるが、同じ日なら同じ絵になる */

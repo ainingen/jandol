@@ -234,3 +234,39 @@
   .jnFlBar{gap:5px}
   .jnFlSales{font-size:11px}
 }
+
+/* ---------- 模様替えの操作段（placement.md §7） ----------
+   **フロアの下に置く。**重ねると、狭い幅で押した拍子に床が隠れる */
+.jnFlEdit{
+  background:var(--jnPanel);border-top:1px solid rgba(255,255,255,.08);
+  padding:6px 8px 8px;
+}
+.jnFlEbTop{
+  display:flex;align-items:baseline;gap:8px;justify-content:space-between;
+  font-size:11px;color:var(--jnSub);margin-bottom:6px;
+}
+.jnFlEbNote{flex:1;min-width:0}
+.jnFlEbMoney{color:var(--jnGold);white-space:nowrap}
+.jnFlEbRow{display:flex;gap:6px;flex-wrap:wrap}
+.jnFlEb{
+  font:inherit;flex:1 1 auto;min-width:96px;min-height:40px;   /* 指で押せる高さ */
+  padding:5px 8px;border-radius:5px;cursor:pointer;text-align:center;
+  border:1px solid rgba(255,255,255,.35);background:rgba(0,0,0,.2);color:var(--jnInk);
+}
+.jnFlEb b{display:block;font-weight:normal;font-size:12px}
+.jnFlEb i{display:block;font-style:normal;font-size:10px;color:var(--jnSub);margin-top:1px}
+.jnFlEb.on{background:var(--jnPink);border-color:var(--jnPink);color:#2a0c22}
+.jnFlEb.on i{color:#5a1440}
+.jnFlEb.danger{background:#a8203c;border-color:#ff8ea0}
+.jnFlEb.danger i{color:#ffd0d8}
+.jnFlEb.done{background:var(--jnGold);border-color:var(--jnGold);color:#3a2a08}
+.jnFlEb.done i{color:#6a5210}
+.jnFlEb[disabled]{opacity:.4;cursor:default}
+
+/* 模様替え中は、時間帯バー（営業の情報）を出さない。押せる速度ボタンが
+   残っていると、模様替えの操作と紛らわしい */
+.jnFloor.editing .jnFlBar,
+.jnFloor.editing .jnFlTicker{display:none}
+
+/* 模様替え中は、床の空きが減るので矢印を大きくする */
+.jnFloor.editing .jnFlPan{width:22px;height:48px;background:rgba(42,12,34,.7)}

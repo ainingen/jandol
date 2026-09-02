@@ -162,3 +162,7 @@
 .jnUp i{display:block;font-style:normal;font-size:10px;color:var(--muted);margin-top:2px}
 .jnUp.small{font-size:11px;padding:5px 9px}
 .jnUp.small b{font-size:11px}
+
+/* 模様替えの入口（設備の段の下） */
+.jnFacilFoot{margin-top:8px}
+.jnUp.wide{display:block;width:100%;text-align:center;padding:8px 10px}

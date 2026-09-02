@@ -166,7 +166,7 @@ const JansouFloor = (() => {
     }
     return scanSpot(floor, kind);
   }
-  function addItem(floor, kind, x, y) {
+  function pushItem(floor, kind, x, y) {
     floor.items.push({ id: floor.next++, kind, x, y });
   }
 
@@ -184,10 +184,10 @@ const JansouFloor = (() => {
       left -= k;
       const tail = r === rows.length - 1 && rows.length >= 3 && k < 3;
       const x0 = Math.floor((span - k * 7) / 2);
-      for (let i = 0; i < k; i++) addItem(floor, 'table', tail ? TAIL_COLS[i] : x0 + i * 7, gy);
+      for (let i = 0; i < k; i++) pushItem(floor, 'table', tail ? TAIL_COLS[i] : x0 + i * 7, gy);
     });
-    if (lv >= 4) { const p = spotFor(floor, 'sofa', SOFA_SPOTS); if (p) addItem(floor, 'sofa', p.x, p.y); }
-    if (lv >= 5) { const p = spotFor(floor, 'counter', COUNTER_SPOTS); if (p) addItem(floor, 'counter', p.x, p.y); }
+    if (lv >= 4) { const p = spotFor(floor, 'sofa', SOFA_SPOTS); if (p) pushItem(floor, 'sofa', p.x, p.y); }
+    if (lv >= 5) { const p = spotFor(floor, 'counter', COUNTER_SPOTS); if (p) pushItem(floor, 'counter', p.x, p.y); }
     return floor;
   }
 
@@ -196,9 +196,6 @@ const JansouFloor = (() => {
        ・floor が無い（既存セーブ）→ autoPlace で今までと同じ絵を組む
        ・auto（模様替えをしていない）→ 卓数・内装が変わったら組み直す
        ・auto でない → 置いてあるものを尊重し、数だけ合わせる */
-  function countOf(floor, kind) {
-    return floor.items.filter((it) => it.kind === kind).length;
-  }
   function fixCount(floor, kind, want, spots) {
     const mine = floor.items.filter((it) => it.kind === kind);
     for (let i = mine.length - 1; i >= want; i--) {
@@ -207,11 +204,13 @@ const JansouFloor = (() => {
     for (let i = mine.length; i < want; i++) {
       const p = spotFor(floor, kind, spots);
       if (!p) break;
-      addItem(floor, kind, p.x, p.y);
+      pushItem(floor, kind, p.x, p.y);
     }
   }
-  function validMine(mine, tables) {
-    return Number.isInteger(mine) && mine >= 0 && mine < tables ? mine : null;
+  /* mine は**卓の id**。番号（何番目か）で持つと、卓を撤去したときに
+     指す先がずれる。id なら並べ替えても撤去しても指したままか、消えるだけ */
+  function validMine(mine, floor) {
+    return floor.items.some((it) => it.kind === 'table' && it.id === mine) ? mine : null;
   }
   function tableSpots(floor) {
     /* 卓を足すときの置き場所。autoPlace と同じ並びを先に見る */
@@ -242,20 +241,108 @@ const JansouFloor = (() => {
       });
     } else {
       out = { v: 1, auto: false, items: [], next: 1, mine: null };
-      /* 置ける順に拾い直す。範囲外・重なり・入口に掛かるものは落として置き直す */
+      /* 置ける順に拾い直す。範囲外・重なり・入口に掛かるものは落として置き直す。
+         **id は保つ**（mine が id で指しているので、振り直すと指す先が変わる）。
+         欠けているものと重複しているものだけ、あとで振り直す */
+      const used = new Set();
       srcItems.forEach((raw) => {
         if (!raw || !KINDS[raw.kind] || raw.kind === 'door') return;
-        const it = { id: out.next, kind: raw.kind, x: raw.x | 0, y: raw.y | 0 };
+        const id = Number.isInteger(raw.id) && raw.id > 0 && !used.has(raw.id) ? raw.id : 0;
+        const it = { id, kind: raw.kind, x: raw.x | 0, y: raw.y | 0 };
         if (!canPlace(out, it)) return;
-        out.items.push(it); out.next++;
+        out.items.push(it);
+        if (id) used.add(id);
       });
+      out.next = (used.size ? Math.max.apply(null, Array.from(used)) : 0) + 1;
+      out.items.forEach((it) => { if (!it.id) it.id = out.next++; });
       fixCount(out, 'table', n, tableSpots(out));
       fixCount(out, 'sofa', wantSofa, SOFA_SPOTS);
       fixCount(out, 'counter', wantCounter, COUNTER_SPOTS);
-      out.items.forEach((it, i) => { it.id = i + 1; });
-      out.next = out.items.length + 1;
     }
-    out.mine = validMine(src.mine, countOf(out, 'table'));
+    out.mine = validMine(src.mine, out);
+    return out;
+  }
+
+  /* ---------- 模様替えの操作（純関数。placement.md §7） ----------
+     どれも**新しい floor を返す**（置けなければ null）。
+     一度でも手を入れた店は `auto: false` になり、以後は勝手に動かない */
+  function copyFloor(floor) {
+    return { v: 1, auto: false, next: floor.next | 1,
+             items: floor.items.map((it) => ({ id: it.id, kind: it.kind, x: it.x, y: it.y })),
+             mine: floor.mine != null ? floor.mine : null };
+  }
+  /* その点にあるもの。**足元ぜんぶが当たり判定**（席の余白も掴める）。
+     小さいものを先に見る。卓の陰に隠れた観葉植物を掴めなくしない */
+  function pickItem(floor, fx, fy) {
+    const gx = Math.floor((fx - GX0) / GRID), gy = Math.floor((fy - GY0) / GRID);
+    const hits = ((floor && floor.items) || []).filter((it) => covers(it, gx, gy));
+    hits.sort((a, b) => (sizeOf(a.kind).w * sizeOf(a.kind).h) - (sizeOf(b.kind).w * sizeOf(b.kind).h));
+    return hits[0] || null;
+  }
+  /* 足元が床からはみ出さないように寄せる */
+  function clampCell(kind, gx, gy) {
+    const s = sizeOf(kind);
+    return { x: Math.max(0, Math.min(COLS - s.w, Math.round(gx))),
+             y: Math.max(0, Math.min(ROWS - s.h, Math.round(gy))) };
+  }
+  function moveItem(floor, id, gx, gy) {
+    const out = copyFloor(floor);
+    const it = out.items.find((o) => o.id === id);
+    if (!it) return null;
+    const p = clampCell(it.kind, gx, gy);
+    const moved = { id: it.id, kind: it.kind, x: p.x, y: p.y };
+    if (!canPlace(out, moved, id)) return null;
+    it.x = p.x; it.y = p.y;
+    return out;
+  }
+  function addItem(floor, kind, spots) {
+    const out = copyFloor(floor);
+    const p = spotFor(out, kind, spots || []);
+    if (!p) return null;
+    const it = { id: out.next++, kind, x: p.x, y: p.y };
+    out.items.push(it);
+    return { floor: out, item: it };
+  }
+  /* 置き場所の候補。**まず決め打ちの並び、次に近いところから。**
+     買ったものが画面の外に置かれると、置いたことに気づけない */
+  function spotsNear(floor, kind, near, preferred) {
+    const out = (preferred || []).slice();
+    const all = [];
+    for (let gy = 0; gy < ROWS; gy++) {
+      for (let gx = 0; gx < COLS; gx++) {
+        if (canPlace(floor, { kind, x: gx, y: gy })) all.push([gx, gy]);
+      }
+    }
+    const nx = near ? near.x : COLS / 2, ny = near ? near.y : ROWS / 2;
+    all.sort((a, b) => (Math.abs(a[0] - nx) + Math.abs(a[1] - ny)) -
+                       (Math.abs(b[0] - nx) + Math.abs(b[1] - ny)));
+    return out.concat(all);
+  }
+
+  function removeItem(floor, id) {
+    const out = copyFloor(floor);
+    const i = out.items.findIndex((o) => o.id === id);
+    if (i < 0) return null;
+    out.items.splice(i, 1);
+    out.mine = validMine(out.mine, out);
+    return out;
+  }
+  /* 二つを入れ替える。**卓8まで置くと床がほぼ埋まり、空きが無くなる。**
+     入れ替えが無いと、そこから先は一つも動かせない店になる */
+  function swapItems(floor, idA, idB) {
+    const out = copyFloor(floor);
+    const a = out.items.find((o) => o.id === idA);
+    const b = out.items.find((o) => o.id === idB);
+    if (!a || !b || a === b) return null;
+    const ax = a.x, ay = a.y;
+    a.x = b.x; a.y = b.y; b.x = ax; b.y = ay;
+    const fits = (it) => inBounds(it) && !overlaps(it, DOOR) &&
+      !out.items.some((o) => o !== it && overlaps(it, o));
+    return fits(a) && fits(b) ? out : null;
+  }
+  function setMine(floor, id) {
+    const out = copyFloor(floor);
+    out.mine = out.mine === id ? null : validMine(id, out);
     return out;
   }
 
@@ -935,6 +1022,7 @@ const JansouFloor = (() => {
       '<div class="jnFlStage"><div class="jnFlUi"></div><div class="jnFlHits"></div>' +
       '<button type="button" class="jnFlPan left" data-pan="-1" aria-label="左を見る" hidden></button>' +
       '<button type="button" class="jnFlPan right" data-pan="1" aria-label="右を見る" hidden></button></div>' +
+      '<div class="jnFlEdit" hidden></div>' +
       '<div class="jnFlTicker"></div>';
     host.appendChild(wrap);
 
@@ -949,6 +1037,13 @@ const JansouFloor = (() => {
     let panX = null;               // 見えている左端（floor px）。null は「まだ決めていない」
     let tables = [];
     let floor = null;              // 置いてあるもの（parlor.floor）
+    let editG = null;              // 模様替えのマス目・選択枠・置き先の見当
+    const editBar = wrap.querySelector('.jnFlEdit');
+    /* 模様替え（placement.md §7）。sel は選んでいるものの id、
+       ghost は「いまタップ／指を離したらここに置く」の見当 */
+    const edit = {
+      on: false, sel: null, ghost: null, drag: null, arm: null, hooks: {}, note: '',
+    };
     let parlor = {};
     let staffList = [];
     const made = {};
@@ -969,7 +1064,7 @@ const JansouFloor = (() => {
       if (svg) svg.style.left = (-panX * scale) + 'px';
       const max = panMax();
       /* 隠れているのがほぼ余白だけなら、横送りの矢印は出さない（つまんで動かすのは効く） */
-      const show = max > GX0 * 2 + 4;
+      const show = edit.on ? max > 0 : max > GX0 * 2 + 4;
       panL.hidden = !show; panR.hidden = !show;
       panL.disabled = panX <= 0; panR.disabled = panX >= max;
     }
@@ -1084,18 +1179,22 @@ const JansouFloor = (() => {
       });
       defs = el('defs', {});
       svg.appendChild(defs);
-      roomG = el('g', {}); lightG = el('g', {}); actG = el('g', {});
-      svg.appendChild(roomG); svg.appendChild(actG); svg.appendChild(lightG);
+      roomG = el('g', {}); lightG = el('g', {}); actG = el('g', {}); editG = el('g', {});
+      svg.appendChild(roomG); svg.appendChild(actG); svg.appendChild(lightG); svg.appendChild(editG);
 
-      floor = reconcile(parlor.floor, { tables: parlor.tables || 2, interior: parlor.interior });
+      /* 編集中は手元の floor（動かしている途中のもの）をそのまま描く。
+         突き合わせを通すと、置いた場所が勝手に直されてしまう */
+      if (!edit.on || !floor) {
+        floor = reconcile(parlor.floor, { tables: parlor.tables || 2, interior: parlor.interior });
+      }
       drawWall(roomG, parlor);
       drawCarpet(roomG, parlor);
       drawFixtures(roomG, floor, parlor);
       tables = tablesOf(floor);
       const closed = live.closedTables || 0;
       tables.forEach((t, i) => {
-        t.kind = i >= tables.length - closed ? 'closed'
-          : i === live.myTable ? 'mine' : 'normal';
+        t.kind = !edit.on && i >= tables.length - closed ? 'closed'
+          : (edit.on ? floor.mine === t.id : i === live.myTable) ? 'mine' : 'normal';
         drawTable(roomG, t, t.kind, parlor.auto);
       });
       /* スタッフの体は一つの <g> を使い回す */
@@ -1299,7 +1398,249 @@ const JansouFloor = (() => {
       hitEls.forEach((d, key) => { if (!keep.has(key)) { d.remove(); hitEls.delete(key); } });
     }
 
-    function paint() { drawLight(); drawActors(); drawUi(); drawHits(); }
+    /* ============================================================
+       模様替え（placement.md §7）
+       ・触りかた … ものをつまんで動かす／タップして選び、床をタップして動かす
+       ・**置ける場所は置く前に見せる**（緑＝置ける／赤＝置けない）
+       ・撤去は二度押し。一度目で「本当に撤去する」に変わる
+       ============================================================ */
+    function editFrame(g, x, y, w, h, color, inset) {
+      const i = inset || 0;
+      g.appendChild(rect(x + i, y + i, w - i * 2, 1, color));
+      g.appendChild(rect(x + i, y + h - i - 1, w - i * 2, 1, color));
+      g.appendChild(rect(x + i, y + i, 1, h - i * 2, color));
+      g.appendChild(rect(x + w - i - 1, y + i, 1, h - i * 2, color));
+    }
+    function cellRect(it) {
+      const s = KINDS[it.kind];
+      return { x: cellX(it.x), y: cellY(it.y), w: s.w * GRID, h: s.h * GRID };
+    }
+    function drawEditLayer() {
+      while (editG.firstChild) editG.removeChild(editG.firstChild);
+      /* 空いているマスに点を打つ。**置ける場所が一目で分かる** */
+      for (let gy = 0; gy < ROWS; gy++) {
+        for (let gx = 0; gx < COLS; gx++) {
+          if (!freeCell(floor, gx, gy)) continue;
+          editG.appendChild(rect(cellX(gx) + 3, cellY(gy) + 3, 2, 2, '#9a8874'));
+        }
+      }
+      /* 卓の足元は「卓＋席4つ」。**席の場所を薄く出す。**
+         これが無いと、卓より大きな枠が何のためのものか分からない */
+      tablesOf(floor).forEach((t) => {
+        seatsOf(t).forEach((st) => {
+          editG.appendChild(el('rect', { x: st.x, y: st.y, width: SEAT_W, height: SEAT_H,
+            fill: '#ffffff', opacity: '0.10' }));
+          editFrame(editG, st.x, st.y, SEAT_W, SEAT_H, '#6a5a50');
+        });
+      });
+      /* 入口は動かせないし、上にも置けない */
+      const dr = cellRect(DOOR);
+      editG.appendChild(el('rect', { x: dr.x, y: dr.y, width: dr.w, height: dr.h,
+        fill: PAL.neonPink, opacity: '0.18' }));
+      editFrame(editG, dr.x, dr.y, dr.w, dr.h, '#c86ab0');
+      /* 選んでいるもの */
+      const sel = edit.sel != null && floor.items.find((it) => it.id === edit.sel);
+      if (sel) {
+        const r = cellRect(sel);
+        editFrame(editG, r.x, r.y, r.w, r.h, PAL.gold);
+        editFrame(editG, r.x, r.y, r.w, r.h, PAL.gold, 2);
+      }
+      /* 置き先の見当。**緑なら置ける、赤なら置けない** */
+      if (edit.ghost) {
+        const s = KINDS[edit.ghost.kind];
+        const x = cellX(edit.ghost.x), y = cellY(edit.ghost.y);
+        const w = s.w * GRID, h = s.h * GRID;
+        const c = !edit.ghost.ok ? '#ff6a72' : edit.ghost.swap ? PAL.neonCyan : '#96ffb4';
+        editG.appendChild(el('rect', { x, y, width: w, height: h, fill: c, opacity: '0.3' }));
+        editFrame(editG, x, y, w, h, c);
+        editFrame(editG, x, y, w, h, c, 1);
+      }
+    }
+
+    const esc = (t) => String(t).replace(/[&<>"']/g,
+      (m) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m]));
+
+    function selItem() {
+      return edit.sel != null ? floor.items.find((it) => it.id === edit.sel) || null : null;
+    }
+    function btn(act, label, note, cls, off) {
+      return '<button type="button" class="jnFlEb' + (cls ? ' ' + cls : '') + '" data-act="' + act + '"' +
+        (off ? ' disabled' : '') + '><b>' + esc(label) + '</b>' +
+        (note ? '<i>' + esc(note) + '</i>' : '') + '</button>';
+    }
+    function renderEditBar() {
+      if (!edit.on) { editBar.hidden = true; editBar.innerHTML = ''; return; }
+      editBar.hidden = false;
+      const h = edit.hooks;
+      const it = selItem();
+      const money = h.money ? h.money() : 0;
+      let row = '';
+      if (it) {
+        const name = KINDS[it.kind].name;
+        const canSell = h.canSell ? h.canSell(it.kind) : false;
+        const back = h.refundOf ? h.refundOf(it.kind) : 0;
+        if (it.kind === 'table') {
+          row += btn('mine', floor.mine === it.id ? '自分の卓をやめる' : '自分の卓にする',
+            '夜、代表が着く卓', floor.mine === it.id ? 'on' : '');
+        }
+        if (edit.arm === it.id) {
+          /* **「やめる」を、いま押した「撤去」と同じ場所に出す。**
+             確かめのボタンを同じ位置に出すと、二度押しで消えてしまう */
+          row += btn('unarm', 'やめる', '');
+          row += btn('sell', '本当に撤去する', '+' + yen(back), 'danger');
+        } else if (canSell) {
+          row += btn('arm', name + 'を撤去', '半額 +' + yen(back) + ' が戻る');
+        } else if (it.kind === 'table') {
+          row += btn('none', '撤去できない', '卓は2つ必要', '', true);
+        } else if (it.kind === 'sofa' || it.kind === 'counter') {
+          row += btn('none', '撤去できない', '内装のぶん', '', true);
+        }
+        row += btn('close', 'とじる', '');
+        /* 選んでいる間も終われるようにする。とじてからでないと帰れないのは不便 */
+        if (edit.arm !== it.id) row += btn('done', '模様替えを終える', '', 'done');
+      } else {
+        const tp = h.priceOf ? h.priceOf('table') : null;
+        const pp = h.priceOf ? h.priceOf('plant') : null;
+        row += tp
+          ? btn('buy-table', '卓を増設', yen(tp.cost), '', money < tp.cost)
+          : btn('none', '卓は8つまで', '', '', true);
+        if (pp) row += btn('buy-plant', '観葉植物を買う', yen(pp.cost), '', money < pp.cost);
+        row += btn('done', '模様替えを終える', '', 'done');
+      }
+      editBar.innerHTML =
+        '<div class="jnFlEbTop"><span class="jnFlEbNote">' + esc(edit.note) + '</span>' +
+        '<span class="jnFlEbMoney">所持金 ' + yen(money) + '</span></div>' +
+        '<div class="jnFlEbRow">' + row + '</div>';
+    }
+
+    function note(t) { edit.note = t; }
+    function commitFloor(change) {
+      if (edit.hooks.commit) edit.hooks.commit(floor, change || {});
+      buildRoom(); renderEditBar(); paint();
+    }
+    function applyMove(id, gx, gy) {
+      const next = moveItem(floor, id, gx, gy);
+      if (!next) { note('ここには置けません'); renderEditBar(); paint(); return false; }
+      floor = next;
+      note('動かしました');
+      commitFloor({ kind: 'move' });
+      return true;
+    }
+    /* 置き先の見当。置けないときは、指の下のものと**入れ替えられるか**を見る。
+       卓8まで置くと床がほぼ埋まるので、入れ替えが無いと一つも動かせなくなる */
+    function applySwap(idA, idB) {
+      const next = swapItems(floor, idA, idB);
+      if (!next) { note('入れ替えられません'); renderEditBar(); paint(); return false; }
+      floor = next;
+      note('入れ替えました');
+      commitFloor({ kind: 'move' });
+      return true;
+    }
+    function ghostFor(id, gx, gy, fx, fy) {
+      const it = floor.items.find((o) => o.id === id);
+      if (!it) return null;
+      const c = clampCell(it.kind, gx, gy);
+      if (canPlace(floor, { kind: it.kind, x: c.x, y: c.y }, id)) {
+        return { kind: it.kind, x: c.x, y: c.y, ok: true };
+      }
+      const other = fx != null ? pickItem(floor, fx, fy) : null;
+      if (other && other.id !== id && swapItems(floor, id, other.id)) {
+        return { kind: it.kind, x: other.x, y: other.y, ok: true, swap: other.id };
+      }
+      return { kind: it.kind, x: c.x, y: c.y, ok: false };
+    }
+
+    /* 端に指を置いたままでも横送りする。狭い幅で、画面の外へ動かせなくならないように */
+    let edgeTimer = null, edgeDir = 0;
+    function stopEdgePan() { clearInterval(edgeTimer); edgeTimer = null; edgeDir = 0; }
+    function edgePan(clientX) {
+      const r = stage.getBoundingClientRect();
+      const x = clientX - r.left;
+      const dir = panMax() <= 0 ? 0 : x < 26 ? -1 : x > r.width - 26 ? 1 : 0;
+      if (dir === edgeDir) return;
+      stopEdgePan();
+      edgeDir = dir;
+      if (!dir) return;
+      edgeTimer = setInterval(() => {
+        panX += dir * 2; clampPan(); applyPan();
+        const d = edit.drag;
+        if (d && d.last) {
+          const p = stagePoint(d.last);
+          edit.ghost = ghostFor(d.id, Math.floor((p.x - GX0) / GRID) - d.ox,
+                                       Math.floor((p.y - GY0) / GRID) - d.oy, p.x, p.y);
+        }
+        paint();
+      }, 40);
+    }
+    function stagePoint(e) {
+      const r = stage.getBoundingClientRect();
+      return screenToFloor(e.clientX - r.left, e.clientY - r.top);
+    }
+
+    editBar.addEventListener('click', (e) => {
+      const b = e.target.closest('[data-act]');
+      if (!b || b.disabled) return;
+      const act = b.dataset.act;
+      const h = edit.hooks;
+      const it = selItem();
+      if (act === 'done') { stopEdgePan(); if (h.onDone) h.onDone(); return; }
+      if (act === 'close') { edit.sel = null; edit.arm = null; note('動かしたいものをタップ'); }
+      else if (act === 'unarm') { edit.arm = null; note(''); }
+      else if (act === 'arm' && it) { edit.arm = it.id; note('もう一度押すと撤去します'); }
+      else if (act === 'mine' && it) {
+        floor = setMine(floor, it.id);
+        note(floor.mine === it.id ? 'ここを自分の卓にしました' : '自分の卓をやめました');
+        commitFloor({ kind: 'mine' });
+        return;
+      } else if (act === 'sell' && it && edit.arm === it.id) {
+        const back = h.refundOf ? h.refundOf(it.kind) : 0;
+        const next = removeItem(floor, it.id);
+        if (next) {
+          floor = next; edit.sel = null; edit.arm = null;
+          note(KINDS[it.kind].name + 'を撤去しました（+' + yen(back) + '）');
+          commitFloor({ kind: 'sell', itemKind: it.kind, refund: back });
+          return;
+        }
+      } else if (act === 'buy-table' || act === 'buy-plant') {
+        const kind = act === 'buy-table' ? 'table' : 'plant';
+        const price = h.priceOf ? h.priceOf(kind) : null;
+        if (!price || (h.money ? h.money() : 0) < price.cost) return;
+        /* **買ったものが窓の外に置かれると、置いたことに気づけない。**
+           決め打ちの並びのうち「いま見えている」ものを先に、あとは近い順に */
+        const near = { x: Math.round((panX + floorW / 2 - GX0) / GRID), y: Math.round(ROWS / 2) };
+        const seen = (gx) => cellX(gx) >= panX - 2 &&
+          cellX(gx) + KINDS[kind].w * GRID <= panX + floorW + 2;
+        const spots = (kind === 'table' ? tableSpots(floor) : []).filter(([gx]) => seen(gx));
+        const res = addItem(floor, kind, spotsNear(floor, kind, near, spots));
+        if (!res) { note('置ける場所がありません'); renderEditBar(); return; }
+        floor = res.floor; edit.sel = res.item.id; edit.arm = null;
+        note(KINDS[kind].name + 'を置きました。動かせます');
+        commitFloor({ kind: 'buy', itemKind: kind, cost: price.cost });
+        return;
+      }
+      renderEditBar(); paint();
+    });
+
+    function setEdit(on, hooks) {
+      stopEdgePan();
+      edit.on = !!on;
+      edit.hooks = hooks || {};
+      edit.sel = null; edit.ghost = null; edit.drag = null; edit.arm = null;
+      edit.note = on ? '動かしたいものをタップ。床をタップするとそこへ動きます' : '';
+      wrap.classList.toggle('editing', edit.on);
+      if (edit.hooks.parlor) parlor = edit.hooks.parlor() || parlor;
+      resetLive();
+      live.headNote = on ? '模様替え' : '';
+      floor = null;                       // 入るときに読み直す
+      buildRoom();
+      renderEditBar();
+      paint();
+    }
+
+    function paint() {
+      if (edit.on) { drawEditLayer(); drawUi(); return; }
+      drawLight(); drawActors(); drawUi(); drawHits();
+    }
 
     /* ---------- 静止画（第一段の見せ方） ---------- */
     function render(state) {
@@ -1567,22 +1908,84 @@ const JansouFloor = (() => {
       if (p) { panX += (+p.dataset.pan) * 24; clampPan(); applyPan(); paint(); }
     });
 
-    /* ---------- 横送り（placement.md §3） ----------
-       論理フロアは 200 固定なので、窓が狭いときは**床をつまんで動かす**。
-       客のボタンの上から始めたときは動かさない（タップを取りこぼす） */
-    let drag = null;
+    /* ---------- 床のうえの操作（横送りと模様替え） ----------
+       切り分けはこれだけ（placement.md §3・§7.2）：
+
+         ものの上から始めた   → そのものを動かす（指を離すまで置き先を見せる）
+         何も無い床から始めた → 動かせば横送り、動かさなければ「そこへ置く」
+
+       狭い幅ほど床の空きが減るので、模様替え中は横送りの矢印を必ず出し、
+       ものをつまんだまま窓の端へ寄せると自動で送る。
+       客のボタンの上から始めたときは、どちらもしない（タップを取りこぼす） */
+    let pan = null;
     stage.addEventListener('pointerdown', (e) => {
-      if (panMax() <= 0 || (e.target.closest && e.target.closest('button'))) return;
-      drag = { x: e.clientX, from: panX };
-      try { stage.setPointerCapture(e.pointerId); } catch (err) { /* 古い実装 */ }
+      if (e.target.closest && e.target.closest('button')) return;
+      const p = stagePoint(e);
+      if (edit.on) {
+        /* ものの上なら、それをつまむ。何も無い床でも、**選んでいるものがあれば
+           それを持ってきて置く**（指を離す前に緑／赤が見える）。
+           選んでいるものが無いときだけ、床をなぞると横送りになる */
+        const hit = pickItem(floor, p.x, p.y);
+        const it = hit || selItem();
+        if (it) {
+          const s = KINDS[it.kind];
+          edit.sel = it.id; edit.arm = null;
+          edit.drag = { id: it.id, x0: e.clientX, y0: e.clientY, moved: false, last: e,
+            grabbed: !!hit,
+            ox: hit ? Math.floor((p.x - GX0) / GRID) - it.x : ((s.w - 1) >> 1),
+            oy: hit ? Math.floor((p.y - GY0) / GRID) - it.y : ((s.h - 1) >> 1) };
+          edit.ghost = ghostFor(it.id, Math.floor((p.x - GX0) / GRID) - edit.drag.ox,
+                                       Math.floor((p.y - GY0) / GRID) - edit.drag.oy, p.x, p.y);
+          note(hit ? KINDS[it.kind].name + 'をつまんでいます'
+                   : (edit.ghost && edit.ghost.ok ? 'ここに置けます' : 'ここには置けません'));
+          try { stage.setPointerCapture(e.pointerId); } catch (err) { /* 古い実装 */ }
+          renderEditBar(); paint();
+          return;
+        }
+      }
+      pan = { x: e.clientX, from: panX, moved: false, fx: p.x, fy: p.y };
+      if (panMax() > 0) { try { stage.setPointerCapture(e.pointerId); } catch (err) { /* 同上 */ } }
     });
     stage.addEventListener('pointermove', (e) => {
-      if (!drag) return;
-      panX = drag.from - (e.clientX - drag.x) / scale;
-      clampPan(); applyPan(); paint();
+      const d = edit.drag;
+      if (d) {
+        if (Math.abs(e.clientX - d.x0) + Math.abs(e.clientY - d.y0) > 5) d.moved = true;
+        d.last = e;
+        const p = stagePoint(e);
+        edit.ghost = ghostFor(d.id, Math.floor((p.x - GX0) / GRID) - d.ox,
+                                    Math.floor((p.y - GY0) / GRID) - d.oy, p.x, p.y);
+        if (d.moved) {
+          note(!edit.ghost || !edit.ghost.ok ? 'ここには置けません'
+            : edit.ghost.swap ? 'ここと入れ替えます' : 'ここに置けます');
+        }
+        edgePan(e.clientX);
+        renderEditBar(); paint();
+        return;
+      }
+      if (!pan) return;
+      if (Math.abs(e.clientX - pan.x) > 3) pan.moved = true;
+      if (panMax() > 0) { panX = pan.from - (e.clientX - pan.x) / scale; clampPan(); applyPan(); paint(); }
     });
-    ['pointerup', 'pointercancel', 'pointerleave'].forEach((k) =>
-      stage.addEventListener(k, () => { drag = null; }));
+    function endPointer() {
+      const d = edit.drag;
+      if (d) {
+        edit.drag = null;
+        stopEdgePan();
+        const g = edit.ghost;
+        edit.ghost = null;
+        /* つまんだだけ（動かしていない）なら、選んだだけにする。
+           そこで動かしてしまうと、選ぶたびに保存が走る */
+        if (d.grabbed && !d.moved) note('動かしたい場所をタップするか、そのままつまんで動かします');
+        else if (g && g.ok && g.swap) { applySwap(d.id, g.swap); return; }
+        else if (g && g.ok) { applyMove(d.id, g.x, g.y); return; }
+        else note('ここには置けません');
+        renderEditBar(); paint();
+        return;
+      }
+      if (pan && !pan.moved && edit.on) { note('動かしたいものをタップ'); renderEditBar(); paint(); }
+      pan = null;
+    }
+    ['pointerup', 'pointercancel'].forEach((k) => stage.addEventListener(k, endPointer));
 
     let tid = null;
     const onResize = () => {
@@ -1592,13 +1995,14 @@ const JansouFloor = (() => {
     window.addEventListener('resize', onResize);
 
     return {
-      el: wrap, render, play, setSpeed, skip, pause, resume,
+      el: wrap, render, play, setSpeed, skip, pause, resume, setEdit,
       floorToScreen, screenToFloor,
       get scale() { return scale; },
       get floorW() { return floorW; },
       get playing() { return live.playing; },
       destroy() {
         live.playing = false;
+        stopEdgePan();
         if (raf) cancelAnimationFrame(raf);
         window.removeEventListener('resize', onResize);
         wrap.remove();
@@ -1610,6 +2014,8 @@ const JansouFloor = (() => {
     mount, fit, seatsOf, gridRects, build, slotStartTimes, spriteSvg, bottleSvg, insertEvent,
     /* マス目と設置物（placement.md §1・§2）。純関数 */
     autoPlace, reconcile, canPlace, freeCell, tablesOf, itemsOf, ringCells, cellX, cellY,
+    pickItem, clampCell, moveItem, swapItems, removeItem, setMine, addItem, tableSpots, spotsNear,
+    SOFA_SPOTS, COUNTER_SPOTS,
     KINDS, DOOR, GRID, COLS, ROWS, GX0, GY0,
     drawWall, drawCarpet, drawFixtures, drawTable,
     PAL, FLOOR_H, FLOOR_W, FLOOR_W_MAX, TABLE_W, TABLE_H, SEAT_W, SEAT_H, COL_PITCH,

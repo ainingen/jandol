@@ -238,6 +238,101 @@ function eq(a, b, name) {
       { tables: 4, interior: 1 }).mine, 1, '自分の卓は残る');
   }
 
+  /* ---- 模様替えの操作（placement.md §7。純関数） ---- */
+  {
+    const F2 = JansouFloor;
+    const fl = F2.autoPlace({ tables: 4, interior: 3 });   // 卓4（1,1）(8,1)(15,1)(8,7)
+    const t0 = fl.items[0];
+
+    /* つまむ判定は**足元ぜんぶ**。卓の絵の外（席の余白）でも掴める */
+    eq(F2.pickItem(fl, F2.cellX(t0.x) + 2, F2.cellY(t0.y) + 2).id, t0.id, '足元の隅でも掴める');
+    eq(F2.pickItem(fl, F2.cellX(t0.x) + 20, F2.cellY(t0.y) + 20).id, t0.id, '卓の上でも掴める');
+    ok(!F2.pickItem(fl, F2.cellX(10) + 4, F2.cellY(13) + 4), '入口は掴めない');
+    ok(!F2.pickItem(fl, 2, 2), '壁のところには何も無い');
+
+    /* 足元が床からはみ出さないように寄せる */
+    eq(JSON.stringify(F2.clampCell('table', -5, -5)), '{"x":0,"y":0}', '左上に寄せる');
+    eq(JSON.stringify(F2.clampCell('table', 99, 99)),
+      '{"x":' + (F2.COLS - 7) + ',"y":' + (F2.ROWS - 5) + '}', '右下に寄せる');
+
+    /* 動かす：重なる・入口・範囲外は断る。**断ったときは null で、元は変わらない** */
+    ok(!F2.moveItem(fl, t0.id, fl.items[1].x, fl.items[1].y), '重なる場所へは動かせない');
+    ok(!F2.moveItem(fl, t0.id, 8, 11), '入口に掛かる場所へは動かせない');   // 行11は10に寄る
+    ok(!F2.moveItem(fl, 999, 0, 0), '無いものは動かせない');
+    const moved = F2.moveItem(fl, t0.id, 0, 10);
+    ok(!!moved, '空いている場所へは動かせる');
+    eq(moved.auto, false, '一度動かしたら自動配置ではなくなる');
+    eq(fl.items[0].x, t0.x, '元の floor は書き換わらない');
+    eq(F2.tablesOf(moved).length, 4, '動かしても卓の数は変わらない');
+    eq(moved.items.map((it) => it.id).join(','), fl.items.map((it) => it.id).join(','), 'id は変わらない');
+    /* はみ出す指定は寄せてから判定する（指が枠の外に出ても置ける） */
+    const clamped = F2.moveItem(fl, t0.id, -3, 10);
+    ok(clamped && clamped.items[0].x === 0, 'はみ出す指定は内側に寄せる');
+
+    /* 自分の卓は id で覚える。撤去すると外れる */
+    const mineSet = F2.setMine(fl, t0.id);
+    eq(mineSet.mine, t0.id, '自分の卓にできる');
+    eq(F2.setMine(mineSet, t0.id).mine, null, 'もう一度押すとやめられる');
+    const sold = F2.removeItem(mineSet, t0.id);
+    eq(F2.tablesOf(sold).length, 3, '撤去すると1つ減る');
+    eq(sold.mine, null, '自分の卓を撤去したら外れる');
+    /* **他の卓の id は動かない。**番号で持つと、ここでずれる */
+    eq(sold.items[0].id, fl.items[1].id, '撤去しても残りの id は変わらない');
+
+    /* **入れ替え。**卓8まで置くと床がほぼ埋まり、空きが無くなる。
+       入れ替えが無いと、そこから先は一つも動かせない店になる */
+    {
+      const full = F2.autoPlace({ tables: 8, interior: 5 });
+      const ts = full.items.filter((it) => it.kind === 'table');
+      /* 空いている 7×5 はもう無い（＝動かす先が無い） */
+      let room = 0;
+      for (let gy = 0; gy < F2.ROWS; gy++) {
+        for (let gx = 0; gx < F2.COLS; gx++) if (F2.canPlace(full, { kind: 'table', x: gx, y: gy })) room++;
+      }
+      eq(room, 0, '卓8では卓を置ける空きが無い');
+      const sw = F2.swapItems(full, ts[0].id, ts[7].id);
+      ok(!!sw, '空きが無くても入れ替えはできる');
+      const a = sw.items.find((it) => it.id === ts[0].id), b = sw.items.find((it) => it.id === ts[7].id);
+      ok(a.x === ts[7].x && a.y === ts[7].y && b.x === ts[0].x && b.y === ts[0].y, '場所が入れ替わる');
+      eq(sw.auto, false, '入れ替えたら自動配置ではなくなる');
+      eq(F2.tablesOf(sw).length, 8, '入れ替えても数は変わらない');
+      sw.items.forEach((it, i) => {
+        for (let j = i + 1; j < sw.items.length; j++) {
+          ok(!(it.x < sw.items[j].x + F2.KINDS[sw.items[j].kind].w &&
+               sw.items[j].x < it.x + F2.KINDS[it.kind].w &&
+               it.y < sw.items[j].y + F2.KINDS[sw.items[j].kind].h &&
+               sw.items[j].y < it.y + F2.KINDS[it.kind].h), '入れ替えても重ならない');
+        }
+      });
+      ok(!F2.swapItems(full, ts[0].id, 999), '無いものとは入れ替えられない');
+      ok(!F2.swapItems(full, ts[0].id, ts[0].id), '自分自身とは入れ替えない');
+      /* 大きさが違うと、入れ替えた先で他とぶつかることがある。そのときは断る */
+      const sofa = full.items.find((it) => it.kind === 'sofa');
+      ok(!F2.swapItems(full, ts[0].id, sofa.id), '大きさが合わない入れ替えは断る');
+    }
+
+    /* 買ったものは、見えているところの近くに置かれる */
+    const near = { x: 20, y: 1 };
+    const res = F2.addItem(fl, 'plant', F2.spotsNear(fl, 'plant', near, []));
+    ok(!!res && res.item.kind === 'plant', '観葉植物を置ける');
+    ok(Math.abs(res.item.x - near.x) + Math.abs(res.item.y - near.y) <= 4,
+      '近いところに置かれる', res.item.x + ',' + res.item.y);
+    ok(F2.canPlace(fl, { kind: 'plant', x: res.item.x, y: res.item.y }), '置いた先は空いていた');
+
+    /* 模様替えした店は、突き合わせを通しても**勝手に動かない** */
+    const custom = F2.moveItem(F2.setMine(fl, fl.items[1].id), t0.id, 0, 10);
+    const back = JansouFloor.reconcile(custom, { tables: 4, interior: 3 });
+    eq(back.items.map((it) => it.kind + it.x + ',' + it.y).join(' '),
+       custom.items.map((it) => it.kind + it.x + ',' + it.y).join(' '), '置いた場所が残る');
+    eq(back.mine, custom.mine, '自分の卓も残る');
+    /* 卓を撤去したあと、tables を減らして通しても残りは動かない */
+    const sold2 = F2.removeItem(custom, custom.items[2].id);
+    const back2 = JansouFloor.reconcile(sold2, { tables: 3, interior: 3 });
+    eq(F2.tablesOf(back2).length, 3, '撤去した数のまま');
+    eq(back2.items.map((it) => it.kind + it.x + ',' + it.y).join(' '),
+       sold2.items.map((it) => it.kind + it.x + ',' + it.y).join(' '), '撤去しても残りは動かない');
+  }
+
   /* ---- canPlace / freeCell ---- */
   {
     const fl = F.autoPlace({ tables: 2, interior: 1 });
