@@ -508,11 +508,14 @@ const JansouGuests = (() => {
       const reg = regulars[f.id];
       const stage = reg ? stageOf(reg.visits || 0) : 0;
       /* 型を先に見る。段階3の社長は「いつもの人」ではなく、タワーを賭ける大一番の候補 */
-      if (f.typeKey === 'shachou') cands.push({ kind: 'shachou', face: f, stage });
-      else if (f.typeKey === 'uchishi' && (opts.rep || 0) >= 30) cands.push({ kind: 'uchishi', face: f, stage });
-      else if (stage >= 3) cands.push({ kind: 'nushi', face: f, stage });
+      const counter = (f.combo || []).indexOf('counter') >= 0;
+      if (f.typeKey === 'shachou') cands.push({ kind: 'shachou', face: f, stage, counter });
+      else if (f.typeKey === 'uchishi' && (opts.rep || 0) >= 30) cands.push({ kind: 'uchishi', face: f, stage, counter });
+      else if (stage >= 3) cands.push({ kind: 'nushi', face: f, stage, counter });
     });
-    const rolled = cands.filter(() => rng() < 0.5);
+    /* **カウンター席に座った客は挑んできやすい**（placement.md §5.2）。
+       乱数を引く回数は変えない（引く回数が変わると、その日の他の結果までずれる） */
+    const rolled = cands.filter((c) => rng() < (c.counter ? 0.75 : 0.5));
     if (!rolled.length) return null;
     const c = rolled[Math.floor(rng() * rolled.length)];
     let tier = 1;
@@ -521,7 +524,11 @@ const JansouGuests = (() => {
       /* 常連の格が上がるほど賭かるボトルの格も上がる（§9.2）。タワーは主だけ、しかも稀 */
       tier = 4 + (c.stage >= 2 ? 1 : 0) + (c.stage >= 3 && rng() < 0.25 ? 1 : 0);
     }
-    return { kind: c.kind, guestId: c.face.id, typeKey: c.face.typeKey, tier: Math.min(6, tier), stage: c.stage };
+    /* ラウンジ（ソファ＋カウンター）があると、賭かるボトルの格が一段上がる。
+       勝てば大きく、負ければ高くつく（placement.md §5.2） */
+    if (opts.lounge) tier += 1;
+    return { kind: c.kind, guestId: c.face.id, typeKey: c.face.typeKey, tier: Math.min(6, tier),
+             stage: c.stage, counter: !!c.counter, lounge: !!opts.lounge };
   }
   /* 荒らしの言い値。ARASHI_STAKE（10万）と桁を揃えて段階3〜4（§9.4） */
   function arashiTier(rng) { return rng() < 0.5 ? 3 : 4; }

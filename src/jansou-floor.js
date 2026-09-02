@@ -263,6 +263,101 @@ const JansouFloor = (() => {
     return out;
   }
 
+  /* ---------- 隣接コンボ（placement.md §5。純関数） ----------
+     足元の矩形どうしの隙間が**1マス以内**なら隣接。ぴったり付けないと
+     成立しないのは、指で置くには厳しい。並び順には依存しない。
+
+     **効くのは「誰が座るか・どれだけ居るか・誰から立つか・チップ・
+     ボトル・常連の進み・指名」だけ。** `computeDay` の guests と sales は
+     1円も動かさない（§5.3 の厳密一致を崩さないため）。 */
+  const COMBOS = [
+    { key: 'kutsurogi', name: 'くつろぎ席', need: '卓＋ソファ', see: '長く居る・チップ' },
+    { key: 'counter',   name: 'カウンター席', need: '卓＋カウンター', see: '上客が座る' },
+    { key: 'iriguchi',  name: '入口席',     need: '卓＋入口', see: '一見さん・回転が速い' },
+    { key: 'shizuka',   name: '静かな席',   need: '卓が他とも入口とも離れている', see: '常連と特別な客' },
+    { key: 'hanamichi', name: '花道',       need: '卓の左右に観葉植物', see: '指名が増える' },
+    { key: 'lounge',    name: 'ラウンジ',   need: 'ソファ＋カウンター', see: 'ボトルの格が上がる' },
+  ];
+  const COMBO_BY_KEY = {};
+  COMBOS.forEach((c) => { COMBO_BY_KEY[c.key] = c; });
+
+  const TIP_PER_GUEST = 300;    // くつろぎ席のチップ（一人あたり・臨時収入）
+  const DWELL_RELAX = 1.4;      // くつろぎ席は長く居る
+  const DWELL_DOOR = 0.7;       // 入口席は回転が速い
+
+  /* 隣接（1マスの隙間まで数える） */
+  function adjacent(a, b) {
+    const sa = sizeOf(a.kind), sb = sizeOf(b.kind);
+    const gx = Math.max(0, b.x - (a.x + sa.w), a.x - (b.x + sb.w));
+    const gy = Math.max(0, b.y - (a.y + sa.h), a.y - (b.y + sb.h));
+    return Math.max(gx, gy) <= 1;
+  }
+  /* 卓の左右（席の外）に付いているか。花道はここだけ横並びを見る */
+  function sideOf(t, p) {
+    const st = KINDS.table, sp = sizeOf(p.kind);
+    if (!(p.y < t.y + st.h && t.y < p.y + sp.h)) return null;
+    if (p.x + sp.w <= t.x && t.x - (p.x + sp.w) <= 1) return 'left';
+    if (t.x + st.w <= p.x && p.x - (t.x + st.w) <= 1) return 'right';
+    return null;
+  }
+
+  function combos(floor) {
+    const items = (floor && floor.items) || [];
+    const tables = items.filter((it) => it.kind === 'table');
+    const sofas = items.filter((it) => it.kind === 'sofa');
+    const counters = items.filter((it) => it.kind === 'counter');
+    const plants = items.filter((it) => it.kind === 'plant');
+    const byId = {};
+    const counts = {};
+    const bump = (k) => { counts[k] = (counts[k] || 0) + 1; };
+
+    tables.forEach((t) => {
+      const keys = [];
+      if (sofas.some((o) => adjacent(t, o))) keys.push('kutsurogi');
+      if (counters.some((o) => adjacent(t, o))) keys.push('counter');
+      const atDoor = adjacent(t, DOOR);
+      if (atDoor) keys.push('iriguchi');
+      if (!atDoor && !tables.some((o) => o.id !== t.id && adjacent(t, o))) keys.push('shizuka');
+      const sides = {};
+      plants.forEach((p) => { const w = sideOf(t, p); if (w) sides[w] = true; });
+      if (sides.left && sides.right) keys.push('hanamichi');
+      keys.forEach(bump);
+      byId[t.id] = keys;
+    });
+
+    const lounge = sofas.some((sf) => counters.some((c) => adjacent(sf, c)));
+    if (lounge) bump('lounge');
+    return {
+      byId, counts, lounge,
+      list: COMBOS.filter((c) => counts[c.key])
+        .map((c) => ({ key: c.key, name: c.name, see: c.see, n: counts[c.key] })),
+    };
+  }
+
+  /* 卓ごとの性質。**帳簿層（build）に渡すのはこれだけ**（placement.md §6.2）。
+     tableIdx は「使える卓」の並び（閉鎖卓と自分の卓を除いたもの）で、
+     返す配列はその並びにそろえる */
+  function tableTraits(floor, tableIdx) {
+    const c = combos(floor);
+    const tables = tablesOf(floor);
+    return (tableIdx || []).map((ti) => {
+      const t = tables[ti];
+      const keys = (t && c.byId[t.id]) || [];
+      const has = (k) => keys.indexOf(k) >= 0;
+      const door = has('iriguchi'), relax = has('kutsurogi');
+      return {
+        idx: ti, keys,
+        /* **入口席は他が何であれ回転が速い。**近いほど客が入れ替わる */
+        dwellMul: door ? DWELL_DOOR : relax ? DWELL_RELAX : 1,
+        evictRank: door ? 0 : relax ? 2 : 1,      // 小さいほど先に立つ
+        tip: relax ? TIP_PER_GUEST : 0,           // ソファが隣なら、帰りぎわにチップ
+        /* 席の好み。卓に複数あるときは 入口席 → カウンター席 → 静かな席 の順 */
+        prefer: door ? 'shinki' : has('counter') ? 'joukyaku' : has('shizuka') ? 'tokubetsu' : null,
+        hanamichi: has('hanamichi'),
+      };
+    });
+  }
+
   /* ---------- 模様替えの操作（純関数。placement.md §7） ----------
      どれも**新しい floor を返す**（置けなければ null）。
      一度でも手を入れた店は `auto: false` になり、以後は勝手に動かない */
@@ -425,6 +520,13 @@ const JansouFloor = (() => {
     const fees = opts.fees || [1600, 2100, 2600];
     const tableIdx = (opts.tableIdx || []).slice();
     const seatsN = tableIdx.length * SEATS_PER_TABLE;
+    /* 卓ごとの性質（placement.md §5・§6.2）。渡されなければ全部ふつうの卓。
+       **ここが変えるのは「誰が座るか・どれだけ居るか・誰から立つか・チップ」だけ。**
+       Σcount＝guests と Σpay＝sales は動かさない */
+    const traits = (opts.tables && opts.tables.length === tableIdx.length)
+      ? opts.tables
+      : tableIdx.map((ti) => ({ idx: ti, keys: [], dwellMul: 1, evictRank: 1, tip: 0, prefer: null }));
+    const groupOf = (seatNo) => (seatNo / SEATS_PER_TABLE) | 0;
     const starts = slotStartTimes();
     const dayEndT = starts[2] + SLOT_SEC[2];
     const ev = [];
@@ -434,6 +536,7 @@ const JansouFloor = (() => {
     const occ = new Array(seatsN).fill(null);   // {guestId, since, leaveAt, slot, amount}
     const walks = [];                            // 歩行中 {until, count}
     let lastTable = tableIdx.length ? tableIdx[0] : 0;
+    let tips = 0;                       // くつろぎ席のチップの合計（settle が足す）
     const summary = { perSlot: [], seats: seatsN };
 
     /* 予定どおりの退店を、時刻 t まで進める */
@@ -451,6 +554,13 @@ const JansouFloor = (() => {
         push({ t, kind: 'leave', guestId: o.guestId, table: o.table, seat: o.seat, count: o.count,
                evicted: !!evicted });
         push({ t, kind: 'pay', slot: o.slot, guestId: o.guestId, amount: o.amount, table: o.table });
+        /* くつろぎ席のチップ。**場代（pay）には混ぜない。**
+           臨時収入（bonus）の経路なので、帯の Σpay＝sales は動かない（§5.4） */
+        if (o.tip) {
+          const amount = o.tip * o.count;
+          tips += amount;
+          push({ t, kind: 'bonus', amount, label: 'チップ', table: o.table, combo: 'kutsurogi' });
+        }
       }
     }
     function freeSeats() {
@@ -458,12 +568,17 @@ const JansouFloor = (() => {
       for (let i = 0; i < occ.length; i++) if (!occ[i]) out.push(i);
       return out;
     }
-    /* 同じ卓で n 席まとめて空いているところ。無ければ空席をばらで */
-    function pickSeats(n) {
+    /* 同じ卓で n 席まとめて空いているところ。無ければ空席をばらで。
+       want（客の好み）に合う卓があればそこから見る。**空きの有無は変えない** */
+    function pickSeats(n, want) {
       const free = freeSeats();
       if (free.length < n) return null;
-      for (let ti = 0; ti < tableIdx.length; ti++) {
-        const mine = free.filter((s) => (s / SEATS_PER_TABLE | 0) === ti);
+      const order = [];
+      for (let ti = 0; ti < tableIdx.length; ti++) order.push(ti);
+      /* sort は安定なので、同じ好みのなかでは番号の若い卓が先（乱数は使わない） */
+      if (want) order.sort((a, b) => (traits[b].prefer === want ? 1 : 0) - (traits[a].prefer === want ? 1 : 0));
+      for (const ti of order) {
+        const mine = free.filter((s) => groupOf(s) === ti);
         if (mine.length >= n) return mine.slice(0, n);
       }
       return free.slice(0, n);
@@ -472,7 +587,9 @@ const JansouFloor = (() => {
     function evictOldest(n, t) {
       const seated = [];
       for (let i = 0; i < occ.length; i++) if (occ[i]) seated.push(i);
-      seated.sort((a, b) => occ[a].since - occ[b].since);
+      /* **入口席から先に立ち、くつろぎ席は最後まで残る。**同じなら早く座った順 */
+      seated.sort((a, b) => (traits[groupOf(a)].evictRank - traits[groupOf(b)].evictRank) ||
+                            (occ[a].since - occ[b].since));
       const out = [];
       for (const s of seated) {
         if (out.length >= n) break;
@@ -542,9 +659,10 @@ const JansouFloor = (() => {
           ? ((reg && reg.favTalent != null && onDuty.indexOf(reg.favTalent) >= 0) ? reg.favTalent
             : onDuty[Math.floor(rng() * onDuty.length)])
           : null;
-        arrivals.push({ type: tp, count, face, favTalent, transient,
+        const stage = reg ? G.stageOf(reg.visits || 0) : 0;
+        arrivals.push({ type: tp, count, face, favTalent, transient, stage, cat: tp.cat,
           /* 主（段階3）になった常連は、常連の主の姿で描く */
-          look: reg && G.stageOf(reg.visits || 0) >= 3 ? 'nushi' : tp.key });
+          look: stage >= 3 ? 'nushi' : tp.key });
         left -= count;
       }
       const N = arrivals.length;
@@ -562,7 +680,13 @@ const JansouFloor = (() => {
         const t = t0 + D * Math.pow((k + 0.5) / N, 0.8);
         release(t);
         const guestId = a.face;
-        let seats = pickSeats(a.count);
+        /* どの席を好むか（placement.md §5.2）。
+           上客はカウンター席、特別な客と段階2以上の常連は静かな席、
+           一見さんは入口席。**好みであって決まりではない**（空いていなければ他へ） */
+        const want = a.cat === 'joukyaku' ? 'joukyaku'
+          : (a.cat === 'tokubetsu' || a.stage >= 2) ? 'tokubetsu'
+          : a.stage === 0 ? 'shinki' : null;
+        let seats = pickSeats(a.count, want);
         let mode = 'swap', evict = null;
         if (seats) {
           /* 空席あり。歩ける枠があれば歩く */
@@ -574,24 +698,28 @@ const JansouFloor = (() => {
           /* 満席。いちばん古い客を出して席を作る */
           const freed = evictOldest(a.count, t);
           evict = freed.length ? true : null;
-          seats = pickSeats(a.count) || freeSeats().slice(0, a.count);
+          seats = pickSeats(a.count, want) || freeSeats().slice(0, a.count);
         }
         if (!seats || seats.length < a.count) {
           /* 席数より大きい群（卓1で4人など）。入るぶんだけ座らせる */
           seats = freeSeats().slice(0, a.count);
         }
-        const table = tableIdx[(seats[0] / SEATS_PER_TABLE) | 0];
+        const group = groupOf(seats[0]);
+        const tr = traits[group];
+        const table = tableIdx[group];
         const seatNo = seats[0] % SEATS_PER_TABLE;
-        const leaveAt = Math.min(dayEndT, t + dwell);
+        /* くつろぎ席は長く、入口席は短く（滞在は上限であって保証ではない） */
+        const leaveAt = Math.min(dayEndT, t + dwell * (tr.dwellMul || 1));
         seats.forEach((s, j) => {
           occ[s] = { guestId, since: t, leaveAt, slot: si, amount: amounts[k],
-                     table: tableIdx[(s / SEATS_PER_TABLE) | 0], seat: s % SEATS_PER_TABLE,
-                     count: a.count, head: j === 0 };
+                     table: tableIdx[groupOf(s)], seat: s % SEATS_PER_TABLE,
+                     count: a.count, head: j === 0, tip: j === 0 ? (tr.tip || 0) : 0 };
         });
         if (mode === 'walk') walkN++; else swapN++;
         lastTable = table;
         push({ t, kind: 'arrive', slot: si, guestId, typeKey: a.type.key, look: a.look, count: a.count,
                amount: amounts[k], favTalent: a.favTalent, transient: a.transient || undefined,
+               combo: tr.keys && tr.keys.length ? tr.keys.slice() : undefined,
                table, seat: seatNo,
                seats: seats.map((s) => ({ table: tableIdx[(s / SEATS_PER_TABLE) | 0], seat: s % SEATS_PER_TABLE })),
                mode, evict });
@@ -609,10 +737,15 @@ const JansouFloor = (() => {
           r++;
           t += 2.5 + rng() * 1.5;
         }
-        /* 指名。演出だけ（§5.4）。帯ごとに一人まで */
+        /* 指名。演出だけ（§5.4）。帯ごとに一人まで。
+           **花道（卓の左右に観葉植物）があれば二人まで**（placement.md §5.2） */
         if (rng() < 0.35) {
           push({ t: t0 + D * (0.3 + rng() * 0.5), kind: 'nominate',
                  charaId: onDuty[Math.floor(rng() * onDuty.length)] });
+        }
+        if (traits.some((tr) => tr.hanamichi) && rng() < 0.35) {
+          push({ t: t0 + D * (0.3 + rng() * 0.5), kind: 'nominate',
+                 charaId: onDuty[Math.floor(rng() * onDuty.length)], combo: 'hanamichi' });
         }
       }
 
@@ -644,13 +777,17 @@ const JansouFloor = (() => {
     /* 同時刻は ORD の順。sort は安定なので、同種は入れた順のまま */
     ev.sort((a, b) => (a.t - b.t) || (ORD[a.kind] - ORD[b.kind]));
     summary.duration = dayEndT;
+    /* チップの合計。**再生では1円も増減しない**（タイムラインに入っている
+       bonus の合計と必ず一致する）。settle がこれを臨時収入に足す */
+    summary.tips = tips;
     /* 今日来た顔（同じ人は一度）。jansou.js が名前を用意し、締めで常連に反映する */
     summary.faces = [];
     const seenFace = new Set();
     ev.forEach((e) => {
       if (e.kind !== 'arrive' || e.transient || seenFace.has(e.guestId)) return;
       seenFace.add(e.guestId);
-      summary.faces.push({ id: e.guestId, typeKey: e.typeKey, favTalent: e.favTalent });
+      summary.faces.push({ id: e.guestId, typeKey: e.typeKey, favTalent: e.favTalent,
+                           combo: e.combo ? e.combo.slice() : [] });
     });
     return { timeline: ev, summary };
   }
@@ -1438,6 +1575,16 @@ const JansouFloor = (() => {
       editG.appendChild(el('rect', { x: dr.x, y: dr.y, width: dr.w, height: dr.h,
         fill: PAL.neonPink, opacity: '0.18' }));
       editFrame(editG, dr.x, dr.y, dr.w, dr.h, '#c86ab0');
+      /* **コンボが成立している卓は薄く塗る**（placement.md §5）。
+         効果が見えないと、配置を工夫する気にならない */
+      const cb = combos(floor);
+      tablesOf(floor).forEach((t) => {
+        if (!(cb.byId[t.id] || []).length) return;
+        const it = floor.items.find((o) => o.id === t.id);
+        const r = cellRect(it);
+        editG.appendChild(el('rect', { x: r.x, y: r.y, width: r.w, height: r.h,
+          fill: PAL.neonGreen, opacity: '0.10' }));
+      });
       /* 選んでいるもの */
       const sel = edit.sel != null && floor.items.find((it) => it.id === edit.sel);
       if (sel) {
@@ -1454,6 +1601,30 @@ const JansouFloor = (() => {
         editG.appendChild(el('rect', { x, y, width: w, height: h, fill: c, opacity: '0.3' }));
         editFrame(editG, x, y, w, h, c);
         editFrame(editG, x, y, w, h, c, 1);
+      }
+    }
+
+    /* コンボの札（UI層。ドットの世界に日本語を置くと潰れる。spec.md §4.2） */
+    function drawEditTags() {
+      const cb = combos(floor);
+      const put = (fx, fy, text) => {
+        const p = floorToScreen(fx, fy);
+        const b = document.createElement('span');
+        b.className = 'jnFlCombo';
+        b.textContent = text;
+        b.style.left = Math.max(1, Math.min(floorW * scale - 8, Math.round(p.x))) + 'px';
+        b.style.top = Math.round(p.y) + 'px';
+        ui.appendChild(b);
+      };
+      tablesOf(floor).forEach((t) => {
+        const keys = cb.byId[t.id] || [];
+        if (!keys.length) return;
+        const it = floor.items.find((o) => o.id === t.id);
+        put(cellX(it.x) + 1, cellY(it.y), keys.map((k) => COMBO_BY_KEY[k].name).join('・'));
+      });
+      if (cb.lounge) {
+        const c = itemsOf(floor, 'counter')[0];
+        if (c) put(cellX(c.x), cellY(c.y), COMBO_BY_KEY.lounge.name);
       }
     }
 
@@ -1507,13 +1678,35 @@ const JansouFloor = (() => {
         if (pp) row += btn('buy-plant', '観葉植物を買う', yen(pp.cost), '', money < pp.cost);
         row += btn('done', '模様替えを終える', '', 'done');
       }
+      /* **いま何が成立しているか**を常に出す。効果が見えないと配置を工夫しない */
+      const cb = combos(floor);
+      const made = cb.list.length
+        ? cb.list.map((c) => '<b>' + esc(c.name) + (c.n > 1 ? '×' + c.n : '') + '</b>' +
+            '<i>' + esc(c.see) + '</i>').join('')
+        : '<span class="jnFlEbNone">まだ何も成立していません。卓のとなりにソファやカウンターを置くと付きます</span>';
       editBar.innerHTML =
         '<div class="jnFlEbTop"><span class="jnFlEbNote">' + esc(edit.note) + '</span>' +
         '<span class="jnFlEbMoney">所持金 ' + yen(money) + '</span></div>' +
+        '<div class="jnFlEbMade">' + made + '</div>' +
         '<div class="jnFlEbRow">' + row + '</div>';
     }
 
     function note(t) { edit.note = t; }
+    /* **そこに置くとコンボがどう変わるか。**置く前に分かると、工夫する気になる */
+    function comboDelta(g) {
+      if (!g || !g.ok || !edit.drag) return '';
+      const next = g.swap ? swapItems(floor, edit.drag.id, g.swap)
+                          : moveItem(floor, edit.drag.id, g.x, g.y);
+      if (!next) return '';
+      const b = combos(floor).counts, a = combos(next).counts;
+      const up = [], down = [];
+      COMBOS.forEach((c) => {
+        const d = (a[c.key] || 0) - (b[c.key] || 0);
+        if (d > 0) up.push(c.name); else if (d < 0) down.push(c.name);
+      });
+      return up.length ? '　' + up.join('・') + ' が成立します'
+        : down.length ? '　' + down.join('・') + ' が消えます' : '';
+    }
     function commitFloor(change) {
       if (edit.hooks.commit) edit.hooks.commit(floor, change || {});
       buildRoom(); renderEditBar(); paint();
@@ -1638,7 +1831,7 @@ const JansouFloor = (() => {
     }
 
     function paint() {
-      if (edit.on) { drawEditLayer(); drawUi(); return; }
+      if (edit.on) { drawEditLayer(); drawUi(); drawEditTags(); return; }
       drawLight(); drawActors(); drawUi(); drawHits();
     }
 
@@ -1955,8 +2148,8 @@ const JansouFloor = (() => {
         edit.ghost = ghostFor(d.id, Math.floor((p.x - GX0) / GRID) - d.ox,
                                     Math.floor((p.y - GY0) / GRID) - d.oy, p.x, p.y);
         if (d.moved) {
-          note(!edit.ghost || !edit.ghost.ok ? 'ここには置けません'
-            : edit.ghost.swap ? 'ここと入れ替えます' : 'ここに置けます');
+          note((!edit.ghost || !edit.ghost.ok ? 'ここには置けません'
+            : edit.ghost.swap ? 'ここと入れ替えます' : 'ここに置けます') + comboDelta(edit.ghost));
         }
         edgePan(e.clientX);
         renderEditBar(); paint();
@@ -2015,6 +2208,8 @@ const JansouFloor = (() => {
     /* マス目と設置物（placement.md §1・§2）。純関数 */
     autoPlace, reconcile, canPlace, freeCell, tablesOf, itemsOf, ringCells, cellX, cellY,
     pickItem, clampCell, moveItem, swapItems, removeItem, setMine, addItem, tableSpots, spotsNear,
+    /* 隣接コンボ（placement.md §5）。純関数 */
+    combos, tableTraits, adjacent, COMBOS, COMBO_BY_KEY, TIP_PER_GUEST,
     SOFA_SPOTS, COUNTER_SPOTS,
     KINDS, DOOR, GRID, COLS, ROWS, GX0, GY0,
     drawWall, drawCarpet, drawFixtures, drawTable,

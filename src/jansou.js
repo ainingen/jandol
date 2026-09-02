@@ -709,6 +709,10 @@ const Jansou = (() => {
       const tableIdx = [];
       for (let i = 0; i < usable; i++) if (i !== myTable) tableIdx.push(i);
 
+      /* 隣接コンボ。ボトルの格（ラウンジ）と結果の一行に使う */
+      const combo = typeof JansouFloor !== 'undefined'
+        ? JansouFloor.combos(parlor.floor) : { counts: {}, lounge: false, list: [], byId: {} };
+
       /* 臨時収入と割り込みの置き場所（帯と、帯の中の秒） */
       const bonuses = [], interrupts = [];
       if (ev && ev.kind === 'shugi') bonuses.push({ slot: 2, at: 9, amount: day.guests * 500, label: '祝儀' });
@@ -723,6 +727,9 @@ const Jansou = (() => {
       if (typeof JansouFloor !== 'undefined') {
         const built = JansouFloor.build(day, {
           fees: SLOTS.map((s) => s.fee), tableIdx,
+          /* 隣接コンボ（placement.md §5）。卓ごとの性質だけを渡す。
+             **guests と sales はここでは動かない**（§5.3 の厳密一致） */
+          tables: JansouFloor.tableTraits(parlor.floor, tableIdx),
           slotStaff: slotWorkers.map((w) => w.map((c) => c.id)),
           bonuses, interrupts,
           regulars: parlor.regulars, seen: parlor.seen,
@@ -747,7 +754,8 @@ const Jansou = (() => {
          一日に多くて一組。荒らしは pickEvent が唯一の発生源で、言い値だけここで決める */
       let challenge = null;
       if (typeof JansouFloor !== 'undefined' && typeof JansouGuests !== 'undefined') {
-        challenge = JansouGuests.pickChallenge(faces, parlor.regulars, { rep: parlor.rep }, rng);
+        challenge = JansouGuests.pickChallenge(faces, parlor.regulars,
+          { rep: parlor.rep, lounge: !!combo.lounge }, rng);
         if (challenge) {
           const arr = timeline.find((e) => e.kind === 'arrive' && e.guestId === challenge.guestId);
           if (arr) {
@@ -769,10 +777,13 @@ const Jansou = (() => {
       }
       const arashiTier = ev && ev.kind === 'arashi' && typeof JansouGuests !== 'undefined'
         ? JansouGuests.arashiTier(rng) : 0;
+      /* チップの合計。**再生では1円も動かない。**タイムラインに入っている
+         bonus の合計と必ず一致し、settle が臨時収入に足す（placement.md §5.4） */
+      const tips = (summary && summary.tips) | 0;
 
       return {
         st0, parlor, list, slotWorkers, dayWorkers, day, ev, rolls, fillers, challenge, arashiTier,
-        closedTables, myTable, tableIdx, timeline, summary, faces, names,
+        closedTables, myTable, tableIdx, timeline, summary, faces, names, tips, combo,
         wages: dayWorkers.reduce((a, c) => a + wageOf(c), 0),
         util: utilOf(parlor.tables),
       };
@@ -996,6 +1007,13 @@ const Jansou = (() => {
       const lines = results.lines.slice();
       const buffs0 = parlor.buffs.concat(results.buffsAdd);
 
+      /* くつろぎ席のチップ（placement.md §5.4）。**場代には触れていない。**
+         タイムラインの bonus と同額で、スキップでも再生でも同じ値になる */
+      if (plan.tips) {
+        extraMoney += plan.tips;
+        lines.push(`くつろぎ席でチップをもらった（${signedYen(plan.tips)}）`);
+      }
+
       /* 選択の要らないイベントの効き目はここで */
       if (ev && ev.kind === 'shugi') {
         const bonus = day.guests * 500;
@@ -1065,6 +1083,15 @@ const Jansou = (() => {
         const nm = JansouGuests.displayName(p.guest);
         lines.push(p.stage === 1 ? `${nm} が顔なじみになった`
           : p.stage === 2 ? `${nm} が常連になった` : `${nm} がこの店の主になった`);
+      });
+      /* くつろぎ席に座った客は、その日のぶんが一つ多く進む（placement.md §5.2）。
+         3回で顔なじみ、10回で常連。座り心地のいい席は覚えられやすい */
+      (plan.faces || []).forEach((f) => {
+        if (!f.combo || f.combo.indexOf('kutsurogi') < 0) return;
+        if (reg.regulars[f.id]) {
+          reg.regulars[f.id] = Object.assign({}, reg.regulars[f.id],
+            { visits: (reg.regulars[f.id].visits || 0) + 1 });
+        }
       });
       /* 主に勝つと忠誠が上がる（来店回数が進む）。§9.1 */
       Object.keys(results.visitsBonus || {}).forEach((id) => {

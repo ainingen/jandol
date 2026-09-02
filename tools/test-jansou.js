@@ -352,6 +352,255 @@ function eq(a, b, name) {
 }
 
 /* ============================================================
+   隣接コンボ（docs/design/jansou/placement.md §5）
+   ============================================================ */
+{
+  const F = JansouFloor;
+  const mk = (items) => ({ v: 1, auto: false, next: 99,
+    items: items.map((a, i) => ({ id: i + 1, kind: a[0], x: a[1], y: a[2] })), mine: null });
+
+  /* --- 隣接は1マスの隙間まで。ぴったり付けなくても成立する --- */
+  const T = ['table', 0, 0];
+  eq(F.combos(mk([T, ['sofa', 7, 0]])).counts.kutsurogi, 1, '接していれば くつろぎ席');
+  eq(F.combos(mk([T, ['sofa', 8, 0]])).counts.kutsurogi, 1, '1マス空きでも くつろぎ席');
+  ok(!F.combos(mk([T, ['sofa', 9, 0]])).counts.kutsurogi, '2マス空くと成立しない');
+  eq(F.combos(mk([T, ['sofa', 7, 5]])).counts.kutsurogi, 1, '斜めに角で触れても成立する');
+
+  /* --- 6つとも成立する --- */
+  eq(F.combos(mk([T, ['counter', 7, 0]])).counts.counter, 1, 'カウンター席');
+  eq(F.combos(mk([['table', 8, 8]])).counts.iriguchi, 1, '入口のとなりは 入口席');
+  eq(F.combos(mk([T])).counts.shizuka, 1, '離れていれば 静かな席');
+  ok(!F.combos(mk([['table', 8, 8]])).counts.shizuka, '入口のとなりは静かではない');
+  ok(!F.combos(mk([T, ['table', 7, 0]])).counts.shizuka, '卓が並んでいれば静かではない');
+  eq(F.combos(mk([T, ['plant', 23, 0]])).counts.hanamichi, undefined, '片側だけでは花道にならない');
+  eq(F.combos(mk([['table', 1, 0], ['plant', 0, 0], ['plant', 8, 0]])).counts.hanamichi, 1,
+    '卓の左右に観葉植物で 花道');
+  ok(F.combos(mk([['sofa', 0, 0], ['counter', 3, 0]])).lounge, 'ソファ＋カウンターで ラウンジ');
+  ok(!F.combos(mk([['sofa', 0, 0], ['counter', 5, 0]])).lounge, '離れていればラウンジではない');
+
+  /* --- 並び順に依存しない（対称） --- */
+  const a1 = mk([T, ['sofa', 7, 0], ['counter', 7, 4], ['plant', 20, 0]]);
+  const a2 = { v: 1, auto: false, next: 99, items: a1.items.slice().reverse(), mine: null };
+  eq(JSON.stringify(F.combos(a1).counts), JSON.stringify(F.combos(a2).counts), '並び順に依存しない');
+
+  /* --- 卓ごとの性質（build に渡すもの） --- */
+  {
+    const fl = mk([['table', 0, 0], ['sofa', 7, 0], ['table', 8, 8], ['table', 0, 6]]);
+    const tr = F.tableTraits(fl, [0, 1, 2]);
+    eq(tr.length, 3, '使える卓のぶんだけ返す');
+    eq(tr[0].tip, F.TIP_PER_GUEST, 'くつろぎ席にはチップ');
+    ok(tr[0].dwellMul > 1, 'くつろぎ席は長く居る', tr[0].dwellMul);
+    eq(tr[0].evictRank, 2, 'くつろぎ席は最後に立つ');
+    ok(tr[1].dwellMul < 1, '入口席は回転が速い', tr[1].dwellMul);
+    eq(tr[1].evictRank, 0, '入口席は最初に立つ');
+    eq(tr[1].prefer, 'shinki', '入口席は一見さん');
+    eq(tr[1].tip, 0, '入口席にチップは無い');
+    /* 入口席とくつろぎ席が重なったら、入口席が勝つ（回転が速い） */
+    const both = F.tableTraits(mk([['table', 8, 8], ['sofa', 15, 8]]), [0])[0];
+    ok(both.dwellMul < 1 && both.evictRank === 0, '入口席は他が何であれ回転が速い');
+    eq(both.tip, F.TIP_PER_GUEST, 'それでもソファのチップは入る');
+  }
+}
+
+/* ============================================================
+   コンボが帳簿に効く範囲（§5.3・§6）
+   ============================================================ */
+{
+  global.STYLES = global.STYLES || { a: 1 };
+  global.JANDOLS = global.JANDOLS || [];
+  global.FREE_AGENTS = global.FREE_AGENTS || [];
+  const { Jansou } = require('../src/jansou.js');
+  const F = JansouFloor, G = JansouGuests;
+  function seeded(seed) {
+    let x = (seed | 0) || 1;
+    return () => { x ^= x << 13; x ^= x >>> 17; x ^= x << 5; x |= 0; return ((x >>> 0) % 100000) / 100000; };
+  }
+  const fees = Jansou.SLOTS.map((s) => s.fee);
+  const cfgs = [
+    ['中盤', { tables: 4, interior: 4, auto: 2, sign: 2, rep: 40, slotPop: [150, 200, 260], slotWorkers: [3, 4, 6] }, [0, 1, 2, 3]],
+    ['終盤', { tables: 8, interior: 5, auto: 3, sign: 3, rep: 85, slotPop: [300, 400, 500], slotWorkers: [8, 10, 12] }, [0, 1, 2, 3, 4, 5, 6, 7]],
+  ];
+
+  cfgs.forEach(([name, cfg, tableIdx]) => {
+    const fl = F.autoPlace({ tables: cfg.tables, interior: cfg.interior });
+    const traits = F.tableTraits(fl, tableIdx);
+    for (let seed = 1; seed <= 20; seed++) {
+      const day = Jansou.computeDay(cfg, seeded(seed));
+      const base = { fees, tableIdx, slotStaff: [[1], [1, 2], [1, 2, 3]] };
+      const plain = F.build(day, base, seeded(seed * 31));
+      const withC = F.build(day, Object.assign({ tables: traits }, base), seeded(seed * 31));
+      const tag = name + ' seed' + seed;
+
+      /* --- **guests と sales は動かない。**ここが崩れたら全部やり直し --- */
+      for (let si = 0; si < 3; si++) {
+        const cnt = withC.timeline.filter((e) => e.kind === 'arrive' && e.slot === si).reduce((a, e) => a + e.count, 0);
+        const pay = withC.timeline.filter((e) => e.kind === 'pay' && e.slot === si).reduce((a, e) => a + e.amount, 0);
+        eq(cnt, day.slots[si].guests, tag + ' 帯' + si + ' コンボ有りでも Σcount=guests');
+        eq(pay, day.slots[si].sales, tag + ' 帯' + si + ' コンボ有りでも Σpay=sales');
+      }
+      eq(withC.timeline.filter((e) => e.kind === 'arrive').length,
+         plain.timeline.filter((e) => e.kind === 'arrive').length, tag + ' 到着の件数は変わらない');
+
+      /* --- チップは臨時収入。**場代には1円も混ざらない** --- */
+      const tipEv = withC.timeline.filter((e) => e.kind === 'bonus' && e.label === 'チップ');
+      eq(tipEv.reduce((a, e) => a + e.amount, 0), withC.summary.tips, tag + ' チップの合計が summary と一致');
+      const tipTables = new Set(traits.filter((t) => t.tip > 0).map((t) => t.idx));
+      tipEv.forEach((e) => {
+        ok(tipTables.has(e.table), tag + ' チップはくつろぎ席からだけ', e.table);
+        ok(e.amount % F.TIP_PER_GUEST === 0, tag + ' チップは一人あたり定額', e.amount);
+      });
+      if (!tipTables.size) eq(withC.summary.tips, 0, tag + ' くつろぎ席が無ければチップも無い');
+
+      /* --- 追い出しは evictRank の低い席から。**席で見る**（群は卓をまたぐことがある） --- */
+      const rank = {};
+      traits.forEach((t) => { rank[t.idx] = t.evictRank; });
+      const held = new Map();          // guestId -> [{table,seat}]
+      const seatKey = (x) => x.table + ':' + x.seat;
+      const taken = new Map();         // 'table:seat' -> rank
+      let batchT = -1, freedRanks = [];
+      const checkBatch = (tag2) => {
+        if (!freedRanks.length) return;
+        let minLeft = Infinity;
+        taken.forEach((r) => { if (r < minLeft) minLeft = r; });
+        const worst = Math.max.apply(null, freedRanks);
+        ok(minLeft >= worst, tag2 + ' 追い出しは先に立つ席から',
+          worst + ' を出したのに ' + minLeft + ' が残っている');
+        freedRanks = [];
+      };
+      withC.timeline.forEach((e) => {
+        if (e.kind === 'arrive') {
+          /* **座らせる前に見る。**同じ時刻の到着を入れてしまうと、
+             追い出した席にその客が座っただけで「残っている」に見える */
+          checkBatch(tag);
+          held.set(e.guestId, e.seats);
+          e.seats.forEach((x) => taken.set(seatKey(x), rank[x.table]));
+          return;
+        }
+        if (e.kind !== 'leave') return;
+        if (e.t !== batchT) { checkBatch(tag); batchT = e.t; }
+        const mine = held.get(e.guestId) || [];
+        /* **群は丸ごと出る**（卓をまたぐことがある）。選ばれた理由はその客の
+           いちばん先に立つ席なので、客ごとに最小の rank で見る */
+        if (e.evicted && mine.length) {
+          freedRanks.push(Math.min.apply(null, mine.map((x) => rank[x.table])));
+        }
+        mine.forEach((x) => taken.delete(seatKey(x)));
+        held.delete(e.guestId);
+      });
+      checkBatch(tag);
+
+      /* --- 好みの席：空いていれば必ずそこに座る --- */
+      const prefTable = {};
+      traits.forEach((t) => { if (t.prefer) prefTable[t.prefer] = prefTable[t.prefer] != null ? prefTable[t.prefer] : t.idx; });
+      const occ = new Map();
+      withC.timeline.forEach((e) => {
+        if (e.kind === 'leave') { occ.delete(e.guestId); return; }
+        if (e.kind !== 'arrive') return;
+        const type = G.BY_KEY[e.typeKey];
+        const want = type.cat === 'joukyaku' ? 'joukyaku' : type.cat === 'tokubetsu' ? 'tokubetsu' : null;
+        const target = want != null ? prefTable[want] : undefined;
+        if (target != null && !e.evict) {
+          let used = 0;
+          occ.forEach((v) => { if (v.table === target) used += v.count; });
+          if (4 - used >= e.count) eq(e.table, target, tag + ' 好みの席が空いていれば座る ' + e.typeKey);
+        }
+        occ.set(e.guestId, { table: e.table, count: e.count });
+      });
+    }
+  });
+
+  /* --- 滞在の長さが効いている：入口席は回転が速く、くつろぎ席は遅い --- */
+  {
+    const fl = F.autoPlace({ tables: 8, interior: 5 });
+    const tableIdx = [0, 1, 2, 3, 4, 5, 6, 7];
+    const traits = F.tableTraits(fl, tableIdx);
+    const door = traits.filter((t) => t.evictRank === 0).map((t) => t.idx);
+    const relax = traits.filter((t) => t.evictRank === 2).map((t) => t.idx);
+    ok(door.length && relax.length, '卓8の既定の配置に入口席とくつろぎ席がある');
+    const seen = {};
+    for (let seed = 1; seed <= 40; seed++) {
+      const day = Jansou.computeDay(cfgs[1][1], seeded(seed));
+      const { timeline } = F.build(day, { fees, tableIdx, tables: traits,
+        slotStaff: [[1], [1, 2], [1, 2, 3]] }, seeded(seed * 17));
+      timeline.forEach((e) => { if (e.kind === 'arrive') seen[e.table] = (seen[e.table] || 0) + e.count; });
+    }
+    const per = (arr) => arr.reduce((a, i) => a + (seen[i] || 0), 0) / arr.length;
+    ok(per(door) > per(relax), '入口席のほうが客が入れ替わる',
+      Math.round(per(door)) + '人 対 ' + Math.round(per(relax)) + '人');
+  }
+
+  /* --- **スキップと通常再生で、帳簿に入る数が完全に一致する**（§1・§13） ---
+     再生層は乱数を引かず、タイムラインを順に消化するだけ。
+     スキップは時計を終端に進めて一気に消化する。ここではその二つを模して比べる */
+  {
+    const fl = F.autoPlace({ tables: 8, interior: 5 });
+    const tableIdx = [0, 1, 2, 3, 4, 5, 6, 7];
+    const traits = F.tableTraits(fl, tableIdx);
+    function consume(timeline, step) {
+      const acc = { sales: 0, extra: 0, order: [] };
+      const apply = (e) => {
+        acc.order.push(e.kind + (e.guestId || '') + '@' + e.t.toFixed(4));
+        if (e.kind === 'pay') acc.sales += e.amount;
+        if (e.kind === 'bonus') acc.extra += e.amount;
+      };
+      let idx = 0;
+      if (step > 0) {
+        const dur = timeline.length ? timeline[timeline.length - 1].t : 0;
+        for (let clock = 0; clock <= dur + step; clock += step) {
+          while (idx < timeline.length && timeline[idx].t <= clock) apply(timeline[idx++]);
+        }
+      }
+      while (idx < timeline.length) apply(timeline[idx++]);   // 取りこぼしを消化
+      return acc;
+    }
+    for (let seed = 1; seed <= 30; seed++) {
+      const day = Jansou.computeDay(cfgs[1][1], seeded(seed));
+      const { timeline, summary } = F.build(day,
+        { fees, tableIdx, tables: traits, slotStaff: [[1], [1, 2], [1, 2, 3]],
+          bonuses: [{ slot: 2, amount: 5000, label: '祝儀' }] }, seeded(seed * 13));
+      const skip = consume(timeline, 0);                    // スキップ＝一気に消化
+      const x1 = consume(timeline, 1 / 60);                 // ×1
+      const x4 = consume(timeline, 4 / 60);                 // ×4
+      const tag = 'seed' + seed;
+      eq(x1.sales, skip.sales, tag + ' スキップと×1で場代が一致');
+      eq(x4.sales, skip.sales, tag + ' スキップと×4で場代が一致');
+      eq(x1.extra, skip.extra, tag + ' スキップと×1で臨時収入が一致');
+      eq(x4.extra, skip.extra, tag + ' スキップと×4で臨時収入が一致');
+      eq(x1.order.join('|'), skip.order.join('|'), tag + ' 消化の順まで一致');
+      eq(x4.order.join('|'), skip.order.join('|'), tag + ' ×4でも消化の順まで一致');
+      eq(skip.sales, day.sales, tag + ' 場代の合計は computeDay と一致');
+      /* settle が足すのは summary.tips。再生の臨時収入と食い違わないこと */
+      const tipSum = timeline.filter((e) => e.kind === 'bonus' && e.label === 'チップ')
+        .reduce((a, e) => a + e.amount, 0);
+      eq(tipSum, summary.tips, tag + ' settle が足す額と再生で見える額が一致');
+      eq(skip.extra, tipSum + 5000, tag + ' 臨時収入はチップと祝儀のぶんだけ');
+    }
+  }
+
+  /* --- ラウンジとカウンター席は、ボトルの格と挑戦のしやすさに効く --- */
+  {
+    const faces = [{ id: 'shachou#2', typeKey: 'shachou', combo: [] }];
+    const facesC = [{ id: 'shachou#2', typeKey: 'shachou', combo: ['counter'] }];
+    let plain = 0, counter = 0;
+    for (let i = 1; i <= 400; i++) {
+      if (G.pickChallenge(faces, {}, { rep: 50 }, seeded(i))) plain++;
+      if (G.pickChallenge(facesC, {}, { rep: 50 }, seeded(i))) counter++;
+    }
+    ok(counter > plain, 'カウンター席の客のほうが挑んでくる', plain + '→' + counter);
+    let up = 0, same = 0;
+    for (let i = 1; i <= 200; i++) {
+      const a = G.pickChallenge(faces, {}, { rep: 50 }, seeded(i));
+      const b = G.pickChallenge(faces, {}, { rep: 50, lounge: true }, seeded(i));
+      if (!a || !b) continue;
+      if (b.tier === Math.min(6, a.tier + 1)) up++; else same++;
+    }
+    ok(up > 0 && same === 0, 'ラウンジがあると格が一段上がる', up + '/' + same);
+    ok(G.pickChallenge([{ id: 'shachou#9', typeKey: 'shachou', combo: [] }], { 'shachou#9': { typeKey: 'shachou', visits: 40 } },
+      { rep: 50, lounge: true }, seeded(3)).tier <= 6, '上限は6（タワー）');
+  }
+}
+
+/* ============================================================
    客タイプ24種
    ============================================================ */
 {

@@ -13,6 +13,7 @@
 .jnFloor{
   --jnWall:#301634; --jnWallLow:#241028; --jnPanel:#542c4c;
   --jnInk:#fff6e0; --jnSub:#eebee1; --jnPink:#ff56b2; --jnGold:#ffce50;
+  --jnGreen:#96ffb4;
   margin:10px auto 0;width:max-content;max-width:100%;
   font-family:'MaruUI',system-ui,sans-serif;
 }
@@ -247,6 +248,16 @@
 }
 .jnFlEbNote{flex:1;min-width:0}
 .jnFlEbMoney{color:var(--jnGold);white-space:nowrap}
+/* 成立しているコンボ（模様替え中つねに出す） */
+.jnFlEbMade{
+  display:flex;gap:5px;flex-wrap:wrap;margin-bottom:6px;
+}
+.jnFlEbMade b{
+  font-weight:normal;font-size:11px;color:#2a0c22;background:var(--jnGreen);
+  border-radius:3px;padding:1px 5px;
+}
+.jnFlEbMade i{font-style:normal;font-size:10px;color:var(--jnSub);margin:0 6px 0 3px;align-self:center}
+.jnFlEbNone{font-size:10.5px;color:var(--jnSub)}
 .jnFlEbRow{display:flex;gap:6px;flex-wrap:wrap}
 .jnFlEb{
   font:inherit;flex:1 1 auto;min-width:96px;min-height:40px;   /* 指で押せる高さ */
@@ -270,3 +281,13 @@
 
 /* 模様替え中は、床の空きが減るので矢印を大きくする */
 .jnFloor.editing .jnFlPan{width:22px;height:48px;background:rgba(42,12,34,.7)}
+
+/* 卓の上に出すコンボの札（模様替え中だけ）。ドットの上に置くので小さく、
+   足元の上端に下端を合わせる */
+.jnFlCombo{
+  position:absolute;transform:translateY(-100%);
+  font-size:10px;line-height:1.3;white-space:nowrap;pointer-events:none;
+  padding:0 4px;border-radius:3px;
+  background:rgba(20,60,34,.82);color:var(--jnGreen);
+  border:1px solid rgba(150,255,180,.45);
+}
