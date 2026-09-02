@@ -1269,6 +1269,14 @@ function eq(a, b, name) {
   eq(Jansou.normalize({ months: many }).months.length, Jansou.MONTHS_KEPT, 'months は直近12期だけ残す');
   eq(Jansou.normalize({ months: many }).months[0].no, 9, '古い期から落ちる');
 
+  /* **期の番号は months.length から出せない。**上限12で打ち切るので、
+     13期目以降ずっと「第13期」になってしまう。直前の月報から進める */
+  eq(Jansou.nextMonthNo({ months: [] }), 1, '月報が無ければ第1期');
+  eq(Jansou.nextMonthNo({ months: [{ no: 1 }, { no: 2 }] }), 3, '直前の次が今期');
+  const trimmed = Jansou.normalize({ months: many }).months;   // no 9〜20 の12件
+  eq(trimmed.length, 12, '打ち切られて12件');
+  eq(Jansou.nextMonthNo({ months: trimmed }), 21, '打ち切られても番号は進む（length+1 なら13で止まる）');
+
   /* 壊れたセーブを読んでも作り直す */
   eq(Jansou.normalize({ day: 3, month: { slots: 'こわれている' } }).month.days, 0, '壊れた month は作り直す');
   eq(Jansou.normalize({ day: 3, month: null }).month.from, 3, 'month が null でも from が入る');

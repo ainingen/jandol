@@ -244,6 +244,12 @@ const Jansou = (() => {
     };
   }
 
+  /* いま集計している期の番号。**months.length では出せない**（上限12で打ち切るため） */
+  function nextMonthNo(parlor) {
+    const ms = parlor.months;
+    return ms.length ? ms[ms.length - 1].no + 1 : 1;
+  }
+
   /* ---------- 月報の描画（monthly.md §7） ----------
      **この関数の中で四則演算をしないこと。**帯の長さの % まで closeMonth が
      report に入れて渡している。ここでやるのは書式（カンマ区切り・符号）と
@@ -691,7 +697,7 @@ const Jansou = (() => {
         <div class="jnStats">
           <span class="jnStat">評判 <span class="jnRepTrack"><span class="jnRepFill"
             style="width:${parlor.rep}%"></span></span> <b>${Math.round(parlor.rep)}</b></span>
-          <span class="jnStat">第${parlor.months.length + 1}期 <b>${parlor.day - parlor.month.from}
+          <span class="jnStat">第${nextMonthNo(parlor)}期 <b>${parlor.day - parlor.month.from}
             / ${MONTH_DAYS}日</b></span>
           <span class="jnStat">通算 <b class="${parlor.total.profit >= 0 ? 'plus' : 'minus'}">
             ${signedYen(parlor.total.profit)}</b></span>
@@ -1542,8 +1548,12 @@ const Jansou = (() => {
             if (st >= 3) counts.s3++; else if (st === 2) counts.s2++; else if (st === 1) counts.s1++;
           });
         }
-        report = closeMonth(month, months.length ? months[months.length - 1] : null, {
-          no: months.length + 1, toDay: newDay, rep, bottles,
+        /* **期の番号は months.length から出さない。**months は直近12期で
+           打ち切られるので、13期目以降ずっと「第13期」になってしまう。
+           直前の月報の番号から進める（monthly.md §10） */
+        const prev = months.length ? months[months.length - 1] : null;
+        report = closeMonth(month, prev, {
+          no: prev ? prev.no + 1 : 1, toDay: newDay, rep, bottles,
           regulars: counts, names, promotedNames,
         });
         months.push(report);
@@ -1671,7 +1681,7 @@ const Jansou = (() => {
   }
 
   return { mount, computeDay, normalize, pickEvent, wageOf, utilOf,
-           blankMonth, normalizeMonth, accrue, closeMonth, renderMonth, showMonthReport,
+           blankMonth, normalizeMonth, accrue, closeMonth, renderMonth, showMonthReport, nextMonthNo,
            OPEN_COST, SLOTS, TABLE_COST, INTERIOR, AUTO, SIGN, MONTH_DAYS, MONTHS_KEPT };
 })();
 
