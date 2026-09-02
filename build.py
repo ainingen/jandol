@@ -66,10 +66,13 @@ SRC = os.path.join(HERE, 'src')
 
 # 読み込み順。並べ替えるときは依存を確認すること
 CSS = ['style.css', 'theme.css', 'maru.css', 'title.css', 'meikan.css',
-       'team.css', 'taikai.css', 'scout.css', 'jansou.css', 'match.css']
+       'team.css', 'taikai.css', 'scout.css', 'jansou.css', 'jansou-floor.css',
+       'match.css']
+# jansou.js は jansou-guests.js / jansou-floor.js を参照するので、必ず後ろに置く
 JS = ['engine.js', 'ai.js', 'game.js', 'ui.js', 'match.js',
       'characters.js', 'tournament.js', 'title.js', 'meikan.js',
-      'team.js', 'taikai.js', 'scout.js', 'jansou.js', 'serifu.js']
+      'team.js', 'taikai.js', 'scout.js',
+      'jansou-guests.js', 'jansou-floor.js', 'jansou.js', 'serifu.js']
 
 # 分割版でも index.html に埋め込むもの（表紙まわり。上の「安全策」参照）
 INLINE = {'title.css', 'title.js'}

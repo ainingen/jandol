@@ -1,0 +1,107 @@
+/* ============================================================
+   直営雀荘 — jansou-floor.css
+   フロア（ピクセル層＋UI層）とカード類
+
+   読み込み順は style.css → theme.css → jansou.css → これ。
+   仕様は docs/design/jansou/spec.md §4。配色はモック画像が正。
+
+   **ピクセル層に文字を置かないこと（§4.2）。**
+   ドットの世界に日本語を直接置くと潰れて読めない。
+   文字はすべてこのUI層に、等倍のDOMで出す。
+   ============================================================ */
+
+.jnFloor{
+  --jnWall:#301634; --jnWallLow:#241028; --jnPanel:#542c4c;
+  --jnInk:#fff6e0; --jnSub:#eebee1; --jnPink:#ff56b2; --jnGold:#ffce50;
+  margin:10px auto 0;width:max-content;max-width:100%;
+  font-family:'MaruUI',system-ui,sans-serif;
+}
+
+/* ---------- 上部バー ---------- */
+.jnFlTop{
+  display:flex;align-items:baseline;gap:10px;
+  padding:5px 8px;background:var(--jnWallLow);border-radius:5px 5px 0 0;
+}
+.jnFlName{font-size:15px;letter-spacing:.06em;color:var(--jnPink)}
+.jnFlDay{font-size:11px;color:var(--jnSub)}
+
+/* ---------- 時間帯バー ---------- */
+.jnFlBar{
+  display:flex;align-items:center;gap:8px;flex-wrap:wrap;
+  padding:5px 8px;background:var(--jnPanel);
+  border-top:1px solid rgba(255,255,255,.08);
+}
+.jnFlSlot{font-size:12px;color:var(--jnInk);min-width:2.4em}
+.jnFlTrack{
+  flex:1 1 60px;min-width:60px;height:7px;border-radius:4px;overflow:hidden;
+  background:rgba(0,0,0,.35);
+}
+.jnFlFill{display:block;height:100%;width:0;background:var(--jnPink);transition:width .2s linear}
+.jnFlSales{font-size:12px;color:var(--jnInk)}
+.jnFlSales b{font-size:13px}
+.jnFlSales i{font-style:normal;font-size:11px;color:var(--jnGold);margin-left:5px}
+.jnFlSpeed{display:flex;gap:3px}
+.jnFlSp{
+  font:inherit;font-size:11px;padding:2px 6px;border-radius:3px;cursor:pointer;
+  border:1px solid rgba(255,255,255,.35);background:transparent;color:var(--jnInk);
+}
+.jnFlSp.on{background:var(--jnPink);border-color:var(--jnPink);color:#2a0c22}
+
+/* ---------- ピクセル層とUI層 ---------- */
+.jnFlStage{
+  position:relative;margin:0 auto;
+  border:2px solid var(--jnPink);background:var(--jnWall);
+  line-height:0;                       /* svgの下に隙間を作らない */
+}
+.jnFlPix{
+  display:block;
+  /* 整数倍のニアレストネイバー相当にする。補間が入るとドット絵が台無しになる */
+  shape-rendering:crispEdges;image-rendering:pixelated;
+}
+.jnFlUi{
+  position:absolute;inset:0;line-height:1.2;
+  pointer-events:none;                 /* 当たり判定を置く要素だけ個別に戻す */
+}
+
+/* スタッフの頭（実写の丸写真＋金縁）。直径はJS側が 11*scale で入れる */
+.jnFlHead{
+  position:absolute;border-radius:50%;overflow:hidden;
+  border:2px solid var(--jnGold);background:#1c0c20;
+  box-shadow:0 1px 0 rgba(0,0,0,.4);
+}
+.jnFlHead img{width:100%;height:100%;object-fit:cover;display:block}
+
+/* 名前札 */
+.jnFlTag{
+  position:absolute;transform:translateX(-50%);white-space:nowrap;
+  font-size:10px;padding:1px 5px;border-radius:7px;
+  background:var(--jnWallLow);border:1px solid var(--jnGold);color:var(--jnInk);
+}
+
+/* 満卓の札 */
+.jnFlFull{
+  position:absolute;white-space:nowrap;
+  font-size:11px;padding:2px 7px;border-radius:4px;
+  background:var(--jnPink);color:#2a0c22;
+}
+
+/* 金額ポップ */
+.jnFlPop{
+  position:absolute;transform:translateX(-50%);white-space:nowrap;
+  font-size:11px;padding:1px 7px;border-radius:9px;
+  background:#fff6e0;border:2px solid var(--jnPink);color:#3e2c24;
+}
+
+/* ---------- ティッカー ---------- */
+.jnFlTicker{
+  min-height:1.4em;padding:5px 8px;border-radius:0 0 5px 5px;
+  background:var(--jnPanel);border-top:1px solid rgba(255,255,255,.08);
+  font-size:12px;color:var(--jnInk);
+}
+
+/* ---------- 狭いとき ---------- */
+@media (max-width:420px){
+  .jnFlName{font-size:13px}
+  .jnFlBar{gap:5px}
+  .jnFlSales{font-size:11px}
+}

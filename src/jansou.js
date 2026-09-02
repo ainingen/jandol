@@ -335,6 +335,8 @@ const Jansou = (() => {
             ${signedYen(parlor.total.profit)}</b></span>
         </div>
 
+        <div id="jnFloorHost"></div>
+
         <h2 class="jnSecT">今日のシフト</h2>
         ${list.length ? `<div class="jnShift">${rows}</div>`
           : `<p class="jnEmpty">働ける子がいません。チームを組むか、スカウトで契約してください。</p>`}
@@ -392,6 +394,80 @@ const Jansou = (() => {
         setParlor({ joinNight: e.target.checked });
       });
       root.querySelector('#jnRun').addEventListener('click', () => { runDay(); });
+
+      mountFloor(root.querySelector('#jnFloorHost'), parlor, list);
+    }
+
+    /* ---------- フロア（第一段：静止画） ----------
+       docs/design/jansou/spec.md §14 の第1段階。
+       いまは「店内のようす」を見せるだけで、再生は第二段で入れる。
+       客の並びは日ごとに決まる見た目だけのもので、収支には一切触らない */
+    let floorCtl = null;
+
+    function mountFloor(host, parlor, list) {
+      if (!host || typeof JansouFloor === 'undefined' || typeof JansouGuests === 'undefined') return;
+      if (floorCtl) { floorCtl.destroy(); floorCtl = null; }
+
+      floorCtl = JansouFloor.mount(host, {
+        onSpeed: (v) => { setParlor({ speed: v }); floorCtl.render(previewState(parlor, list)); },
+      });
+      floorCtl.render(previewState(parlor, list));
+    }
+
+    /* 見た目だけの並びを作る。日をまたぐと変わるが、同じ日なら同じ絵になる */
+    function previewState(parlor, list) {
+      const rng = seeded(parlor.day * 7919 + parlor.tables * 31 + parlor.interior);
+      let closedTables = 0;
+      parlor.buffs.forEach((b) => { if (b.kind === 'closed') closedTables += b.val; });
+
+      const count = JansouFloor.layout(parlor.tables, 200).length;
+      const usable = Math.max(0, count - closedTables);
+      const myTable = parlor.joinNight && usable > 0 ? usable - 1 : -1;
+
+      /* 夜の時間帯に出る客から、評判に応じた入りぐあいで席を埋める */
+      const pool = JansouGuests.TYPES.filter((t) => t.weight > 0 && t.slots.indexOf(2) >= 0);
+      const fill = 0.45 + Math.min(0.45, parlor.rep / 200);
+      const guests = [];
+      for (let i = 0; i < usable; i++) {
+        if (i === myTable) continue;
+        for (let s = 0; s < 4; s++) {
+          if (rng() > fill) continue;
+          guests.push({ table: i, seat: s, typeKey: weighted(pool, rng).key });
+        }
+      }
+
+      /* 夜に出勤している子をフロアに立たせる */
+      /* 夜に出勤している子は全員フロアに出す（席が足りなければ通路に立つ） */
+      const night = list.filter((c) => shiftOf(parlor, c.id)[2]).slice(0, 6);
+      const staff = night.map((c, i) => ({ id: c.id, name: c.name, at: i, nominated: i === 0 }));
+
+      const lastLog = parlor.log[parlor.log.length - 1];
+      return {
+        parlor, guests, staff, closedTables, myTable,
+        slotName: '夜', progress: 0,
+        headNote: parlor.day + '日目・開店前（夜のようす）',
+        sales: lastLog ? lastLog.sales : 0, extra: 0,
+        fullSlot: false,
+        ticker: night.length
+          ? night[0].name + ' たちが出勤しています'
+          : '夜のシフトに誰も入っていません',
+      };
+    }
+
+    function weighted(arr, rng) {
+      let total = arr.reduce((a, t) => a + t.weight, 0);
+      let r = rng() * total;
+      for (const t of arr) { r -= t.weight; if (r <= 0) return t; }
+      return arr[arr.length - 1];
+    }
+
+    /* 同じ日なら同じ絵になるように、種から回す小さな乱数 */
+    function seeded(seed) {
+      let x = (seed | 0) || 1;
+      return () => {
+        x ^= x << 13; x ^= x >>> 17; x ^= x << 5; x |= 0;
+        return ((x >>> 0) % 100000) / 100000;
+      };
     }
 
     /* ---------- 汎用の選択ポップアップ ---------- */
