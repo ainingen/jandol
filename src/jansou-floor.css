@@ -46,6 +46,8 @@
   border:1px solid rgba(255,255,255,.35);background:transparent;color:var(--jnInk);
 }
 .jnFlSp.on{background:var(--jnPink);border-color:var(--jnPink);color:#2a0c22}
+.jnFlSp.skip{margin-left:6px;border-color:var(--jnGold);color:var(--jnGold)}
+.jnFlSlot i{font-style:normal;font-size:10px;color:var(--jnSub);margin-left:4px}
 
 /* ---------- ピクセル層とUI層 ---------- */
 .jnFlStage{
@@ -85,12 +87,16 @@
   background:var(--jnPink);color:#2a0c22;
 }
 
-/* 金額ポップ */
+/* 金額ポップ。位置と消え方はJSが毎フレーム入れる */
 .jnFlPop{
   position:absolute;transform:translateX(-50%);white-space:nowrap;
   font-size:11px;padding:1px 7px;border-radius:9px;
   background:#fff6e0;border:2px solid var(--jnPink);color:#3e2c24;
 }
+.jnFlPop.bonus{border-color:var(--jnGold);background:#fff2c8}
+
+/* 割り込みで止まっているあいだ、フロアを少し沈める */
+.jnFloor.paused .jnFlStage{filter:brightness(.7)}
 
 /* ---------- ティッカー ---------- */
 .jnFlTicker{

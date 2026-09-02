@@ -82,6 +82,11 @@ const Jansou = (() => {
       buffs: Array.isArray(p.buffs) ? p.buffs : [],
       log: Array.isArray(p.log) ? p.log : [],
       total: Object.assign({ days: 0, sales: 0, profit: 0, guests: 0 }, p.total || {}),
+      /* リニューアルで足したもの（spec.md §11）。既存セーブには無い */
+      speed: [1, 2, 4].indexOf(p.speed | 0) >= 0 ? p.speed | 0 : 1,
+      bottles: Array.isArray(p.bottles) && p.bottles.length === 6 ? p.bottles.map((n) => n | 0) : [0, 0, 0, 0, 0, 0],
+      regulars: p.regulars && typeof p.regulars === 'object' ? p.regulars : {},
+      challengedToday: !!p.challengedToday,
     };
   }
 
@@ -509,8 +514,32 @@ const Jansou = (() => {
       return simulateTable(table, STYLES);
     }
 
-    /* ---------- 一日の営業 ---------- */
+    /* ---------- 一日の営業 ----------
+       計算 → タイムライン → 再生 → 締め（spec.md §1・§5.4）。
+
+       **乱数は prepareDay() で全部使い切る。** 客数・イベント・成長の着順・
+       実対局の穴埋め・タイムラインまで先に決める。再生は演出だけで、
+       スキップしても倍速でも結果が変わらない。
+
+       割り込み（選択肢・実対局）は再生を止めて従来の流れを行い、
+       結果を results に積む。締め（settle）は plan と results の純関数。
+       ここが純関数なので、node から「同じ plan と results なら同じ書き込み」を
+       確かめられる（tools/test-jansou.js）。 */
     async function runDay() {
+      const plan = prepareDay(Math.random);
+      const results = await playDay(plan);
+      const out = settle(plan, results, store.get());
+      store.set(out.patch);
+      await showResult(plan, results, out);
+      render();
+    }
+
+    const placeRoll = (rng) => {
+      const r = rng();
+      return r < 0.08 ? 1 : r < 0.30 ? 2 : r < 0.65 ? 3 : 4;
+    };
+
+    function prepareDay(rng) {
       const st0 = store.get();
       const parlor = parlorOf(st0);
       const list = roster();
@@ -518,8 +547,7 @@ const Jansou = (() => {
       /* 出勤の集計 */
       const slotWorkers = [[], [], []];
       list.forEach((c) => {
-        const sh = shiftOf(parlor, c.id);
-        sh.forEach((on, i) => { if (on) slotWorkers[i].push(c); });
+        shiftOf(parlor, c.id).forEach((on, i) => { if (on) slotWorkers[i].push(c); });
       });
       const dayWorkers = list.filter((c) => shiftOf(parlor, c.id).some(Boolean));
 
@@ -537,17 +565,89 @@ const Jansou = (() => {
         slotWorkers: slotWorkers.map((w) => w.length),
         pullBonus, closedTables,
         playerNight: parlor.joinNight,
+      }, rng);
+
+      const ev = pickEvent(st0, parlor, dayWorkers, rng);
+
+      /* 成長の着順は先に振っておく（§1）。同卓のぶんは割り込みの結果で足す */
+      const rolls = {};
+      dayWorkers.forEach((c) => {
+        const n = shiftOf(parlor, c.id).filter(Boolean).length;
+        rolls[c.id] = [];
+        for (let i = 0; i < n; i++) rolls[c.id].push(placeRoll(rng));
       });
+      /* 実対局の穴埋め客も先に作る */
+      const fillers = [1, 2, 3].map((n) => makeRegular(n, rng));
 
-      const wages = dayWorkers.reduce((a, c) => a + wageOf(c), 0);
-      const util = utilOf(parlor.tables);
-      let extraMoney = 0, repDelta = 0;
-      let eventLines = [];
-      const favor = Object.assign({}, st0.favor || {});
+      /* 使える卓。閉鎖した卓は後ろから、自分の卓はその手前 */
+      const usable = Math.max(1, parlor.tables - closedTables);
+      const myTable = parlor.joinNight ? usable - 1 : -1;
+      const tableIdx = [];
+      for (let i = 0; i < usable; i++) if (i !== myTable) tableIdx.push(i);
 
-      /* ---------- イベント ---------- */
-      const ev = pickEvent(st0, parlor, dayWorkers, Math.random);
-      if (ev && ev.kind === 'guest') {
+      /* 臨時収入と割り込みの置き場所（帯と、帯の中の秒） */
+      const bonuses = [], interrupts = [];
+      if (ev && ev.kind === 'shugi') bonuses.push({ slot: 2, at: 9, amount: day.guests * 500, label: '祝儀' });
+      if (ev && ev.kind === 'oshinobi') bonuses.push({ slot: 2, at: 11, amount: Math.round(day.slots[2].sales * 0.2), label: 'お忍び' });
+      if (ev && ev.kind === 'guest') interrupts.push({ slot: 1, at: 5, node: { kind: 'guest' } });
+      if (ev && ev.kind === 'arashi') interrupts.push({ slot: 2, at: 6, node: { kind: 'arashi' } });
+      if (ev && ev.kind === 'kosho') interrupts.push({ slot: 0, at: 0.5, node: { kind: 'kosho' } });
+      if (ev && ev.kind === 'shuzai') interrupts.push({ slot: 1, at: 8, node: { kind: 'shuzai' } });
+      if (parlor.joinNight) interrupts.push({ slot: 2, at: 1, node: { kind: 'joinNight' } });
+
+      let timeline = [], summary = null;
+      if (typeof JansouFloor !== 'undefined') {
+        const built = JansouFloor.build(day, {
+          fees: SLOTS.map((s) => s.fee), tableIdx,
+          slotStaff: slotWorkers.map((w) => w.map((c) => c.id)),
+          bonuses, interrupts,
+        }, rng);
+        timeline = built.timeline; summary = built.summary;
+      } else {
+        /* フロアが無い環境（テストなど）。割り込みだけ順に並べる */
+        timeline = interrupts.map((x) => ({ t: 0, kind: 'interrupt', node: x.node }));
+      }
+
+      return {
+        st0, parlor, list, slotWorkers, dayWorkers, day, ev, rolls, fillers,
+        closedTables, myTable, tableIdx, timeline, summary,
+        wages: dayWorkers.reduce((a, c) => a + wageOf(c), 0),
+        util: utilOf(parlor.tables),
+      };
+    }
+
+    /* ---------- 再生 ---------- */
+    async function playDay(plan) {
+      const results = { extraMoney: 0, repDelta: 0, lines: [], favor: {}, buffsAdd: [],
+                        extraPlace: {}, myLine: null };
+      if (typeof JansouFloor === 'undefined') {
+        for (const e of plan.timeline) if (e.kind === 'interrupt') await handleInterrupt(e.node, plan, results);
+        return results;
+      }
+      if (floorCtl) { floorCtl.destroy(); floorCtl = null; }
+      root.innerHTML = '<div id="jnPlay"></div>';
+      const host = root.querySelector('#jnPlay');
+      floorCtl = JansouFloor.mount(host, { onSpeed: (v) => setParlor({ speed: v }) });
+      const el = floorCtl.el;
+      await floorCtl.play(plan.timeline, {
+        parlor: plan.parlor,
+        staff: plan.dayWorkers.map((c) => ({ id: c.id, name: c.name })),
+        closedTables: plan.closedTables, myTable: plan.myTable,
+        speed: plan.parlor.speed || 1,
+        onInterrupt: async (node) => {
+          el.classList.add('paused');
+          try { await handleInterrupt(node, plan, results); }
+          finally { el.classList.remove('paused'); }
+        },
+      });
+      return results;
+    }
+
+    /* ---------- 割り込み（選択肢・実対局。§1 の例外） ---------- */
+    async function handleInterrupt(node, plan, results) {
+      const st0 = plan.st0, ev = plan.ev, dayWorkers = plan.dayWorkers;
+      const R = results;
+      if (node.kind === 'guest' && ev && ev.chara) {
         const g = ev.chara;
         const canTreat = (st0.money || 0) >= 30000;
         const k = await ask({
@@ -559,16 +659,15 @@ const Jansou = (() => {
             { key: 'normal', label: 'ふつうに接客する', note: '好感度が少し上がる' },
           ],
         });
+        const base = (st0.favor || {})[g.id] || 0;
         if (k === 'treat') {
-          extraMoney -= 30000;
-          favor[g.id] = Math.min(100, (favor[g.id] || 0) + 15);
-          repDelta += 2;
-          eventLines.push(`${g.name} をもてなした（好感度 +15）`);
+          R.extraMoney -= 30000; R.favor[g.id] = Math.min(100, base + 15); R.repDelta += 2;
+          R.lines.push(`${g.name} をもてなした（好感度 +15）`);
         } else {
-          favor[g.id] = Math.min(100, (favor[g.id] || 0) + 4);
-          eventLines.push(`${g.name} が来店（好感度 +4）`);
+          R.favor[g.id] = Math.min(100, base + 4);
+          R.lines.push(`${g.name} が来店（好感度 +4）`);
         }
-      } else if (ev && ev.kind === 'arashi') {
+      } else if (node.kind === 'arashi' && ev && ev.chara) {
         const a = ev.chara;
         const best = dayWorkers.slice().sort((x, y) => strengthOf(y, STYLES) - strengthOf(x, STYLES))[0];
         const k = await ask({
@@ -582,42 +681,36 @@ const Jansou = (() => {
           ],
         });
         if (k === 'me') {
-          const mates = dayWorkers.slice(0, 2);
-          const table = [playerCard(), a].concat(mates);
-          while (table.length < 4) table.push(makeRegular(table.length, Math.random));
+          const table = [playerCard(), a].concat(dayWorkers.slice(0, 2));
+          for (let i = 0; table.length < 4; i++) table.push(plan.fillers[i]);
           const rank = await playOrSimulate(table, `${a.name} との腕試し`);
           const mine = rank.find((r) => r.chara.id === 0);
           const his = rank.find((r) => r.chara.id === a.id);
           if (mine && his && mine.place < his.place) {
-            extraMoney += ARASHI_STAKE; repDelta += 6;
-            eventLines.push(`${a.name} を返り討ちにした（${signedYen(ARASHI_STAKE)}・評判 +6）`);
+            R.extraMoney += ARASHI_STAKE; R.repDelta += 6;
+            R.lines.push(`${a.name} を返り討ちにした（${signedYen(ARASHI_STAKE)}・評判 +6）`);
           } else {
-            extraMoney -= ARASHI_STAKE; repDelta -= 3;
-            eventLines.push(`${a.name} に打ち負けた（${signedYen(-ARASHI_STAKE)}・評判 −3）`);
+            R.extraMoney -= ARASHI_STAKE; R.repDelta -= 3;
+            R.lines.push(`${a.name} に打ち負けた（${signedYen(-ARASHI_STAKE)}・評判 −3）`);
           }
         } else if (k === 'ace' && best) {
-          const others = dayWorkers.filter((c) => c.id !== best.id).slice(0, 2);
-          const table = [best, a].concat(others);
-          while (table.length < 4) table.push(makeRegular(table.length, Math.random));
+          const table = [best, a].concat(dayWorkers.filter((c) => c.id !== best.id).slice(0, 2));
+          for (let i = 0; table.length < 4; i++) table.push(plan.fillers[i]);
           const rank = simulateTable(table, STYLES);
           const hers = rank.find((r) => r.chara.id === best.id);
           const his = rank.find((r) => r.chara.id === a.id);
           if (hers.place < his.place) {
-            extraMoney += ARASHI_STAKE; repDelta += 4;
-            eventLines.push(`${best.name} が ${a.name} を退けた（${signedYen(ARASHI_STAKE)}・評判 +4）`);
+            R.extraMoney += ARASHI_STAKE; R.repDelta += 4;
+            R.lines.push(`${best.name} が ${a.name} を退けた（${signedYen(ARASHI_STAKE)}・評判 +4）`);
           } else {
-            extraMoney -= ARASHI_STAKE; repDelta -= 3;
-            eventLines.push(`${best.name} が ${a.name} に敗れた（${signedYen(-ARASHI_STAKE)}・評判 −3）`);
+            R.extraMoney -= ARASHI_STAKE; R.repDelta -= 3;
+            R.lines.push(`${best.name} が ${a.name} に敗れた（${signedYen(-ARASHI_STAKE)}・評判 −3）`);
           }
         } else {
-          repDelta -= 1;
-          eventLines.push(`${a.name} を追い返した（評判 −1）`);
+          R.repDelta -= 1;
+          R.lines.push(`${a.name} を追い返した（評判 −1）`);
         }
-      } else if (ev && ev.kind === 'shugi') {
-        const bonus = day.guests * 500;
-        extraMoney += bonus;
-        eventLines.push(`常連たちが祝儀をはずんだ（${signedYen(bonus)}）`);
-      } else if (ev && ev.kind === 'kosho') {
+      } else if (node.kind === 'kosho') {
         const k = await ask({
           title: '卓がひとつ壊れた',
           text: '古い卓の山が上がらなくなりました。',
@@ -626,54 +719,64 @@ const Jansou = (() => {
             { key: 'leave', label: '明日は一卓閉める', note: '評判 −2' },
           ],
         });
-        if (k === 'fix') { extraMoney -= 50000; eventLines.push('壊れた卓を修理した（−50,000円）'); }
+        if (k === 'fix') { R.extraMoney -= 50000; R.lines.push('壊れた卓を修理した（−50,000円）'); }
         else {
-          parlor.buffs.push({ kind: 'closed', val: 1, days: 1 });
-          repDelta -= 2;
-          eventLines.push('明日は一卓閉めることにした（評判 −2）');
+          R.buffsAdd.push({ kind: 'closed', val: 1, days: 1 });
+          R.repDelta -= 2;
+          R.lines.push('明日は一卓閉めることにした（評判 −2）');
         }
-      } else if (ev && ev.kind === 'shuzai') {
-        repDelta += 8;
-        parlor.buffs.push({ kind: 'pull', val: 0.15, days: 3 });
-        eventLines.push('雑誌の取材が入った（評判 +8・三日間 客足が伸びる）');
-      } else if (ev && ev.kind === 'oshinobi') {
-        const bonus = Math.round(day.slots[2].sales * 0.2);
-        extraMoney += bonus; repDelta += 4;
-        eventLines.push(`有名人がお忍びで来店（${signedYen(bonus)}・評判 +4）`);
-      }
-
-      /* ---------- 夜、自分も卓に着く ---------- */
-      let myLine = null;
-      if (parlor.joinNight) {
-        const night = slotWorkers[2].slice().sort((a, b) => (b.pop || 0) - (a.pop || 0));
-        const mates = night.slice(0, 3);
-        const table = [playerCard()].concat(mates);
-        while (table.length < 4) table.push(makeRegular(table.length, Math.random));
+      } else if (node.kind === 'shuzai') {
+        await ask({
+          title: '雑誌の取材が入った',
+          text: '記者が店の様子を書いていきました。しばらく客足が伸びます。',
+          choices: [{ key: 'ok', label: 'ありがたい' }],
+        });
+      } else if (node.kind === 'joinNight') {
+        const night = plan.slotWorkers[2].slice().sort((a, b) => (b.pop || 0) - (a.pop || 0));
+        const table = [playerCard()].concat(night.slice(0, 3));
+        for (let i = 0; table.length < 4; i++) table.push(plan.fillers[i]);
         const rank = await playOrSimulate(table, '店の卓で一局');
         const mine = rank.find((r) => r.chara.id === 0);
         if (mine && mine.place === 1) {
-          extraMoney += 20000; repDelta += 2;
-          myLine = 'あなたのトップに祝儀が飛んだ（+20,000円・評判 +2）';
+          R.extraMoney += 20000; R.repDelta += 2;
+          R.myLine = 'あなたのトップに祝儀が飛んだ（+20,000円・評判 +2）';
         } else if (mine) {
-          myLine = `店の卓で${mine.place}着だった`;
+          R.myLine = `店の卓で${mine.place}着だった`;
         }
         /* 同卓した子には実戦のぶんも経験が入る */
-        rank.forEach((r) => { if (!r.chara.guest && r.chara.id !== 0) r.chara._extraPlace = r.place; });
+        rank.forEach((r) => { if (!r.chara.guest && r.chara.id !== 0) R.extraPlace[r.chara.id] = r.place; });
+      }
+    }
+
+    /* ---------- 締め（純関数。store には触らない） ----------
+       compMax は必ず保存する（引き継ぎ書 §5 の罠）。 */
+    function settle(plan, results, stNow) {
+      const { parlor, day, ev, dayWorkers, wages, util } = plan;
+      let extraMoney = results.extraMoney, repDelta = results.repDelta;
+      const lines = results.lines.slice();
+      const buffs0 = parlor.buffs.concat(results.buffsAdd);
+
+      /* 選択の要らないイベントの効き目はここで */
+      if (ev && ev.kind === 'shugi') {
+        const bonus = day.guests * 500;
+        extraMoney += bonus;
+        lines.push(`常連たちが祝儀をはずんだ（${signedYen(bonus)}）`);
+      } else if (ev && ev.kind === 'oshinobi') {
+        const bonus = Math.round(day.slots[2].sales * 0.2);
+        extraMoney += bonus; repDelta += 4;
+        lines.push(`有名人がお忍びで来店（${signedYen(bonus)}・評判 +4）`);
+      } else if (ev && ev.kind === 'shuzai') {
+        repDelta += 8;
+        buffs0.push({ kind: 'pull', val: 0.15, days: 3 });
+        lines.push('雑誌の取材が入った（評判 +8・三日間 客足が伸びる）');
       }
 
-      /* ---------- 成長 ----------
-         compMax は必ず保存する（引き継ぎ書 §5 の罠）。 */
-      const st1 = store.get();
-      const comp = Object.assign({}, st1.comp);
-      const compMax = Object.assign({}, st1.compMax || {});
-      const grades = Object.assign({}, st1.grades || {});
+      /* 成長。着順は plan で振ってある */
+      const comp = Object.assign({}, stNow.comp);
+      const compMax = Object.assign({}, stNow.compMax || {});
+      const grades = Object.assign({}, stNow.grades || {});
       const growth = [];
-      const placeRoll = () => {
-        const r = Math.random();
-        return r < 0.08 ? 1 : r < 0.30 ? 2 : r < 0.65 ? 3 : 4;
-      };
       dayWorkers.forEach((c) => {
-        const slots = shiftOf(parlor, c.id).filter(Boolean).length;
         const target = Object.assign({}, c, {
           comp: comp[c.id] != null ? comp[c.id] : c.comp,
           compMax: compMax[c.id],
@@ -681,12 +784,12 @@ const Jansou = (() => {
         });
         const before = target.comp;
         let promoted = null;
-        for (let i = 0; i < slots; i++) {
-          const res = addExp(target, placeRoll(), 'practice');
+        (plan.rolls[c.id] || []).forEach((place) => {
+          const res = addExp(target, place, 'practice');
           if (res.promoted) promoted = res.promoted;
-        }
-        if (c._extraPlace) {
-          const res = addExp(target, c._extraPlace, 'practice');
+        });
+        if (results.extraPlace[c.id]) {
+          const res = addExp(target, results.extraPlace[c.id], 'practice');
           if (res.promoted) promoted = res.promoted;
         }
         comp[c.id] = target.comp;
@@ -697,27 +800,25 @@ const Jansou = (() => {
         }
       });
 
-      /* ---------- 締め ---------- */
       const profit = day.sales + extraMoney - wages - util;
       let rep = parlor.rep + repDelta;
       if (profit > 0) rep += 1;
       if (day.slots.some((s) => s.full)) rep += 1;
       rep = Math.min(100, Math.max(0, rep));
 
-      const buffs = parlor.buffs
+      const buffs = buffs0
         .map((b) => Object.assign({}, b, { days: b.days - 1 }))
         .filter((b) => b.days > 0);
-
       const log = parlor.log.concat({
         day: parlor.day + 1, guests: day.guests, sales: day.sales, profit,
       }).slice(-7);
 
-      const stNow = store.get();
-      store.set({
+      const favor = Object.assign({}, stNow.favor || {}, results.favor);
+      const patch = {
         money: (stNow.money || 0) + profit,
         comp, compMax, grades, favor,
         parlor: Object.assign(parlorOf(stNow), {
-          day: parlor.day + 1, rep, buffs, log,
+          day: parlor.day + 1, rep, buffs, log, challengedToday: false,
           total: {
             days: parlor.total.days + 1,
             sales: parlor.total.sales + day.sales,
@@ -725,33 +826,33 @@ const Jansou = (() => {
             guests: parlor.total.guests + day.guests,
           },
         }),
-      });
+      };
+      return { patch, profit, extraMoney, growth, lines };
+    }
 
-      /* ---------- 結果 ---------- */
-      const slotRows = day.slots.map((s) =>
-        `<div class="jnRepRow"><span>${s.name}<i>${SLOTS[s.key].hours}</i></span>
-         <span>${s.guests}人${s.full ? '<em>満卓</em>' : ''}</span>
-         <b>${yen(s.sales)}</b></div>`).join('');
-      const growthHTML = growth.length
-        ? `<div class="jnRepGrowth">${growth.map((g) =>
+    /* ---------- 結果。時間帯の内訳は再生で見せたので、締めだけ（§12） ---------- */
+    async function showResult(plan, results, out) {
+      const { day, dayWorkers, wages, util } = plan;
+      const growthHTML = out.growth.length
+        ? `<div class="jnRepGrowth">${out.growth.map((g) =>
             `<span>${esc(g.name)} +${g.gain.toFixed(1)}${g.promoted ? `　<em>${g.promoted}級に昇格</em>` : ''}</span>`
           ).join('')}</div>` : '';
-      const evHTML = eventLines.concat(myLine ? [myLine] : []).map((l) =>
+      const evHTML = out.lines.concat(results.myLine ? [results.myLine] : []).map((l) =>
         `<div class="jnRepEv">${esc(l)}</div>`).join('');
-
       await ask({
-        title: `${parlor.day + 1}日目の営業`,
-        html: `<span class="jnRepWrap">${slotRows}
-          <span class="jnRepRow line"><span>日当（${dayWorkers.length}人）</span><span></span>
-            <b>−${yen(wages)}</b></span>
-          <span class="jnRepRow"><span>家賃・光熱</span><span></span><b>−${yen(util)}</b></span>
-          ${evHTML}
+        title: `${plan.parlor.day + 1}日目の営業`,
+        html: `<span class="jnRepWrap">
           <span class="jnRepRow total"><span>今日の収支</span><span></span>
-            <b class="${profit >= 0 ? 'plus' : 'minus'}">${signedYen(profit)}</b></span>
+            <b class="${out.profit >= 0 ? 'plus' : 'minus'}">${signedYen(out.profit)}</b></span>
+          <span class="jnRepRow"><span>場代（${day.guests}人）</span><span></span><b>${yen(day.sales)}</b></span>
+          ${out.extraMoney ? `<span class="jnRepRow"><span>臨時</span><span></span>
+            <b class="${out.extraMoney >= 0 ? 'plus' : 'minus'}">${signedYen(out.extraMoney)}</b></span>` : ''}
+          <span class="jnRepRow"><span>日当（${dayWorkers.length}人）・家賃</span><span></span>
+            <b>−${yen(wages + util)}</b></span>
+          ${evHTML}
           ${growthHTML}</span>`,
         choices: [{ key: 'ok', label: '閉店する' }],
       });
-      render();
     }
 
     render();

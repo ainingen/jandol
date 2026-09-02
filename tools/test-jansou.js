@@ -209,6 +209,142 @@ function eq(a, b, name) {
   delete global.document;
 }
 
+/* ============================================================
+   帳簿層（タイムライン生成）— spec.md §5.4 / §13
+   ============================================================ */
+{
+  global.STYLES = global.STYLES || { a: 1 };
+  global.JANDOLS = global.JANDOLS || [];
+  global.FREE_AGENTS = global.FREE_AGENTS || [];
+  const { Jansou } = require('../src/jansou.js');
+  const F = JansouFloor, G = JansouGuests;
+
+  function seeded(seed) {
+    let x = (seed | 0) || 1;
+    return () => { x ^= x << 13; x ^= x >>> 17; x ^= x << 5; x |= 0; return ((x >>> 0) % 100000) / 100000; };
+  }
+  const fees = Jansou.SLOTS.map((s) => s.fee);
+  const starts = F.slotStartTimes();
+
+  /* 序盤・中盤・終盤（引き継ぎ書 §4 の3点）＋ joinNight の序盤 */
+  const cases = [
+    ['序盤', { tables: 2, interior: 1, auto: 1, sign: 1, rep: 10, slotPop: [0, 0, 120], slotWorkers: [0, 0, 3] }, [0, 1]],
+    ['序盤・自分の卓', { tables: 2, interior: 1, auto: 1, sign: 1, rep: 10, slotPop: [0, 0, 120], slotWorkers: [0, 0, 3], playerNight: true }, [0]],
+    ['中盤', { tables: 4, interior: 2, auto: 2, sign: 2, rep: 40, slotPop: [150, 200, 260], slotWorkers: [3, 4, 6] }, [0, 1, 2, 3]],
+    ['終盤', { tables: 8, interior: 5, auto: 3, sign: 3, rep: 85, slotPop: [300, 400, 500], slotWorkers: [8, 10, 12] }, [0, 1, 2, 3, 4, 5, 6, 7]],
+  ];
+
+  cases.forEach(([name, cfg, tableIdx]) => {
+    for (let seed = 1; seed <= 25; seed++) {
+      const day = Jansou.computeDay(cfg, seeded(seed));
+      const opts = { fees, tableIdx, slotStaff: [[1], [1, 2], [1, 2, 3]],
+        bonuses: [{ slot: 2, amount: 5000, label: '祝儀' }],
+        interrupts: [{ slot: 2, at: 6, node: { kind: 'test' } }] };
+      const { timeline: tl, summary } = F.build(day, opts, seeded(seed * 31));
+      const tag = name + ' seed' + seed;
+      const seats = tableIdx.length * F.SEATS_PER_TABLE;
+
+      /* --- 帯ごとの厳密一致 --- */
+      for (let si = 0; si < 3; si++) {
+        const cnt = tl.filter((e) => e.kind === 'arrive' && e.slot === si).reduce((a, e) => a + e.count, 0);
+        eq(cnt, day.slots[si].guests, tag + ' 帯' + si + ' Σcount=guests');
+        const pay = tl.filter((e) => e.kind === 'pay' && e.slot === si).reduce((a, e) => a + e.amount, 0);
+        eq(pay, day.slots[si].sales, tag + ' 帯' + si + ' Σpay=sales');
+        /* 帯の到着は帯の中に居る */
+        tl.filter((e) => e.kind === 'arrive' && e.slot === si).forEach((e) => {
+          ok(e.t >= starts[si] && e.t <= starts[si] + F.SLOT_SEC[si], tag + ' 帯' + si + ' 到着が帯の中', e.t);
+        });
+        /* 満卓の札は full の帯にだけ、1回まで */
+        const fulls = tl.filter((e) => e.kind === 'full' && e.slot === si).length;
+        ok(fulls <= 1 && (fulls === 0 || day.slots[si].full), tag + ' 帯' + si + ' 満卓札', fulls);
+      }
+
+      /* --- 時刻が昇順、全部が一日の中 --- */
+      for (let i = 1; i < tl.length; i++) ok(tl[i].t >= tl[i - 1].t, tag + ' 時刻昇順 ' + i);
+      ok(tl.every((e) => e.t >= 0 && e.t <= summary.duration), tag + ' 一日の中');
+      eq(tl[0].kind, 'slotStart', tag + ' 先頭は開店');
+      eq(tl[tl.length - 1].kind, 'dayEnd', tag + ' 末尾は閉店');
+
+      /* --- 到着1つに退店1つ・支払い1つ。支払いは到着の帯に付く --- */
+      const arrives = tl.filter((e) => e.kind === 'arrive');
+      const leaves = tl.filter((e) => e.kind === 'leave');
+      const pays = tl.filter((e) => e.kind === 'pay');
+      eq(leaves.length, arrives.length, tag + ' 到着と退店が同数');
+      eq(pays.length, arrives.length, tag + ' 到着と支払いが同数');
+      const bySlot = {};
+      arrives.forEach((a) => { bySlot[a.guestId] = a.slot; });
+      pays.forEach((p) => eq(p.slot, bySlot[p.guestId], tag + ' 支払いの帯 ' + p.guestId));
+
+      /* --- 群の人数はその型の val 以下。群でなければ1 --- */
+      arrives.forEach((a) => {
+        const t = G.BY_KEY[a.typeKey];
+        const isGroup = t.effect && t.effect.kind === 'group';
+        ok(isGroup ? a.count >= 1 && a.count <= t.effect.val : a.count === 1, tag + ' 群の人数 ' + a.typeKey, a.count);
+      });
+
+      /* --- 席を模擬して、占有≤席数・歩行≤MAX_WALK・swapの条件 を見る --- */
+      const seated = new Map();     // guestId -> count
+      const walking = [];           // {until}
+      let bad = 0, evictedAt = 0, evictedT = -1;
+      tl.forEach((e) => {
+        if (e.kind === 'leave') {
+          seated.delete(e.guestId);
+          /* 追い出しの退店は到着が原因。到着側の判定では「まだ座っていた」として扱う */
+          if (e.evicted) { if (e.t !== evictedT) { evictedT = e.t; evictedAt = 0; } evictedAt += e.count; }
+        }
+        if (e.kind !== 'arrive') return;
+        const used = Array.from(seated.values()).reduce((a, b) => a + b, 0);
+        const freeNow = seats - used;
+        const freeBefore = e.evict && e.t === evictedT ? freeNow - evictedAt : freeNow;
+        if (e.evict) evictedAt = 0;
+        const walkers = walking.filter((w) => w.until > e.t).length;
+        if (e.mode === 'walk') {
+          ok(!e.evict && freeBefore >= e.count, tag + ' walk は空席があるとき ' + e.guestId, freeBefore);
+          ok(walkers < F.MAX_WALK, tag + ' 歩行中が上限未満 ' + e.guestId, walkers);
+          walking.push({ until: e.t + F.WALK_SEC });
+        } else {
+          ok(freeBefore < e.count || walkers >= F.MAX_WALK,
+            tag + ' swap は満席か歩行枠が埋まっているときだけ ' + e.guestId, freeBefore + '/' + walkers);
+          if (e.evict) ok(freeBefore < e.count, tag + ' 追い出しは満席のときだけ ' + e.guestId, freeBefore);
+        }
+        seated.set(e.guestId, e.count);
+        const now = Array.from(seated.values()).reduce((a, b) => a + b, 0);
+        if (now > seats) bad++;
+      });
+      eq(bad, 0, tag + ' 占有が席数を超えない');
+
+      /* --- 同時刻は 退店 → 到着 の順 --- */
+      for (let i = 1; i < tl.length; i++) {
+        if (tl[i].t === tl[i - 1].t && tl[i - 1].kind === 'arrive' && tl[i].kind === 'leave') {
+          ok(false, tag + ' 同時刻で到着が退店より先に来ている ' + i);
+        }
+      }
+
+      /* --- 臨時収入と割り込みが置かれている --- */
+      eq(tl.filter((e) => e.kind === 'bonus').length, 1, tag + ' 臨時収入');
+      eq(tl.filter((e) => e.kind === 'interrupt').length, 1, tag + ' 割り込み');
+    }
+
+    /* --- 種を固定すると同じタイムライン --- */
+    const day = Jansou.computeDay(cfg, seeded(99));
+    const opts = { fees, tableIdx, slotStaff: [[1], [1, 2], [1, 2, 3]] };
+    const a = F.build(day, opts, seeded(5)).timeline;
+    const b = F.build(day, opts, seeded(5)).timeline;
+    eq(JSON.stringify(a), JSON.stringify(b), name + ' 種が同じなら同じタイムライン');
+    const c = F.build(day, opts, seeded(6)).timeline;
+    ok(JSON.stringify(a) !== JSON.stringify(c), name + ' 種が違えば変わる');
+  });
+
+  /* 密度の実測を表示しておく（数値の検証ではなく、目で見るため） */
+  const cfgL = cases[3][1];
+  let w = 0, s = 0;
+  for (let seed = 1; seed <= 25; seed++) {
+    const r = F.build(Jansou.computeDay(cfgL, seeded(seed)), { fees, tableIdx: cases[3][2] }, seeded(seed));
+    r.summary.perSlot.forEach((p) => { w += p.walks; s += p.swaps; });
+  }
+  console.log('  終盤の演出モード: 歩く ' + Math.round(100 * w / (w + s)) + '% / 席で入れ替わる ' + Math.round(100 * s / (w + s)) + '%');
+}
+
 /* ============================================================ */
 console.log('通過 ' + pass + ' 件');
 if (fails.length) {
