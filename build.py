@@ -57,7 +57,7 @@ JS = ['engine.js', 'ai.js', 'game.js', 'ui.js', 'match.js',
       'characters.js', 'geo.js', 'tournament.js', 'offers.js', 'office.js',
       'title.js', 'meikan.js',
       'team.js', 'taikai.js', 'scout.js',
-      'jansou-guests.js', 'jansou-floor.js', 'jansou.js', 'serifu.js']
+      'jansou-guests.js', 'jansou-floor.js', 'jansou.js', 'scoutshop.js', 'serifu.js']
 
 # 開発用。**ここに足さないこと。**足すと本番の index.html に入り、
 # 普通のプレイヤーにデバッグの入口が見えてしまう。

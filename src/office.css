@@ -141,6 +141,47 @@
 .ofOfferT{font-family:var(--maru);font-size:14px;color:var(--gold);letter-spacing:.06em}
 .ofOfferMeta{font-size:10.5px;color:var(--muted);margin-left:auto}
 .ofOfferText{margin:5px 0 8px;font-size:11.5px;line-height:1.8;color:var(--ivory-2)}
+/* ---------- 遠征先の店（scout/spec.md §3） ---------- */
+.ofShop{margin:0 0 6px}
+/* **枠は事務所の色にする。**`.jnFloor` の既定はピンクの枠と紫の帯で、
+   これは自分の店（ガールズ雀荘）の顔。よその店に着せると、
+   壁と卓を型ごとに差し替えても**どの店も同じに見える**（実際そう見えた）。
+   触るのは `bare` を付けたときだけなので、自分の店の絵は変わらない */
+.ofShop .jnFloor.bare{
+  border-color:var(--gold-dim);
+  border-radius:5px;
+}
+.ofShop .jnFloor.bare .jnFlTop{
+  border-radius:4px 4px 0 0;
+  background:rgba(0,0,0,.35);
+}
+.ofShop .jnFloor.bare .jnFlName{color:var(--gold)}
+.ofShop .jnFloor.bare .jnFlDay{color:var(--muted)}
+.ofShop .jnFloor.bare .jnFlTicker{display:none}
+/* 窓の枠もピンクをやめる（`.jnFlStage` の既定は --jnPink） */
+.ofShop .jnFloor.bare .jnFlStage{border-color:var(--gold-dim)}
+/* 見つけた子の札。**`.mkFace` を借りるので position を戻すこと**
+   （引き継ぎ書 §5。戻さないと写真が body の 0,0 へ飛ぶ） */
+.ofShopFound{
+  display:flex;align-items:flex-start;gap:9px;margin:6px 0 0;padding:7px 9px;
+  border-radius:5px;border:1px solid var(--gold);background:rgba(201,162,74,.10);
+}
+.ofShopFound .mkFace{
+  position:relative;inset:auto;
+  flex:none;width:44px;height:56px;border-radius:4px;overflow:hidden;background:var(--sil);
+}
+.ofShopFound .mkFace img{width:100%;height:100%;object-fit:cover;object-position:top}
+.ofShopFoundBody{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.ofShopFoundName{font-family:var(--maru);font-size:14px;color:var(--ivory)}
+.ofShopFoundName i{font-style:normal;font-size:11px;color:var(--gold);margin-left:6px}
+.ofShopFoundSub{font-size:10.5px;color:var(--muted)}
+.ofShopFoundCopy{font-size:11px;color:var(--ivory-2);line-height:1.6}
+
+.ofShopNote{
+  margin:6px 0 0;padding:6px 8px;border-radius:4px;
+  background:rgba(201,162,74,.08);border:1px solid var(--gold-dim);color:var(--ivory-2);
+}
+
 .ofOfferBtns{display:flex;gap:6px}
 .ofTake,.ofPass{
   flex:1;padding:7px 8px;border-radius:4px;cursor:pointer;

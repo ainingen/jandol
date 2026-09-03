@@ -120,6 +120,7 @@ src/
   geo.js            47都道府県（座標・規模・所属地方）、距離と遠さの段階
   office.js/.css    事務所ハブ。朝と夜、本拠地の選択、所属一覧、配置、遠征、依頼
   offers.js         届く依頼15件（大会5・契約イベント6・アイドル案件4）と発火判定
+  scoutshop.js      遠征先の雀荘（型4種・パレット・誰がいるか）
 
   theme.css         全画面に効く「華」の層（金箔・漆・朱）
   maru.css          丸ゴシックの読み込み定義（tools/make-font.py が生成）
@@ -144,6 +145,7 @@ docs/design/jansou/ 直営雀荘の設計一式（spec.md ＝リニューアル�
                     monthly.md ＝月末決算と月報）
 docs/design/office/ 事務所ハブと日進行の統一（spec.md ＝全5段階）
 tools/test-office.js 事務所の純関数テスト（node tools/test-office.js）
+tools/test-scout.js  遠征先の店の純関数テスト（node tools/test-scout.js）
 tools/measure-jansou.js 直営店の経済を測る（HANDOVER §4 の表を作り直す）
 tools/measure-office.js 遠征と日進行の釣り合いを測る（spec.md §11 の A3）
 tools/test-jansou.js 雀荘の純関数テスト（node tools/test-jansou.js）
@@ -193,6 +195,11 @@ src/debug.js        その中身。build.py は読まない（配布から外す
   「事務所に届いて、受けるか見送るかを決める」一つの形に載っている。
   **発火するのは条件だけで、日付を見ない**ので、あとから足しても
   新規にも古参にも同じように届く。大会も依頼から入り、日を消費する
+- **遠征先の雀荘** … 滞在中の朝、その日の店が**静止した一枚**で出る。
+  型が四つ（古い雀荘／場末の店／街のガールズ雀荘／高級店）あり、
+  県の規模で出やすさが変わる。客の中に雀ドルが混じっていて、
+  **タップして声をかけると発見**。声をかけられるのは一日3回まで、観察はただ。
+  **誰もいない日もある**
 - **遠征** … 行き先の県・目的（探す／口説く）・同行者0〜3人を決めて出る。
   日数と費用は本拠地からの遠さで決まり、**遠いほど長く居られるぶん多く探せる**。
   口説くなら現地で一局打ち、**勝てば契約の話**に進む（負けても好感度は積まれる）。
@@ -245,6 +252,9 @@ src/debug.js        その中身。build.py は読まない（配布から外す
 | 事務所名の文字数 | `src/office.js` の `NAME_MAX` |
 | 配置の種類（店・遠征・休み） | `src/office.js` の `ASSIGN_KINDS` |
 | 遠征の日数と費用 | `src/office.js` の `planTrip`（一回の費用の正は `Scout.SCOUT_COST`） |
+| 遠征先の店の型・色・卓数 | `src/scoutshop.js` の `SHOP_TYPES` `PALETTES` |
+| 雀ドルがその日いる確率 | `src/scoutshop.js` の `ANY_CHANCE` `TWO_CHANCE` |
+| 一日に声をかけられる回数 | `src/scoutshop.js` の `CALLS_PER_DAY` |
 | 依頼の中身と発火条件 | `src/offers.js` の `TABLE`（大会・契約イベント・アイドル案件） |
 | 事務所に溜まる依頼の上限 | `src/offers.js` の `MAX_OPEN` |
 | 遠さの段階ごとの距離 | `src/geo.js` の `FAR_KM` |
