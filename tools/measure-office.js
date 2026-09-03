@@ -64,6 +64,25 @@ const PHASES = [
     shifts: [[0, 1, 2, 3], [4, 5, 6, 7], [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]] },
 ];
 
+/* ------------------------------------------------------------
+   第五段の旗（`office/spec.md` §11 の再測の三段目）。
+   `measure-jansou.js` と同じ形。**一本ずつ立てて寄与を分けて見る**
+
+     --favor  夜の単価に好感度が乗る
+     --short  出勤が足りなければ開けられる席が減る
+     --away   さらに、**遠征中は代表が居ない**として `baseSeats` を 0 にする
+              （代表の身体は一つ。`BASE_SEATS` が「店主が居る」の意味なら、
+               遠征に出ているあいだは 0 のはず——採るかは数字を見て決める）
+     --all    三つ同時
+------------------------------------------------------------ */
+const hasFlag = (name) => process.argv.indexOf('--' + name) >= 0;
+const FLAGS = {
+  favor: hasFlag('favor') || hasFlag('all'),
+  short: hasFlag('short') || hasFlag('away') || hasFlag('all'),
+  away: hasFlag('away') || hasFlag('all'),
+};
+const FAVOR_EACH = 40;
+
 /* away … 遠征中（同行者を出勤から外し、joinNight を切る）
    joinNight … 夜に代表の卓を出す（HANDOVER §4 が別に測っている条件） */
 function run(ph, opts) {
@@ -80,6 +99,12 @@ function run(ph, opts) {
     slotWorkers: slotWorkers.map((w) => w.length),
     pullBonus: 0, closedTables: 0,
     playerNight: !!opts.joinNight,
+    favorFee: FLAGS.favor,
+    slotFavor: slotWorkers.map((w) => w.length * FAVOR_EACH),
+    staffing: FLAGS.short,
+    /* **`--away` は遠征中の列にだけ効く。**遠征していない基準の列で
+       代表が消えては、比べるものが変わってしまう */
+    baseSeats: (FLAGS.away && away > 0) ? 0 : undefined,
   };
   const rng = seeded(SEED);
   let guests = 0, sales = 0;
@@ -94,7 +119,11 @@ function run(ph, opts) {
 }
 
 console.log('遠征と日進行の釣り合い — ' + DAYS + '日の平均（種 ' + SEED + '）');
-console.log('**数字はまだ動かしていない。いまどうなっているかを見るだけ。**\n');
+console.log('**数字はまだ動かしていない。いまどうなっているかを見るだけ。**');
+const onFlags = Object.keys(FLAGS).filter((k) => FLAGS[k]);
+console.log(onFlags.length
+  ? '**第五段の旗: ' + onFlags.map((k) => '--' + k).join(' ') + '**（好感度は全員 ' + FAVOR_EACH + '）\n'
+  : '第五段の旗は立っていない（いままでどおりの基準）\n');
 
 /* ============================================================
    基準：店の一日の利益

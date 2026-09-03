@@ -89,6 +89,26 @@ const PHASES = [
 /* ------------------------------------------------------------
    計測
 ------------------------------------------------------------ */
+/* ------------------------------------------------------------
+   第五段の旗（`office/spec.md` §11 の再測の三段目）
+
+     --favor    夜の単価に好感度が乗る
+     --short    出勤が足りなければ開けられる席が減る
+     --away     さらに、代表が遠征中として `baseSeats` を 0 にする
+     --all      三つ同時
+
+   **一本ずつ立てて、寄与を分けて見るための旗。**
+   旗を立てなければ、いままでどおりの基準が出る
+------------------------------------------------------------ */
+const has = (name) => process.argv.indexOf('--' + name) >= 0;
+const FLAGS = {
+  favor: has('favor') || has('all'),
+  short: has('short') || has('away') || has('all'),
+  away: has('away'),
+};
+/* 測るときの好感度。**全員が同じ値**にして、動く変数を旗だけに絞る */
+const FAVOR_EACH = 40;
+
 function measure(ph, days, basis) {
   const roster = ph.roster();
   const slotWorkers = ph.shifts.map((idx) => idx.map((i) => roster[i]));
@@ -104,6 +124,11 @@ function measure(ph, days, basis) {
     slotPop: slotWorkers.map((w) => w.reduce((a, c) => a + (c.pop || 0), 0)),
     slotWorkers: slotWorkers.map((w) => w.length),
     pullBonus: 0, closedTables: 0, playerNight: false,
+    /* 第五段の三つ。**旗が立っていなければ `computeDay` は見ない** */
+    favorFee: FLAGS.favor,
+    slotFavor: slotWorkers.map((w) => w.length * FAVOR_EACH),
+    staffing: FLAGS.short,
+    baseSeats: FLAGS.away ? 0 : undefined,
   };
 
   const rng = seeded(SEED);
@@ -126,6 +151,10 @@ const yen = (n) => Math.round(n).toLocaleString('ja-JP') + '円';
 
 console.log('直営店の経済 — ' + DAYS + '日の平均'
   + '（日当は' + (WAGE_BASIS === 'shift' ? '出勤' : '契約') + '基準）\n');
+const onFlags = Object.keys(FLAGS).filter((k) => FLAGS[k]);
+console.log(onFlags.length
+  ? '**第五段の旗: ' + onFlags.map((k) => '--' + k).join(' ') + '**（好感度は全員 ' + FAVOR_EACH + '）'
+  : '第五段の旗は立っていない（いままでどおりの基準）');
 console.log('| 局面 | 客 | 場代 | 日当 | 家賃 | 一日の利益 |');
 console.log('| --- | --- | --- | --- | --- | --- |');
 const rows = PHASES.map((ph) => {
