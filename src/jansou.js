@@ -398,6 +398,16 @@ const Jansou = (() => {
     });
   }
 
+  /* ---------- シフトの読み書き ----------
+     `parlor.shifts` は { [charaId]: [昼, 夕, 夜] } の真偽値。
+     **持っていない子の既定は「夜だけ」。**`normalize()` は
+     `shifts` を素通しするので、既定はこの関数だけが知っている。
+     事務所へUIを移すとき（office/spec.md §6.3）も、読み書きはここを通すこと */
+  function shiftOf(parlor, id) {
+    const v = parlor.shifts[id];
+    return Array.isArray(v) ? v.slice(0, 3) : [false, false, true];
+  }
+
   /* ---------- セーブの既定値 ---------- */
   function normalize(p) {
     p = p || {};
@@ -551,7 +561,16 @@ const Jansou = (() => {
     document.documentElement.style.setProperty('--sil-img', `url("data:image/svg+xml,${svg}")`);
   }
 
-  function mount(root, store) {
+  /* opts（`shell.html` が渡す。単体ページ jansou.html には無い）
+       autoRun   … 開いた直後に今日の営業を回す（事務所の「今日を始める」から）
+       onDayEnd  … 一日が終わったら呼ぶ（事務所の夜へ返す）
+
+     **営業開始の釦は、事務所がいるときだけ消す。**入口を一本にするため
+     （office/spec.md §6.1）。事務所がいるかどうかは `store.startDay` の有無で見る。
+     単体ページの store はそれを持たないので、いままでどおり釦が出る。 */
+  function mount(root, store, opts) {
+    opts = opts || {};
+    const hub = typeof store.startDay === 'function';
     ensureSilVar();
     root.innerHTML = '';
     root.classList.add('jnRoot');
@@ -617,12 +636,6 @@ const Jansou = (() => {
         setParlor({ open: true });
         render();
       });
-    }
-
-    /* ---------- シフトの読み書き ---------- */
-    function shiftOf(parlor, id) {
-      const v = parlor.shifts[id];
-      return Array.isArray(v) ? v.slice(0, 3) : [false, false, true];   // 既定は夜だけ
     }
 
     /* ---------- 営業中の画面 ---------- */
@@ -727,8 +740,10 @@ const Jansou = (() => {
         <div class="jnRun">
           <label class="jnJoin"><input type="checkbox" id="jnJoin" ${parlor.joinNight ? 'checked' : ''}>
             夜、自分も卓に着く（東風戦・卓をひとつ使う）</label>
-          <button type="button" class="jnRunBtn" id="jnRun" ${list.length ? '' : 'disabled'}>
-            今日の営業をはじめる</button>
+          ${hub ? `<p class="jnRunNote">営業は事務所の「今日を始める」から。
+            ここは設備とシフトを整える場所です。</p>`
+          : `<button type="button" class="jnRunBtn" id="jnRun" ${list.length ? '' : 'disabled'}>
+            今日の営業をはじめる</button>`}
         </div>
 
         ${recent ? `<h2 class="jnSecT">最近の営業</h2><div class="jnLog">${recent}</div>` : ''}
@@ -801,7 +816,8 @@ const Jansou = (() => {
       root.querySelector('#jnJoin').addEventListener('change', (e) => {
         setParlor({ joinNight: e.target.checked });
       });
-      root.querySelector('#jnRun').addEventListener('click', () => { runDay(); });
+      const runBtn = root.querySelector('#jnRun');
+      if (runBtn) runBtn.addEventListener('click', () => { runDay(); });
       const editBtn = root.querySelector('#jnEdit');
       if (editBtn) editBtn.addEventListener('click', () => { renderEdit(); });
 
@@ -1004,6 +1020,10 @@ const Jansou = (() => {
       /* 締めは営業と地続き。日報の**次に**もう一枚（monthly.md §4）。
          入れ子にはしない。月報は表示だけで何も起こさない */
       if (out.report) await showMonthReport(out.report);
+      /* 事務所から降りてきたときは、ここで夜へ返す。
+         **`parlor.day` は上の `settle` の中でもう進んでいる**（office/spec.md §6.1）。
+         事務所の「明日へ」は夜を畳むだけで、日を進めない */
+      if (typeof opts.onDayEnd === 'function') { opts.onDayEnd(); return; }
       render();
     }
 
@@ -1678,9 +1698,11 @@ const Jansou = (() => {
     }
 
     render();
+    /* 事務所の「今日を始める」から来たとき。画面を組んでから回す */
+    if (opts.autoRun) runDay();
   }
 
-  return { mount, computeDay, normalize, pickEvent, wageOf, utilOf,
+  return { mount, shiftOf, computeDay, normalize, pickEvent, wageOf, utilOf,
            blankMonth, normalizeMonth, accrue, closeMonth, renderMonth, showMonthReport, nextMonthNo,
            OPEN_COST, SLOTS, TABLE_COST, INTERIOR, AUTO, SIGN, MONTH_DAYS, MONTHS_KEPT };
 })();

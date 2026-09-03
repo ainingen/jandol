@@ -107,6 +107,7 @@ body.inMatch #matchRoot{flex:1;min-height:0}
 </div>
 
 <nav id="nav" aria-label="画面の切り替え">
+  <button data-go="office">事務所</button>
   <button data-go="team">チーム</button>
   <button data-go="taikai">大会</button>
   <button data-go="jansou">雀荘</button>
@@ -136,6 +137,13 @@ body.inMatch #matchRoot{flex:1;min-height:0}
       money: 0, playerRank: 'D', playerWins: 0, records: {}, recent: [],
       agency: 1, beaten: [],
       autoMatch: false, matchSpeed: 520, showHints: true,
+      /* 事務所ハブ（docs/design/office/spec.md §10）。
+         **最上位に持つ。parlor の下ではない**（Jansou.normalize() が
+         知らないキーを捨てるため。引き継ぎ書 §5）。
+         第一段で使うのはこの2つだけ。assign / trip / offers / fatigue / cond は
+         第二段以降で足す（そのときもここに既定値を書くこと） */
+      officeName: '',
+      officePref: null,
     };
   }
 
@@ -163,6 +171,11 @@ body.inMatch #matchRoot{flex:1;min-height:0}
         autoMatch: !!s.autoMatch,
         matchSpeed: typeof s.matchSpeed === 'number' ? s.matchSpeed : 520,
         showHints: s.showHints !== false,
+        /* 事務所。**既存セーブには無い。**officePref が null のままなら、
+           事務所を初めて開いたときに一度だけ選ばせる（office/spec.md §5）。
+           既定を勝手に決めない——本拠地は一度きりの選択なので */
+        officeName: typeof s.officeName === 'string' ? s.officeName : '',
+        officePref: typeof s.officePref === 'string' ? s.officePref : null,
       });
     } catch (e) { return blankState(); }
   }
@@ -179,14 +192,33 @@ body.inMatch #matchRoot{flex:1;min-height:0}
     get: function () { return state; },
     set: function (patch) { Object.assign(state, patch); saveState(state); paintTop(); },
 
-    /* チーム編成が終わったら大会へ送る */
-    onDecided: function () { go('taikai'); },
+    /* 事務所がハブ。各画面はここから行き、ここへ戻る（office/spec.md §0）。
+       office.js は store.go が無ければ入口の釦を出さないので、
+       単体ページ（office.html）でも壊れない */
+    go: function (name, opts) { go(name, opts); },
+
+    /* 昼。事務所の「今日を始める」から呼ばれる。
+       **雀荘の画面を開いてそのまま営業を回す。**フロアの再生は雀荘の
+       DOM のままなので、演出には一行も手を入れていない。
+       終わったら事務所の夜へ返す。`parlor.day` は Jansou の settle が
+       もう進めている（office/spec.md §6.1） */
+    startDay: function () {
+      go('jansou', { autoRun: true, onDayEnd: function () { go('office', { phase: 'night' }); } });
+    },
+
+    /* チーム編成が終わったら事務所へ送る */
+    onDecided: function () { go('office'); },
 
     /* 表紙から */
-    onContinue: function () { go(state.teamDecided ? 'taikai' : 'team'); },
+    onContinue: function () { go(state.teamDecided ? 'office' : 'team'); },
     onStart: function () {
-      /* 「最初からはじめる」は進行だけ消す。名前と顔は今決めたものを残す */
-      var keep = { playerName: state.playerName, playerFace: state.playerFace };
+      /* 「最初からはじめる」は進行だけ消す。**いま決めたものは残す**
+         ——名前・顔と、事務所名・本拠地（title.js が onStart の直前に
+         store.set で書いている。ここで拾わないと、その場で消える） */
+      var keep = {
+        playerName: state.playerName, playerFace: state.playerFace,
+        officeName: state.officeName, officePref: state.officePref,
+      };
       state = Object.assign(blankState(), keep);
       saveState(state);
       go('team');
@@ -230,7 +262,9 @@ body.inMatch #matchRoot{flex:1;min-height:0}
     });
   }
 
-  function go(name) {
+  /* opts は画面ごとの引数。いまは雀荘（autoRun / onDayEnd）と
+     事務所（phase）だけが読む。持たない画面には渡っても無害 */
+  function go(name, opts) {
     /* ポップアップ類は body に足しているので、画面を替えるときに自分で消す。
        残したままだと次の画面の上に覆いが被さったままになる */
     Array.prototype.forEach.call(
@@ -243,10 +277,11 @@ body.inMatch #matchRoot{flex:1;min-height:0}
     view.appendChild(root);
     document.body.classList.toggle('onTitle', name === 'title');
     if (name === 'title') Title.mount(root, store);
+    else if (name === 'office') Office.mount(root, store, opts);
     else if (name === 'meikan') Meikan.mount(root, store);
     else if (name === 'team') Team.mount(root, store);
     else if (name === 'taikai') Taikai.mount(root, store);
-    else if (name === 'jansou') Jansou.mount(root, store);
+    else if (name === 'jansou') Jansou.mount(root, store, opts);
     else if (name === 'scout') Scout.mount(root, store);
     paintTop();
     /* スクロールするのは #scroll なので、window.scrollTo では戻らない */

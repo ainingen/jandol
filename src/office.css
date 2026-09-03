@@ -1,0 +1,145 @@
+/* ============================================================
+   事務所ハブ — office.css
+   配色のトークンは theme.css が持っている。ここでは形だけを決める。
+
+   縦持ち（〜380px）で朝の画面が収まること（spec.md §13）。
+   幅は他の画面と同じ 760px で頭打ちにして、中身は縦に流す。
+   **スクロールするのは #scroll。**ここでページスクロールに頼らない
+   （引き継ぎ書 §5「表紙は画面の高さに収める」）。
+
+   **字体は `var(--maru)`（丸ゴシック）を指す。**`--mincho` は
+   `style.css` が持つ明朝の並びで、いまは外枠（`shell.html` のタブと題字）と
+   名鑑の一部にだけ残っている。theme.css は画面の見出し
+   （`.mkTitle` `.tkSecT` など）を明示的に `--maru` へ寄せているので、
+   新しい画面もそちらに合わせる。
+   ============================================================ */
+
+.ofRoot{max-width:760px;margin:0 auto;padding:6px 10px 20px}
+
+/* ---------- 見出し ---------- */
+.ofHead{padding:6px 0 10px;border-bottom:1px solid var(--gold-dim)}
+.ofTitle{
+  font-family:var(--maru);font-size:20px;letter-spacing:.14em;margin:0;
+  background-image:var(--kin);-webkit-background-clip:text;background-clip:text;color:transparent;
+}
+.ofSub{margin:4px 0 0;font-size:12px;color:var(--muted);letter-spacing:.08em}
+
+/* ---------- 上の帯 ---------- */
+.ofBar{
+  display:flex;flex-wrap:wrap;gap:6px 14px;
+  padding:9px 2px;border-bottom:1px solid rgba(201,162,74,.18);
+}
+.ofStat{font-size:11.5px;color:var(--muted)}
+.ofStat b{font-family:var(--maru);font-size:13.5px;color:var(--ivory);margin-left:3px}
+
+/* ---------- 今日を始める ---------- */
+.ofRun{padding:16px 0 4px;text-align:center}
+.ofRunBtn{
+  width:100%;max-width:420px;padding:13px 10px;border-radius:5px;cursor:pointer;
+  font-family:var(--maru);font-size:16px;letter-spacing:.16em;
+  border:1px solid var(--gold);color:#1b140a;
+  background-image:var(--kin);
+}
+.ofRunBtn.ghost{background-image:none;background:transparent;color:var(--gold)}
+.ofRunBtn[disabled]{opacity:.35;cursor:default}
+.ofRunBtn:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
+.ofNote{margin:8px 0 0;font-size:11.5px;line-height:1.7;color:var(--muted)}
+
+/* ---------- 節の見出し ---------- */
+.ofSecT{
+  font-family:var(--maru);font-size:13px;letter-spacing:.18em;color:var(--gold);
+  margin:20px 0 8px;padding-bottom:4px;border-bottom:1px solid rgba(201,162,74,.22);
+}
+
+/* ---------- 所属 ---------- */
+.ofMates{display:flex;flex-direction:column;gap:5px}
+.ofMate{
+  display:flex;align-items:center;gap:9px;
+  padding:6px 8px;border-radius:4px;
+  background:rgba(255,255,255,.03);border:1px solid rgba(201,162,74,.14);
+}
+/* **`.mkFace` は meikan.css が position:absolute;inset:0 を持たせている。**
+   借りる側が戻さないと、写真が行から抜けて body の 0,0 へ飛ぶ
+   （引き継ぎ書 §5。雀荘のシフト表が実際にこれを踏んだ） */
+.ofMate .mkFace{
+  position:relative;inset:auto;
+  flex:none;width:36px;height:36px;border-radius:50%;overflow:hidden;
+  background:var(--sil);
+}
+.ofMate .mkFace img{width:100%;height:100%;object-fit:cover;object-position:center top}
+.ofMateBody{flex:1;min-width:0;display:flex;flex-direction:column;gap:1px}
+.ofMateName{
+  font-family:var(--maru);font-size:13.5px;color:var(--ivory);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+}
+.ofMateSub{font-size:10.5px;color:var(--muted)}
+.ofMateNums{flex:none;display:flex;flex-direction:column;gap:1px;text-align:right}
+.ofNum{font-size:10px;color:var(--muted)}
+.ofNum b{font-family:var(--maru);font-size:12.5px;color:var(--ivory);margin-left:2px}
+.ofNum.on b{color:var(--gold)}
+.ofEmpty{margin:0;padding:14px 4px;font-size:12px;color:var(--muted);text-align:center}
+
+/* ---------- 出かける ---------- */
+.ofDoors{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:6px}
+.ofDoor{
+  display:flex;flex-direction:column;gap:2px;align-items:flex-start;
+  padding:9px 10px;border-radius:4px;cursor:pointer;text-align:left;
+  border:1px solid var(--gold-dim);background:rgba(201,162,74,.05);
+}
+.ofDoor[disabled]{opacity:.35;cursor:default}
+.ofDoor:focus-visible{outline:2px solid var(--gold);outline-offset:1px}
+.ofDoorT{font-family:var(--maru);font-size:14px;letter-spacing:.1em;color:var(--gold)}
+.ofDoorN{font-size:10.5px;color:var(--muted)}
+
+/* ---------- 夜の日報 ---------- */
+.ofRep{
+  margin-top:14px;padding:10px 12px;border-radius:5px;
+  border:1px solid var(--gold-dim);background:rgba(255,255,255,.03);
+}
+.ofRepRow{
+  display:flex;justify-content:space-between;align-items:baseline;
+  padding:5px 0;font-size:12px;color:var(--muted);
+  border-bottom:1px dotted rgba(201,162,74,.18);
+}
+.ofRepRow:last-child{border-bottom:0}
+.ofRepRow b{font-family:var(--maru);font-size:15px;color:var(--ivory)}
+.ofRepRow.minus b{color:#c0685e}
+
+/* ---------- 本拠地を選ぶ ---------- */
+.ofSetup{max-width:520px;margin:0 auto;padding:10px 0 24px}
+.ofSetupT{
+  font-family:var(--maru);font-size:19px;letter-spacing:.16em;margin:0 0 8px;
+  background-image:var(--kin);-webkit-background-clip:text;background-clip:text;color:transparent;
+}
+.ofPrefs{display:flex;flex-direction:column;gap:10px;margin:12px 0 0}
+.ofPrefGroup{display:flex;flex-direction:column;gap:4px}
+.ofPrefRegion{font-size:10.5px;letter-spacing:.16em;color:var(--gold)}
+.ofPrefChips{display:flex;flex-wrap:wrap;gap:4px}
+.ofPref{
+  padding:5px 9px;border-radius:3px;cursor:pointer;font-size:12px;
+  border:1px solid var(--gold-dim);background:transparent;color:var(--muted);
+}
+.ofPref.on{background-image:var(--kin);color:#1b140a;border-color:var(--gold)}
+.ofPref:focus-visible{outline:2px solid var(--gold);outline-offset:1px}
+/* 一行紹介は高さが変わると釦の位置が跳ねるので、二行ぶん確保しておく */
+.ofPrefNote{
+  margin:10px 0 0;min-height:2.8em;font-size:11.5px;line-height:1.7;color:var(--muted);
+}
+.ofPrefNote b{color:var(--ivory);font-family:var(--maru);font-size:13px;margin-right:4px}
+.ofBtn{
+  width:100%;padding:12px 10px;border-radius:5px;cursor:pointer;
+  font-family:var(--maru);font-size:15px;letter-spacing:.16em;
+  border:1px solid var(--gold);color:#1b140a;background-image:var(--kin);
+}
+.ofBtn[disabled]{opacity:.35;cursor:default}
+.ofBtn:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
+
+/* ---------- 縦持ちの狭い幅（〜380px） ---------- */
+@media (max-width:380px){
+  .ofRoot{padding:6px 8px 20px}
+  .ofTitle{font-size:18px}
+  .ofDoors{grid-template-columns:1fr 1fr}
+  .ofDoorN{display:none}
+  .ofMate .mkFace{width:32px;height:32px}
+  .ofMateNums{flex-direction:row;gap:8px;align-items:baseline}
+}

@@ -13,6 +13,13 @@
    state に足すもの：
      playerName  プレイヤーの名前
      playerFace  'p01'〜'p12'（画像のファイル名。idではないので雀ドルの番号と衝突しない）
+     officeName  事務所名（12文字まで。**入力がそのまま入るので必ず esc()**）
+     officePref  本拠地の県 key（`geo.js` の PREFS。一度きりの選択）
+
+   事務所名と本拠地は `docs/design/office/spec.md` §5。
+   **県を選ぶ部品は `office.js` の `Office.prefPickerHtml` / `bindPicker` を借りる。**
+   単体ページ（team.html / taikai.html / meikan.html）は `geo.js` も `office.js` も
+   読んでいないので、**無ければその二つの欄を出さない**。名前と顔だけで通る。
    ============================================================ */
 
 const Title = (() => {
@@ -190,6 +197,11 @@ const Title = (() => {
     let screen = 'top';
     let name = store.get().playerName || DEFAULT_NAME;
     let face = normalizeFace(store.get().playerFace);
+    /* 事務所は office.js が居るときだけ聞く（単体ページには無い） */
+    const hasOffice = typeof Office !== 'undefined' && typeof Geo !== 'undefined';
+    let office = String(store.get().officeName || '').trim();
+    let officeTouched = !!office;      // 触るまでは名前に追従させる
+    let pref = store.get().officePref || null;
 
     /* ---------- 表紙 ---------- */
     function renderTop() {
@@ -290,12 +302,52 @@ const Title = (() => {
             <p class="ttNote">押すと大きく見られます。十二人から選べます。あとから変えられます。</p>
           </div>
 
+          ${hasOffice ? `
+          <div class="ttField">
+            <label class="ttLabel" for="ttOffice">事務所の名前</label>
+            <input class="ttInput" id="ttOffice" type="text" maxlength="${Office.NAME_MAX}"
+              value="${esc(officeName())}" autocomplete="off" spellcheck="false">
+            <p class="ttNote">${Office.NAME_MAX}文字まで。空のままにすると名前から作ります。</p>
+          </div>
+
+          <div class="ttField">
+            <span class="ttLabel">本拠地</span>
+            <p class="ttNote">遠征の起点になります。<b>あとから変えられません。</b></p>
+            ${Office.prefPickerHtml(pref)}
+          </div>` : ''}
+
           <hr class="kinsen">
-          <button type="button" class="ttBtn" data-act="go">この人ではじめる</button>
+          <button type="button" class="ttBtn" data-act="go"
+            ${hasOffice && !pref ? 'disabled' : ''}>この人ではじめる</button>
           <button type="button" class="ttBtn ghost" data-act="back" style="margin-top:8px">戻る</button>
         </div>`;
       const input = root.querySelector('#ttName');
-      input.addEventListener('input', () => { name = input.value; });
+      input.addEventListener('input', () => {
+        name = input.value;
+        /* 事務所名を触っていないあいだは、名前に追従させる */
+        if (!officeTouched) {
+          const oi = root.querySelector('#ttOffice');
+          if (oi) oi.value = officeName();
+        }
+      });
+      const oin = root.querySelector('#ttOffice');
+      if (oin) oin.addEventListener('input', () => {
+        office = oin.value;
+        officeTouched = true;
+      });
+      if (hasOffice) Office.bindPicker(root, (key) => {
+        pref = key;
+        renderSetup();
+        /* 描き直したので、入力中の値を書き戻す */
+        const ni = root.querySelector('#ttName'); if (ni) ni.value = name;
+        const oi = root.querySelector('#ttOffice'); if (oi) oi.value = officeName();
+      });
+    }
+
+    /* いま出す事務所名。触っていなければ「{名前の先頭語}事務所」（spec.md §5） */
+    function officeName() {
+      if (officeTouched) return office;
+      return hasOffice ? Office.defaultName((name || '').trim() || DEFAULT_NAME) : '';
     }
 
     /* ---------- 操作 ---------- */
@@ -350,8 +402,16 @@ const Title = (() => {
         renderTop();
         toTop();
       } else if (act.dataset.act === 'go') {
+        if (hasOffice && !pref) return;              // 本拠地は必ず選ばせる
         const clean = (name || '').trim() || DEFAULT_NAME;
-        store.set({ playerName: clean, playerFace: face });
+        const patch = { playerName: clean, playerFace: face };
+        if (hasOffice) {
+          /* **入力された文字がそのまま入る。**出すときは必ず esc() を通すこと */
+          const on = (officeTouched ? office : Office.defaultName(clean)).trim();
+          patch.officeName = (on || Office.defaultName(clean)).slice(0, Office.NAME_MAX);
+          patch.officePref = pref;
+        }
+        store.set(patch);
         if (typeof store.onStart === 'function') store.onStart(clean, face);
       }
     });

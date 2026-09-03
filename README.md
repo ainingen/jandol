@@ -86,7 +86,7 @@ python3 build.py
 
 `index.html` が作り直される。**`index.html` を直接編集しないこと**（次のビルドで消える）。
 
-画面ごとに単体で確認したいときは、直下の `meikan.html` `team.html`
+画面ごとに単体で確認したいときは、直下の `office.html` `meikan.html` `team.html`
 `taikai.html` `scout.html` を開く。ビルド不要で `src/` を直に読む。
 動作確認用のボタン（所持金を足す、全員発見にする、など）が下に付いている。
 
@@ -98,7 +98,8 @@ shell.html          外枠。表紙・タブ・セーブ。ビルド時にCSS/JS
 build.py            index.html を組み立てる（約13KB。CSS/JSは src/ のまま読む）
 tools/make-font.py  表紙の丸ゴシックを作り直す
 
-meikan.html         ┐
+office.html         ┐
+meikan.html         │
 team.html           │ 画面ごとの単体ページ（開発用）
 taikai.html         │
 scout.html          │
@@ -115,6 +116,9 @@ src/
   characters.js     雀ドル73人＋打ち筋20種＋地域＋契約条件
   serifu.js         セリフ323本（性格19種 × 8場面）
   tournament.js     育成（完成度と伸びしろ）と大会（組み合わせ・自動処理）
+
+  geo.js            47都道府県（座標・規模・所属地方）、距離と遠さの段階
+  office.js/.css    事務所ハブ。朝と夜、本拠地の選択、所属一覧（pop と favor）
 
   theme.css         全画面に効く「華」の層（金箔・漆・朱）
   maru.css          丸ゴシックの読み込み定義（tools/make-font.py が生成）
@@ -136,6 +140,8 @@ docs/HANDOVER.md    設計の経緯、決めごと、ハマった罠
 docs/design/jansou/ 直営雀荘の設計一式（spec.md ＝リニューアル、
                     placement.md ＝卓の自由配置と隣接コンボ、
                     monthly.md ＝月末決算と月報）
+docs/design/office/ 事務所ハブと日進行の統一（spec.md ＝全5段階）
+tools/test-office.js 事務所の純関数テスト（node tools/test-office.js）
 tools/test-jansou.js 雀荘の純関数テスト（node tools/test-jansou.js）
 tools/drive-jansou.js 雀荘をブラウザで自動で回す（node tools/drive-jansou.js --help）
 debug.html          開発用の入口。遊べる状態を作って本編へ入る（配布から外す）
@@ -169,15 +175,23 @@ src/debug.js        その中身。build.py は読まない（配布から外す
   広さを使う。隣り合わせで**コンボ**（くつろぎ席・カウンター席・入口席・
   静かな席・花道・ラウンジ）が付き、誰が座るか・どれだけ居るか・
   誰から立つか・チップ・ボトルの格が変わる。**客数と売上は変わらない**
+- **事務所ハブ** … 表紙から入ると事務所に着き、一日が朝→昼→夜→朝と回る。
+  新規開始で事務所名と本拠地の県（47から一つ）を決める。
+  **営業開始の入口は事務所だけ**で、雀荘は設備とシフトを整える場所になった。
+  所属一覧に人気(`pop`)と好感度(`favor`)が出る。
+  設計は `docs/design/office/spec.md`（全5段階のうち第一段）
 
 この四つが繋がって、**発掘 → スカウト → 所属 → 大会 → 賞金 → 事務所強化** の
 一周が閉じている。
+**入口はすべて事務所**で、一日は事務所で始まり事務所で終わる。
 
 ## まだできていないこと
 
+- **大会とスカウトが日を消費しない**。事務所ハブの第一段までしか入っていないので、
+  時間軸はまだ半分だけ一本化されている（`docs/design/office/spec.md` §14）。
 - **イベント**。契約条件が `event` の6人（天城リオを含む）は現状どうやっても
-  契約できない。このままだと図鑑が埋まらないので、公開前に暫定条件を置くか
-  イベントを作るかを決める必要がある。
+  契約できない。このままだと図鑑が埋まらない。
+  上の指示書の第四段（届く依頼）で解く予定。
 - トップページ、発掘の演出、全国マップ、団体戦。
 
 ## 決めごと
@@ -213,6 +227,9 @@ src/debug.js        その中身。build.py は読まない（配布から外す
 | 雀荘のマス目と設置物の大きさ | `src/jansou-floor.js` の `GRID` `COLS` `ROWS` `KINDS` `DOOR` |
 | 雀荘の自動配置（既存セーブの再現） | `src/jansou-floor.js` の `ROWS_FOR` `SOFA_SPOTS` `COUNTER_SPOTS` |
 | 雀荘の隣接コンボと効き目 | `src/jansou-floor.js` の `COMBOS` `TIP_PER_GUEST` `DWELL_RELAX` `DWELL_DOOR` `tableTraits` |
+| 47都道府県の座標・規模・所属地方・紹介文 | `src/geo.js` の `PREFS` |
+| 遠さの段階（遠征の日数と費用のもと） | `src/geo.js` の `FAR_KM` |
+| 事務所名の文字数 | `src/office.js` の `NAME_MAX` |
 
 ## 実対局
 
