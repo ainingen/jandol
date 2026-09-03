@@ -12,6 +12,9 @@
     2. 遠征中の店がどれだけ落ちるか（出勤者が減り、joinNight が効かない）
     3. 大会が日を消費するようになると何日相当になるか
     4. 開店前の日当（店が無い期間に、開店資金50万まで何日かかるか）
+    5. 一回の遠征の実り（A4.5 の再測。scout/spec.md §7）
+       声をかけた数・見つかった数・そのうち条件が揃っている数を、
+       県の規模 1／3／5 × 滞在 2／4／7日で。種を固定して各100回
 
   店の側の三局面は `tools/measure-jansou.js` と同じ組み方。
   **どちらも `computeDay` を回しているだけで、経済には触れていない。**
@@ -30,6 +33,9 @@ global.Geo = Geo;
 global.Scout = require('../src/scout.js');
 const { Jansou } = require('../src/jansou.js');
 global.Jansou = Jansou;
+global.JansouGuests = require('../src/jansou-guests.js').JansouGuests;
+const { ScoutShop } = require('../src/scoutshop.js');
+global.ScoutShop = ScoutShop;
 const { Office } = require('../src/office.js');
 
 function arg(name, fallback) {
@@ -188,3 +194,122 @@ console.log('\n大会が日を消費するようになったら（第四段）:'
 });
 console.log('\n※ 所持金に下限は無い（マイナスは「給料の遅配」として許す）。');
 console.log('  離脱の警告に繋げるのは ROADMAP [C]。');
+
+
+/* ============================================================
+   5. 一回の遠征の実り（A4.5 の再測。`scout/spec.md` §7）
+
+   **押しかたを二通り測る。**癖（A4.5-2）が効いているかは、
+   この差にしか出ない。差が小さければ癖は飾りだし、
+   差が開きすぎれば `CALLS_PER_DAY` の3が緩すぎる。
+
+     無作為  … どこを押すか分からない人（癖を見ていない）
+     癖を読む … 二拍の席から先に押す人（見えているものを使う）
+
+   **数字は動かさない。**いまどうなっているかを見るだけ。
+   ============================================================ */
+console.log('\n## 5. 一回の遠征の実り（A4.5 の再測）\n');
+
+const TRIPS = 100;                       // 各マスで回す遠征の数
+const SCALES = [1, 3, 5];
+const STAYS = [2, 4, 7];
+
+/* 測るときのプレイヤー像。**全マスで同じ**にして、
+   動く変数を「県の規模」と「滞在日数」だけに絞る */
+function scoutState() {
+  const roster = chars.JANDOLS.slice(0, 6);
+  return {
+    st: {
+      agency: 3, money: 10000000,
+      discovered: roster.map((c) => c.id),
+      contracted: roster.map((c) => c.id),
+      favor: {}, records: {}, beaten: [], comp: {},
+      officePref: 'tokyo',
+    },
+    roster,
+  };
+}
+
+/* その規模の県を一つ（PREFS の並び順で最初のもの。県ごとの差は測らない） */
+function prefOfScale(scale) {
+  return Geo.PREFS.find((p) => p.scale === scale) || Geo.PREFS[0];
+}
+
+/* 押す席を選ぶ。`smart` なら二拍 → 一拍 → 癖なしの順に、同点は乱数で */
+function pickSeats(shop, calls, smart, rng) {
+  const idx = shop.seats.map((s, i) => i);
+  const key = smart
+    ? (i) => -(shop.seats[i].quirk || []).length
+    : () => 0;
+  /* 乱数で崩してから安定ソート＝同点は無作為 */
+  idx.sort(() => rng() - 0.5);
+  idx.sort((a, b) => key(a) - key(b));
+  return idx.slice(0, calls);
+}
+
+/* 遠征一回。**`Office.ensureShop` と同じ種の作りかた**を写す
+   （あちらは store を触るので、ここでは buildShop を直に回す） */
+function runTrip(scale, days, smart, seed0) {
+  const { st, roster } = scoutState();
+  const pref = prefOfScale(scale);
+  const prefIdx = Geo.PREFS.findIndex((p) => p.key === pref.key);
+  const trip = { pref: pref.key, purpose: 'find', days, dayLeft: days };
+  const pick = seeded(seed0);
+  let calls = 0, found = [];
+  for (let d = 0; d < days; d++) {
+    const day = seed0 + d;                       // 日ごとに引き直す（§6.2）
+    const rng = ScoutShop.seeded(day * 7919 + (prefIdx + 1) * 613 + days);
+    const shop = ScoutShop.buildShop(st, trip, rng);
+    const seats = pickSeats(shop, ScoutShop.CALLS_PER_DAY, smart, pick);
+    seats.forEach((i) => {
+      const s = shop.seats[i];
+      if (!s) return;
+      calls++;
+      if (s.charaId != null && st.discovered.indexOf(s.charaId) < 0) {
+        st.discovered.push(s.charaId);
+        found.push(s.charaId);
+      }
+    });
+  }
+  /* 見つけた子のうち、**いま条件が揃っている**のは何人か
+     ＝もう一度「口説く」で行けば契約できる人数。
+     `RULES.event` の6人は `Offers` が読めないと開かないので、ここでは通らない */
+  const all = chars.JANDOLS.concat(chars.FREE_AGENTS);
+  const ready = found.filter((id) => {
+    const c = all.find((x) => x.id === id);
+    if (!c) return false;
+    let v = null;
+    try { v = Scout.evaluate(c, st, roster); } catch (e) { v = null; }
+    return !!(v && v.ok);
+  });
+  return { calls, found: found.length, ready: ready.length };
+}
+
+function avg(rows, key) { return rows.reduce((a, r) => a + r[key], 0) / rows.length; }
+
+[false, true].forEach((smart) => {
+  console.log('### ' + (smart ? '癖を読む（二拍の席から押す）' : '無作為（癖を見ていない）') + '\n');
+  console.log('| 規模 | 滞在 | 声をかけた | 見つかった | うち条件が揃っている | 費用 |');
+  console.log('| --- | --- | --- | --- | --- | --- |');
+  SCALES.forEach((scale) => {
+    STAYS.forEach((days) => {
+      const rows = [];
+      for (let i = 0; i < TRIPS; i++) rows.push(runTrip(scale, days, smart, SEED * 1009 + i * 31));
+      /* 費用は `planTrip` と同じ形。滞在日数は `2 + far` なので、
+         ここでは滞在から far を戻して掛ける（同行者なし） */
+      const far = Math.max(0, days - 2);
+      const cost = Scout.SCOUT_COST * (1 + far);
+      console.log('| ' + scale + ' | ' + days + '日 | '
+        + avg(rows, 'calls').toFixed(1) + ' | '
+        + avg(rows, 'found').toFixed(2) + ' | '
+        + avg(rows, 'ready').toFixed(2) + ' | ' + yen(cost) + ' |');
+    });
+  });
+  console.log('');
+});
+
+console.log('※ 「うち条件が揃っている」は、その場で契約できる人数ではない。');
+console.log('  探す遠征と口説く遠征は別なので、**もう一度行けば契約できる**人数。');
+console.log('  契約条件が `event` の6人は、`Offers` を読まないこの道具では通らない。');
+console.log('※ 声をかけた数が ' + (ScoutShop.CALLS_PER_DAY) + '×日数 に届かないのは、');
+console.log('  席がその数だけ無い日があるため（規模の小さい県ほど起きる）。');
