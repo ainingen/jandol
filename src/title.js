@@ -52,7 +52,7 @@ const Title = (() => {
   /* 制作のタグ。表紙の右下に落款のように押す。
      **これもcanvasに描くこと。**DOMに置くとPLiCyのサムネイルに写らない
      （README「表紙とサムネイル」）。 */
-  const CREDIT_LABEL = 'Produce';
+  const CREDIT_LABEL = 'produced by';
   const CREDIT_NAME = '夜中のBBQ';
 
   /* 表紙の書体。'Maru' は maru.css が二つの太さで定義している。

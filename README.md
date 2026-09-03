@@ -347,7 +347,7 @@ Android Chromeでしか効かず、iOS Safariは非対応。PLiCyはiframeで動
 
 題字と副題に数を書かないこと。キャラを増やすと嘘になる。
 
-右下の制作タグ（`Produce 夜中のBBQ`）も同じ理由でcanvasに描いてある
+右下の制作タグ（`produced by 夜中のBBQ`）も同じ理由でcanvasに描いてある
 （`drawCredit`）。DOMに置くとサムネイルに写らない。枠の大きさは文字から
 決めているので、文言を変えても枠は合う。**タグは 700 で描くこと。**
 800（`maru-title.woff2`）は題字と副題の20文字しか入っていないので、
