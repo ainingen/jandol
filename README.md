@@ -235,6 +235,7 @@ src/debug.js        その中身。build.py は読まない（配布から外す
 | 雑談が出る確率 | `src/ui.js` の `maybeIdle` の `0.18` |
 | おまかせの動き | `src/ui.js` の `giveUp` と `src/match.js` の `#giveup` |
 | 題字・副題と表紙の絵 | `src/title.js` の `TITLE` `SUBTITLE` `drawCover` |
+| 表紙の制作タグ（ハンコ調） | `src/title.js` の `CREDIT_LABEL` `CREDIT_NAME` `drawCredit` |
 | プレイヤーの顔の候補 | `src/title.js` の `FACES` |
 | 成長曲線 | `src/tournament.js` の `GROWTH_CURVE` |
 | 雀荘の開店資金・場代・回転 | `src/jansou.js` の `OPEN_COST` `SLOTS` |
@@ -390,6 +391,12 @@ Android Chromeでしか効かず、iOS Safariは非対応。PLiCyはiframeで動
   撮影できない。httpで開けば問題ない（GitHub PagesでもPLiCyでも本番は問題ない）
 
 題字と副題に数を書かないこと。キャラを増やすと嘘になる。
+
+右下の制作タグ（`produced by 夜中のBBQ`）も同じ理由でcanvasに描いてある
+（`drawCredit`）。DOMに置くとサムネイルに写らない。枠の大きさは文字から
+決めているので、文言を変えても枠は合う。**タグは 700 で描くこと。**
+800（`maru-title.woff2`）は題字と副題の20文字しか入っていないので、
+そちらで描くと文字が丸ごと代替書体に落ちる。
 
 ## 字体
 

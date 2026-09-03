@@ -56,6 +56,19 @@ const Title = (() => {
   const TITLE = '雀ドル発掘放浪記';
   const SUBTITLE = 'その雀荘に、まだ見ぬ雀ドルがいる';
 
+  /* 制作のタグ。表紙の右下に落款のように押す。
+     **これもcanvasに描くこと。**DOMに置くとPLiCyのサムネイルに写らない
+     （README「表紙とサムネイル」）。 */
+  const CREDIT_LABEL = 'produced by';
+  const CREDIT_NAME = '夜中のBBQ';
+
+  /* 表紙の書体。'Maru' は maru.css が二つの太さで定義している。
+     **タグは 700 で描くこと。**800（maru-title.woff2）は題字と副題の
+     20文字しか入っていないので、そちらで描くと「夜中のBBQ」が
+     丸ごと代替書体に落ちる。700（maru-ui.woff2）は常用漢字と英数を
+     持っているので、この文言はそのまま出る。 */
+  const COVER_FONT = '"Maru","Hiragino Maru Gothic ProN","M PLUS Rounded 1c",sans-serif';
+
   /* 4:3。サムネイルの縦横比がそのままこの比率になる */
   const COVER_W = 1200, COVER_H = 900;
   const COVER_COLS = 6, COVER_ROWS = 3;
@@ -115,7 +128,7 @@ const Title = (() => {
     g.fillRect(0, 0, COVER_W, COVER_H);
 
     /* 題字。ネオン管に見えるよう、外側から内側へ重ねて描く */
-    const fam = '"Maru","Hiragino Maru Gothic ProN","M PLUS Rounded 1c",sans-serif';
+    const fam = COVER_FONT;
     g.textAlign = 'center';
     g.textBaseline = 'alphabetic';
 
@@ -137,6 +150,96 @@ const Title = (() => {
       g.fillText(SUBTITLE, COVER_W / 2, ty + 74);
     });
     g.shadowBlur = 0;
+
+    drawCredit(g);
+  }
+
+  /* 角の丸い四角。roundRect が無い環境（少し古いブラウザ）でも通るように
+     arcTo で組む。PLiCyのプレイヤーがどの版で開かれるか選べないため */
+  function roundRectPath(g, x, y, w, h, r) {
+    g.beginPath();
+    g.moveTo(x + r, y);
+    g.arcTo(x + w, y, x + w, y + h, r);
+    g.arcTo(x + w, y + h, x, y + h, r);
+    g.arcTo(x, y + h, x, y, r);
+    g.arcTo(x, y, x + w, y, r);
+    g.closePath();
+  }
+
+  /* 字間を開けた一行。canvasの letterSpacing は新しい環境にしか無いので、
+     一字ずつ置いて自前で開ける。draw が false のときは幅だけ返す
+     （枠の大きさを先に決めてから中身を描くため、二度呼ぶ） */
+  function trackedText(g, text, cx, cy, track, draw) {
+    const chars = Array.from(text);
+    const w = chars.map((c) => g.measureText(c).width);
+    const total = w.reduce((a, b) => a + b, 0) + track * Math.max(0, chars.length - 1);
+    if (draw) {
+      let x = cx - total / 2;
+      chars.forEach((c, i) => { g.fillText(c, x, cy); x += w[i] + track; });
+    }
+    return total;
+  }
+
+  /* 制作のタグ。朱の印を右下に押した見た目にする。
+     ネオンの題字と喧嘩しないよう、光らせずに影だけで浮かせる。
+     大きさは文字から決めるので、CREDIT_NAME を変えても枠が合う。 */
+  function drawCredit(g) {
+    const LABEL_SIZE = 16, NAME_SIZE = 30;
+    const LABEL_TRACK = 5.5, NAME_TRACK = 2.5;
+    const PAD_X = 29, PAD_Y = 21, GAP = 9;
+    const MARGIN_R = 52, MARGIN_B = 46, TILT = -2.5 * Math.PI / 180;
+
+    g.save();
+    g.textAlign = 'left';
+    g.textBaseline = 'middle';
+
+    g.font = '700 ' + LABEL_SIZE + 'px ' + COVER_FONT;
+    const labelW = trackedText(g, CREDIT_LABEL, 0, 0, LABEL_TRACK, false);
+    g.font = '700 ' + NAME_SIZE + 'px ' + COVER_FONT;
+    const nameW = trackedText(g, CREDIT_NAME, 0, 0, NAME_TRACK, false);
+
+    const w = Math.max(labelW, nameW) + PAD_X * 2;
+    const h = LABEL_SIZE + GAP + NAME_SIZE + PAD_Y * 2;
+    const cx = COVER_W - MARGIN_R - w / 2;
+    const cy = COVER_H - MARGIN_B - h / 2;
+
+    /* 中心を原点にして少し傾ける。押した印らしく、真っ直ぐにはしない */
+    g.translate(cx, cy);
+    g.rotate(TILT);
+    const x = -w / 2, y = -h / 2, r = 13;
+
+    /* 台。下に落ちる影で紙から浮かせ、朱をうっすら滲ませて印肉に見せる */
+    const ink = g.createLinearGradient(0, y, 0, y + h);
+    ink.addColorStop(0, '#d1402c');
+    ink.addColorStop(1, '#a3271a');
+    roundRectPath(g, x, y, w, h, r);
+    g.shadowColor = 'rgba(0,0,0,.55)'; g.shadowBlur = 24; g.shadowOffsetY = 7;
+    g.fillStyle = ink;
+    g.fill();
+    g.shadowColor = 'rgba(214,64,40,.45)'; g.shadowBlur = 26; g.shadowOffsetY = 0;
+    g.fill();
+    g.shadowColor = 'transparent'; g.shadowBlur = 0;
+
+    /* 外の縁と、内側にもう一本。印章の二重枠 */
+    g.lineWidth = 2;
+    g.strokeStyle = 'rgba(255,226,214,.32)';
+    g.stroke();
+    roundRectPath(g, x + 9, y + 9, w - 18, h - 18, r - 6);
+    g.strokeStyle = 'rgba(255,238,228,.55)';
+    g.stroke();
+
+    g.font = '700 ' + LABEL_SIZE + 'px ' + COVER_FONT;
+    g.fillStyle = 'rgba(255,235,226,.88)';
+    trackedText(g, CREDIT_LABEL, 0, y + PAD_Y + LABEL_SIZE / 2, LABEL_TRACK, true);
+
+    g.font = '700 ' + NAME_SIZE + 'px ' + COVER_FONT;
+    g.fillStyle = '#fff6f0';
+    /* 中央（middle）は em の真ん中なので、丸ゴだと字面が少し下に見える。
+       枠との間合いを目で合わせるぶんだけ持ち上げる */
+    trackedText(g, CREDIT_NAME, 0, y + PAD_Y + LABEL_SIZE + GAP + NAME_SIZE / 2 - 2,
+      NAME_TRACK, true);
+
+    g.restore();
   }
 
   /* 埋め込みフォントが届く前に描くと、丸ゴにならない */
@@ -146,6 +249,7 @@ const Title = (() => {
       await Promise.all([
         document.fonts.load('800 118px Maru', TITLE),
         document.fonts.load('700 34px Maru', SUBTITLE),
+        document.fonts.load('700 32px Maru', CREDIT_LABEL + CREDIT_NAME),
       ]);
       await document.fonts.ready;
     } catch (e) { /* 読めなくても既定の書体で描く */ }
@@ -447,7 +551,7 @@ const Title = (() => {
 
   return {
     mount, FACES, DEFAULT_NAME, DEFAULT_FACE, faceSrc, normalizeFace,
-    TITLE, SUBTITLE, paintCover, COVER_W, COVER_H,
+    TITLE, SUBTITLE, CREDIT_LABEL, CREDIT_NAME, paintCover, COVER_W, COVER_H,
   };
 })();
 
