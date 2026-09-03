@@ -178,10 +178,13 @@ body.inMatch #matchRoot{flex:1;min-height:0}
       /* 事務所ハブ（docs/design/office/spec.md §10）。
          **最上位に持つ。parlor の下ではない**（Jansou.normalize() が
          知らないキーを捨てるため。引き継ぎ書 §5）。
-         第一段で使うのはこの2つだけ。assign / trip / offers / fatigue / cond は
-         第二段以降で足す（そのときもここに既定値を書くこと） */
+         trip / offers / offerFired / offerAccepted は第三段・第四段で足す
+         （そのときもここに既定値を書くこと） */
       officeName: '',
       officePref: null,
+      assign: {},                // { [charaId]: 'parlor'|'trip'|'rest'|'job:<id>' }
+      fatigue: {},               // { [charaId]: 0..100 }  第五段で数値を置く
+      cond: {},                  // { [charaId]: -2..2 }   第五段で数値を置く
     };
   }
 
@@ -214,6 +217,13 @@ body.inMatch #matchRoot{flex:1;min-height:0}
            既定を勝手に決めない——本拠地は一度きりの選択なので */
         officeName: typeof s.officeName === 'string' ? s.officeName : '',
         officePref: typeof s.officePref === 'string' ? s.officePref : null,
+        /* 配置と、疲労・調子の器（§6.3・§9）。**中身の解釈は office.js が持つ。**
+           ここは「オブジェクトであること」だけを保証して、既定値
+           （配置は parlor、疲労0、調子0）は Office.assignFor / fatigueOf /
+           condOf が返す。二か所に既定を書かない */
+        assign: s.assign && typeof s.assign === 'object' ? s.assign : {},
+        fatigue: s.fatigue && typeof s.fatigue === 'object' ? s.fatigue : {},
+        cond: s.cond && typeof s.cond === 'object' ? s.cond : {},
       });
     } catch (e) { return blankState(); }
   }

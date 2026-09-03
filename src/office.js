@@ -45,6 +45,25 @@
 
      officeName  事務所名（プレイヤーの入力がそのまま入る。**必ず esc()**）
      officePref  本拠地の県 key。無ければ一度だけ選ばせる（§5）
+     assign      { [charaId]: 'parlor'|'trip'|'rest'|'job:<id>' }（§6.3）
+     fatigue     { [charaId]: 0..100 }  **第五段で使う。いまは器だけ**
+     cond        { [charaId]: -2..2 }   **第五段で使う。いまは器だけ**
+
+   ------------------------------------------------------------
+   配置（assign。spec.md §6.3）
+   ------------------------------------------------------------
+   全活動を同じ形に載せる器。**配置は変更するまで継続する**（毎朝聞かない）。
+
+     parlor      店に立つ。既定。その内訳が雀荘のシフト（昼・夕・夜）
+     rest        休み。シフトから外れる
+     trip        遠征中（第三段）
+     job:<id>    依頼中（第四段）
+
+   **雀荘のシフトは `parlor.shifts` のまま。**事務所へ移したのはUIだけで、
+   保存の形は変えていない（§6.3）。読み書きは `Jansou.shiftOf` /
+   `Jansou.setShift` を通す。だから `Jansou.normalize()` には触れない。
+
+   `assign` のほうは**最上位**（`parlor` の下ではない）。
    ============================================================ */
 
 const Office = (() => {
@@ -94,6 +113,61 @@ const Office = (() => {
   /* 雀荘の状態。`Jansou.normalize()` を通して読む（既定値をここで持たない） */
   function parlorOf(st) {
     return typeof Jansou !== 'undefined' ? Jansou.normalize(st.parlor) : null;
+  }
+
+  /* ------------------------------------------------------------
+     配置（spec.md §6.3）— 純関数。テストの本体はここ
+  ------------------------------------------------------------ */
+  const ASSIGN_KINDS = ['parlor', 'trip', 'rest'];      // job:<id> は接頭辞で見る
+
+  /* 一人ぶんの配置。**知らない値は `parlor` に落とす**（前方互換）。
+     `trip` は `st.trip` が無ければ `parlor` に戻す——遠征の途中で
+     セーブが壊れたり、遠征を実装する前のセーブを読んだときに、
+     出勤者から永久に外れたままにならないように（§7.5・§13） */
+  function assignFor(st, id) {
+    const v = (st.assign || {})[id];
+    if (typeof v !== 'string') return 'parlor';
+    if (v.indexOf('job:') === 0) {
+      /* 受けていない依頼の途中で止まっていたら戻す（第四段で offers が入る） */
+      return (st.offerAccepted || []).indexOf(v.slice(4)) >= 0 ? v : 'parlor';
+    }
+    if (v === 'trip') return st.trip ? 'trip' : 'parlor';
+    return ASSIGN_KINDS.indexOf(v) >= 0 ? v : 'parlor';
+  }
+
+  /* 所属ぜんぶの配置。**必ず全員ぶんが埋まった表を返す**
+     （呼ぶ側が「無ければ parlor」を各所で書かなくて済むように） */
+  function assignOf(st) {
+    const out = {};
+    rosterOf(st).forEach((c) => { out[c.id] = assignFor(st, c.id); });
+    return out;
+  }
+
+  /* 店に立てる子だけ。**遠征中・依頼中・休みは出勤可能者から外れる**（§6.3）。
+     `jansou.js` の `prepareDay` がこれを通すので、出勤者が減れば
+     `computeDay()` の入力が減る。**新しい項は足していない** */
+  function parlorRoster(st, list) {
+    return (list || rosterOf(st)).filter((c) => assignFor(st, c.id) === 'parlor');
+  }
+
+  /* 配置を書く。知らないキーは残す（§10） */
+  function setAssign(store, id, kind) {
+    const st = store.get();
+    store.set({ assign: Object.assign({}, st.assign || {}, { [id]: kind }) });
+  }
+
+  /* ------------------------------------------------------------
+     疲労と調子（spec.md §9）— **第五段で数値を置く。いまは器だけ。**
+     フィールドを先に切っておくのは、セーブの前方互換を保つため
+     （あとから足しても、既存セーブは既定値の0で読める）
+  ------------------------------------------------------------ */
+  function fatigueOf(st, id) {
+    const v = (st.fatigue || {})[id];
+    return typeof v === 'number' ? Math.min(100, Math.max(0, v)) : 0;
+  }
+  function condOf(st, id) {
+    const v = (st.cond || {})[id];
+    return typeof v === 'number' ? Math.min(2, Math.max(-2, Math.round(v))) : 0;
   }
 
   /* ------------------------------------------------------------
@@ -154,21 +228,46 @@ const Office = (() => {
       /* 所属一覧。**`pop` と `favor` はいままでどこにも出ていなかった**（引き継ぎ書 §3）。
          ここが初出。`.mkFace` を借りるので、親を position:relative にすること
          （引き継ぎ書 §5「顔写真の .mkFace を借りるときは position を上書きする」）。
-         office.css の `.ofMate .mkFace` がそれを戻している */
-      const mates = list.length ? list.map((c) => `
-        <div class="ofMate">
+         office.css の `.ofMate .mkFace` がそれを戻している。
+
+         第二段で**配置（店・休み）とシフト（昼・夕・夜）を同じ行に**載せた
+         （spec.md §6.3）。シフトの保存先は `parlor.shifts` のままで、
+         書くのは `Jansou.setShift`。**データは移していない。** */
+      const assign = assignOf(st);
+      const mates = list.length ? list.map((c) => {
+        const kind = assign[c.id];
+        const at = kind === 'parlor';
+        const sh = Jansou.shiftOf(parlor, c.id);
+        /* 遠征中・依頼中は第三段・第四段。いまは店と休みだけが選べる */
+        const busy = kind === 'trip' || kind.indexOf('job:') === 0;
+        const chips = Jansou.SLOTS.map((sl) => `
+          <button type="button" class="ofChip${at && sh[sl.key] ? ' on' : ''}"
+            data-shift="${c.id}" data-slot="${sl.key}" ${at ? '' : 'disabled'}
+            aria-pressed="${!!(at && sh[sl.key])}">${sl.name}</button>`).join('');
+        return `
+        <div class="ofMate${at ? '' : ' off'}">
           <span class="mkFace sil"><img src="img/${pad3(c.id)}.webp" alt="" loading="lazy"
             onerror="this.remove()"></span>
           <span class="ofMateBody">
             <span class="ofMateName">${esc(c.name)}</span>
-            <span class="ofMateSub">${esc(c.rank)}級　完成度 ${c.comp}</span>
+            <span class="ofMateSub">${esc(c.rank)}級　完成度 ${c.comp}　日当 ${yen(Jansou.wageOf(c))}</span>
+            <span class="ofMateShift">${busy
+              ? `<span class="ofBusy">${kind === 'trip' ? '遠征中' : '依頼中'}</span>`
+              : `<button type="button" class="ofWhere" data-where="${c.id}"
+                   aria-pressed="${at}">${at ? '店' : '休み'}</button>${chips}`}</span>
           </span>
           <span class="ofMateNums">
             <span class="ofNum">人気 <b>${c.pop}</b></span>
             <span class="ofNum${c.favor ? ' on' : ''}">好感度 <b>${c.favor}</b></span>
           </span>
-        </div>`).join('')
+        </div>`;
+      }).join('')
         : '<p class="ofEmpty">まだ誰も所属していません。チーム編成から始めてください。</p>';
+
+      /* 出勤の人数。**配置が店で、なおかつシフトが一つでも入っている子**。
+         `prepareDay` の `dayWorkers` と同じ数え方にすること（ずれると嘘になる） */
+      const onDuty = list.filter((c) => assign[c.id] === 'parlor'
+        && Jansou.shiftOf(parlor, c.id).some(Boolean));
 
       /* 昼の釦。**店が無くても日は進む**（office/spec.md §1.2）。
          店があれば雀荘へ降り、無ければ事務所の中で夜へ抜ける */
@@ -181,7 +280,8 @@ const Office = (() => {
       } else if (open) {
         action = `<button type="button" class="ofRunBtn" id="ofRun" ${canRun ? '' : 'disabled'}>
             今日を始める</button>
-          <p class="ofNote">${day + 1}日目の営業に降ります。シフトは雀荘の画面から。</p>`;
+          <p class="ofNote">${day + 1}日目の営業に降ります。
+            出勤は ${onDuty.length} 人。設備は雀荘の画面から。</p>`;
       } else {
         action = `<button type="button" class="ofRunBtn" id="ofRun">今日を始める</button>
           <p class="ofNote">まだ店がありません。今日は営業しない一日になりますが、
@@ -207,7 +307,10 @@ const Office = (() => {
 
         <div class="ofRun">${action}</div>
 
-        <h2 class="ofSecT">所属</h2>
+        <h2 class="ofSecT">所属と今日の配置</h2>
+        ${list.length ? `<p class="ofNote" style="margin:0 0 8px">
+          <b>配置は変えるまで続きます。</b>毎朝きき直しません。
+          ${open ? `いま店に立つのは ${onDuty.length} 人。` : ''}</p>` : ''}
         <div class="ofMates">${mates}</div>
 
         <h2 class="ofSecT">出かける</h2>
@@ -219,6 +322,25 @@ const Office = (() => {
           ${door('meikan', '名鑑', '見つけた雀ドルを見る')}
         </div>
         <p class="ofNote">スカウトと大会は、いまはまだ日を消費しません。</p>`;
+
+      /* 配置の切り替え（店 ⇄ 休み）。遠征と依頼は第三段・第四段 */
+      root.querySelectorAll('[data-where]').forEach((b) => {
+        b.addEventListener('click', () => {
+          const id = +b.dataset.where;
+          setAssign(store, id, assignFor(store.get(), id) === 'parlor' ? 'rest' : 'parlor');
+          render();
+        });
+      });
+      /* シフトの切り替え。**書くのは `Jansou.setShift` 一つだけ。**
+         雀荘の単体ページと同じ関数を通るので、既定値の解釈が割れない */
+      root.querySelectorAll('[data-shift]').forEach((b) => {
+        b.addEventListener('click', () => {
+          const slot = +b.dataset.slot;
+          const sh = Jansou.setShift(store, +b.dataset.shift, slot);
+          b.classList.toggle('on', sh[slot]);
+          b.setAttribute('aria-pressed', String(!!sh[slot]));
+        });
+      });
 
       const run = root.querySelector('#ofRun');
       if (run) run.addEventListener('click', () => {
@@ -336,7 +458,8 @@ const Office = (() => {
     document.head.appendChild(s);
   }
 
-  return { mount, defaultName, nameOf, prefOf, rosterOf, prefPickerHtml, bindPicker, NAME_MAX };
+  return { mount, defaultName, nameOf, prefOf, rosterOf, prefPickerHtml, bindPicker, NAME_MAX,
+           ASSIGN_KINDS, assignFor, assignOf, parlorRoster, setAssign, fatigueOf, condOf };
 })();
 
 if (typeof module !== 'undefined' && module.exports) {

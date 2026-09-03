@@ -408,6 +408,29 @@ const Jansou = (() => {
     return Array.isArray(v) ? v.slice(0, 3) : [false, false, true];
   }
 
+  /* シフトの一枠を裏返して書き戻す。**UIがどこにあっても、書くのはここ一つ。**
+     第二段でシフト表を事務所へ移したが（office/spec.md §6.3）、
+     移したのはUIだけで保存の形は変えていない。雀荘の単体ページと
+     事務所の両方がこの関数を通るので、既定値（夜だけ）の解釈が割れない */
+  function setShift(store, id, slot) {
+    const st = store.get();
+    const parlor = normalize(st.parlor);
+    const sh = shiftOf(parlor, id);
+    sh[slot] = !sh[slot];
+    parlor.shifts = Object.assign({}, parlor.shifts, { [id]: sh });
+    store.set({ parlor });
+    return sh;
+  }
+
+  /* 店に立てる子。**遠征中・依頼中・休みは出勤可能者から外れる**
+     （office/spec.md §6.3）。判定の本体は `Office.parlorRoster`。
+     `jansou.html` は office.js も読むが、無くても
+     「全員が店に立つ」＝いままでどおりに落ちる */
+  function parlorRoster(st, list) {
+    return typeof Office !== 'undefined' && Office.parlorRoster
+      ? Office.parlorRoster(st, list) : list;
+  }
+
   /* ---------- セーブの既定値 ---------- */
   function normalize(p) {
     p = p || {};
@@ -937,8 +960,9 @@ const Jansou = (() => {
       const auto = AUTO[parlor.auto - 1];
       const sign = SIGN[parlor.sign - 1];
 
-      /* シフト表 */
-      const rows = list.map((c) => {
+      /* シフト表。**事務所がいるときは事務所が持つ**（office/spec.md §6.3）。
+         単体ページ（jansou.html）にはハブが無いので、ここに残す */
+      const rows = hub ? '' : list.map((c) => {
         const sh = shiftOf(parlor, c.id);
         const chips = SLOTS.map((s) =>
           `<button type="button" class="jnChip${sh[s.key] ? ' on' : ''}"
@@ -1007,7 +1031,9 @@ const Jansou = (() => {
         <div id="jnFloorHost"></div>
 
         <h2 class="jnSecT">今日のシフト</h2>
-        ${list.length ? `<div class="jnShift">${rows}</div>`
+        ${hub ? `<p class="jnEmpty">シフトは<b>事務所</b>で組みます。
+            配置（店・休み）と同じ場所にまとめました。</p>`
+          : list.length ? `<div class="jnShift">${rows}</div>`
           : `<p class="jnEmpty">働ける子がいません。チームを組むか、スカウトで契約してください。</p>`}
 
         <h2 class="jnSecT">設備</h2>
@@ -1042,12 +1068,8 @@ const Jansou = (() => {
       /* シフトの切り替え */
       root.querySelectorAll('[data-shift]').forEach((b) => {
         b.addEventListener('click', () => {
-          const id = +b.dataset.shift, slot = +b.dataset.slot;
-          const p = parlorOf(store.get());
-          const sh = shiftOf(p, id);
-          sh[slot] = !sh[slot];
-          p.shifts = Object.assign({}, p.shifts, { [id]: sh });
-          setParlor({ shifts: p.shifts });
+          const slot = +b.dataset.slot;
+          const sh = setShift(store, +b.dataset.shift, slot);
           b.classList.toggle('on', sh[slot]);
         });
       });
@@ -1325,12 +1347,15 @@ const Jansou = (() => {
       const parlor = parlorOf(st0);
       const list = roster();
 
-      /* 出勤の集計 */
+      /* 出勤の集計。**遠征中・依頼中・休みの子は先に外す**
+         （office/spec.md §6.3）。出勤者が減れば `computeDay()` の入力が
+         減るぶんだけ客足が落ちる。**既存の式の範囲内で、新しい項は足していない** */
+      const onDuty = parlorRoster(st0, list);
       const slotWorkers = [[], [], []];
-      list.forEach((c) => {
+      onDuty.forEach((c) => {
         shiftOf(parlor, c.id).forEach((on, i) => { if (on) slotWorkers[i].push(c); });
       });
-      const dayWorkers = list.filter((c) => shiftOf(parlor, c.id).some(Boolean));
+      const dayWorkers = onDuty.filter((c) => shiftOf(parlor, c.id).some(Boolean));
 
       /* 続く効果（取材・故障）を拾う */
       let pullBonus = 0, closedTables = 0;
@@ -1779,7 +1804,7 @@ const Jansou = (() => {
     if (opts.autoRun) runDay();
   }
 
-  return { mount, shiftOf, computeDay, normalize, pickEvent, wageOf, utilOf,
+  return { mount, shiftOf, setShift, parlorRoster, computeDay, normalize, pickEvent, wageOf, utilOf,
            settle, closedDayPlan, closedDayResults, runClosedDay,
            blankMonth, normalizeMonth, accrue, closeMonth, renderMonth, showMonthReport, nextMonthNo,
            OPEN_COST, SLOTS, TABLE_COST, INTERIOR, AUTO, SIGN, MONTH_DAYS, MONTHS_KEPT };

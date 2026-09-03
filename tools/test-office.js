@@ -219,6 +219,78 @@ function eq(a, b, name) {
 }
 
 /* ============================================================
+   配置（spec.md §6.3）— 第二段
+   **配置は変更するまで継続する。**既定は「店」。
+   ============================================================ */
+{
+  const a = JANDOLS[0], b = JANDOLS[1], c = JANDOLS[2];
+  const base = { contracted: [a.id, b.id, c.id], team: [], comp: {} };
+
+  /* 既定 */
+  eq(Office.assignFor({}, a.id), 'parlor', '配置の既定は店');
+  eq(Office.assignFor(base, a.id), 'parlor', 'assign が無ければ全員が店');
+  const all = Office.assignOf(base);
+  eq(Object.keys(all).length, 3, '所属ぜんぶの配置が埋まった表を返す');
+  ok(Object.values(all).every((v) => v === 'parlor'), '既定はみんな店');
+
+  /* 書ける値 */
+  eq(Office.assignFor({ assign: { [a.id]: 'rest' } }, a.id), 'rest', '休みは休み');
+  eq(Office.assignFor({ assign: { [a.id]: 'parlor' } }, a.id), 'parlor', '店は店');
+
+  /* **知らない値は店に落とす**（前方互換。あとから配置の種類が増えても、
+     古いコードが読んだときに誰かが永久に出勤しなくなったりしない） */
+  eq(Office.assignFor({ assign: { [a.id]: 'nowhere' } }, a.id), 'parlor', '知らない値は店に落ちる');
+  eq(Office.assignFor({ assign: { [a.id]: 42 } }, a.id), 'parlor', '文字列でなければ店');
+  eq(Office.assignFor({ assign: { [a.id]: null } }, a.id), 'parlor', 'null でも店');
+
+  /* §13：遠征中に `trip` を消したセーブで、`assign` の `trip` が `parlor` に戻る */
+  eq(Office.assignFor({ assign: { [a.id]: 'trip' }, trip: { pref: 'osaka' } }, a.id), 'trip',
+    'trip があるあいだは遠征中');
+  eq(Office.assignFor({ assign: { [a.id]: 'trip' } }, a.id), 'parlor',
+    'trip が無いのに assign が trip なら店に戻す（§7.5）');
+  eq(Office.assignFor({ assign: { [a.id]: 'trip' }, trip: null }, a.id), 'parlor',
+    'trip が null でも店に戻す');
+
+  /* 依頼も同じ。受けていない依頼の途中で止まっていたら戻す（第四段の下ごしらえ） */
+  eq(Office.assignFor({ assign: { [a.id]: 'job:x' }, offerAccepted: ['x'] }, a.id), 'job:x',
+    '受けた依頼のあいだは依頼中');
+  eq(Office.assignFor({ assign: { [a.id]: 'job:x' } }, a.id), 'parlor',
+    '受けていない依頼なら店に戻す');
+
+  /* 出勤可能者。**遠征中・依頼中・休みは外れる**（§6.3） */
+  const st = Object.assign({}, base, { assign: { [b.id]: 'rest' } });
+  const duty = Office.parlorRoster(st);
+  eq(duty.length, 2, '休みの子は出勤可能者から外れる');
+  ok(!duty.some((x) => x.id === b.id), '外れたのは休みにした子');
+  eq(Office.parlorRoster(base).length, 3, '既定なら全員が出勤可能');
+  const st2 = Object.assign({}, base, { assign: { [a.id]: 'trip' }, trip: { pref: 'osaka' } });
+  eq(Office.parlorRoster(st2).length, 2, '遠征中の子も外れる');
+
+  /* 書き込み。知らないキーを残す（§10） */
+  let w = { contracted: [a.id], assign: { [b.id]: 'rest' }, somethingFuture: 'のこす' };
+  const store = { get: () => w, set: (patch) => { w = Object.assign({}, w, patch); } };
+  Office.setAssign(store, a.id, 'rest');
+  eq(w.assign[a.id], 'rest', '書いた配置が入る');
+  eq(w.assign[b.id], 'rest', '他の子の配置は消えない');
+  eq(w.somethingFuture, 'のこす', '知らないキーが残る');
+}
+
+/* ---------- 疲労と調子は器だけ（spec.md §9。第五段で数値を置く） ---------- */
+{
+  eq(Office.fatigueOf({}, 1), 0, '疲労の既定は0');
+  eq(Office.condOf({}, 1), 0, '調子の既定は0');
+  eq(Office.fatigueOf({ fatigue: { 1: 40 } }, 1), 40, '疲労は保存の値');
+  eq(Office.condOf({ cond: { 1: -2 } }, 1), -2, '調子は保存の値');
+  /* 範囲の外は丸める。**あとから数値を入れるときに、範囲だけは先に決めておく** */
+  eq(Office.fatigueOf({ fatigue: { 1: 999 } }, 1), 100, '疲労は100で頭打ち');
+  eq(Office.fatigueOf({ fatigue: { 1: -5 } }, 1), 0, '疲労は0が下限');
+  eq(Office.condOf({ cond: { 1: 9 } }, 1), 2, '調子は+2で頭打ち');
+  eq(Office.condOf({ cond: { 1: -9 } }, 1), -2, '調子は−2が下限');
+  eq(Office.fatigueOf({ fatigue: { 1: 'x' } }, 1), 0, '数値でなければ0');
+  eq(Office.condOf({ cond: { 1: null } }, 1), 0, '数値でなければ0');
+}
+
+/* ============================================================
    店が無い日も日は進む（spec.md §1.2）
    「店が無いセーブで『今日を始める』→ parlor.day が 1 進み、
      日当ぶん money が減る」
@@ -326,6 +398,32 @@ function eq(a, b, name) {
   const p = { shifts: { 1: [true, false, false] } };
   Jansou.shiftOf(p, 1)[0] = false;
   eq(p.shifts[1][0], true, 'shiftOf が返す配列は控え。書き換えても保存に触れない');
+
+  /* **UIを事務所へ移しても、書くのは同じ関数・同じ場所**（§6.3）。
+     `Jansou.setShift` は `parlor.shifts` を裏返して書き戻すだけで、
+     `normalize()` にも `assign` にも触れない */
+  let ws = { parlor: { day: 3, shifts: {} }, somethingFuture: 'のこす' };
+  const wstore = { get: () => ws, set: (patch) => { ws = Object.assign({}, ws, patch); } };
+  eq(JSON.stringify(Jansou.setShift(wstore, 7, 0)), '[true,false,true]',
+    '既定（夜だけ）から昼を足す');
+  eq(JSON.stringify(ws.parlor.shifts[7]), '[true,false,true]', '保存に入る');
+  eq(JSON.stringify(Jansou.setShift(wstore, 7, 2)), '[true,false,false]', '夜を外す');
+  eq(ws.parlor.day, 3, 'シフトを触っても day は動かない');
+  eq(ws.somethingFuture, 'のこす', '知らないキーが残る');
+  eq(ws.assign, undefined, 'シフトは assign に触れない（データは移していない）');
+
+  /* `jansou.js` は `Office.parlorRoster` を**あれば**通す。
+     `jansou.html` は office.js も読むが、**無くても
+     「全員が店に立つ」＝いままでどおり**に落ちること */
+  const ra = JANDOLS[0], rb = JANDOLS[1];
+  const rst = { contracted: [ra.id, rb.id], comp: {}, assign: { [rb.id]: 'rest' } };
+  const had = global.Office;
+  global.Office = undefined;
+  eq(Jansou.parlorRoster(rst, [ra, rb]).length, 2,
+    'Office が無ければ素通し（単体ページでもいままでどおり動く）');
+  global.Office = Office;
+  eq(Jansou.parlorRoster(rst, [ra, rb]).length, 1, 'Office があれば休みの子を外す');
+  global.Office = had;
 
   /* normalize が shifts を落とさない（引き継ぎ書 §5 の normalize の罠） */
   let n = { shifts: { 1: [true, false, true] }, day: 5 };

@@ -57,6 +57,7 @@ function blankState() {
     money: 0, playerRank: 'D', playerWins: 0, records: {}, recent: [],
     agency: 1, beaten: [],
     officeName: '', officePref: null,
+    assign: {}, fatigue: {}, cond: {},
   };
 }
 function loadState() {
@@ -78,6 +79,9 @@ function loadState() {
       agency: typeof s.agency === 'number' ? s.agency : 1,
       officeName: typeof s.officeName === 'string' ? s.officeName : '',
       officePref: typeof s.officePref === 'string' ? s.officePref : null,
+      assign: s.assign && typeof s.assign === 'object' ? s.assign : {},
+      fatigue: s.fatigue && typeof s.fatigue === 'object' ? s.fatigue : {},
+      cond: s.cond && typeof s.cond === 'object' ? s.cond : {},
     });
   } catch (e) { return blankState(); }
 }
