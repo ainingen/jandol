@@ -1450,15 +1450,21 @@ const JansouFloor = (() => {
        （`ScoutShop.QUIRKS` の `kind`）。雀ドルは二つ、ただの客は一つか無し。 */
     const BEAT_DEFAULT = 1.6;      // 既定の打牌。3拍に1回なので周期は約1.9秒
     const BEAT_FAST = 6.7;         // 手が速い。同じ勘定で約0.45秒
-    const SLOW_CYCLE = 3.6;        // 長考。3.0秒止まって、残りの0.6秒で二拍だけ振る
+    const SLOW_CYCLE = 3.6;        // 長考。3.0秒止まって、そこから0.3秒だけ手が上がる
+    const SLOW_HOLD = 3.0;         // 止まっているあいだ
+    const SLOW_LIFT = 0.3;         // 手が上がっているあいだ
 
     function beatFrame(quirk, c, ph) {
       const has = (k) => quirk && quirk.indexOf(k) >= 0;
       if (has('still')) return 0;
       if (has('fast')) return (Math.floor(c * BEAT_FAST + ph) % 3) === 0 ? 1 : 0;
       if (has('slow')) {
+        /* **一周期に一度だけ上げて下ろす**（4秒で2回。癖なしは4回）。
+           以前は 0.6秒のあいだ 6Hz で振っていたので、4秒で数えると
+           癖なしと同じ4回になり、**間の長さでしか区別できなかった**
+           （`scout/spec.md` §7 の実測）。振る回数そのものを半分にする */
         const t = (c + ph) % SLOW_CYCLE;
-        return t > 3.0 && (Math.floor(t * 6) % 2) === 0 ? 1 : 0;
+        return t > SLOW_HOLD && t <= SLOW_HOLD + SLOW_LIFT ? 1 : 0;
       }
       return (Math.floor(c * BEAT_DEFAULT + ph) % 3) === 0 ? 1 : 0;
     }
