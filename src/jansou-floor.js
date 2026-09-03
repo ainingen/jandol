@@ -1478,6 +1478,11 @@ const JansouFloor = (() => {
 
       ui.innerHTML = '';
       const d = Math.round(11 * scale);          // 頭の直径。11 floor px（§4.5）
+      /* 名前札は**三度に分けて置く**。作る → まとめて測る → まとめて置く。
+         測るのを一度にまとめないと、要素ごとに版が組み直る（14人ぶんで14回）。
+         **幅は覚えない。**丸ゴシックが届く前に測った値を覚えてしまうと、
+         代替書体の幅のまま残って重なりの判定が外れる（実際にこれで一組重なった） */
+      const tags = [];
       live.staff.forEach((s, id) => {
         const info = staffList.find((c) => c.id === id) || { name: '' };
         const p = floorToScreen(s.x + 4.5, s.y - 1);
@@ -1491,9 +1496,30 @@ const JansouFloor = (() => {
         const tag = document.createElement('span');
         tag.className = 'jnFlTag';
         tag.textContent = info.name;
-        tag.style.left = Math.min(floorW * scale - 28, Math.max(28, Math.round(p.x))) + 'px';
-        tag.style.top = Math.round(p.y + 7 * scale) + 'px';
         ui.appendChild(tag);
+        tags.push({ tag, x: p.x, y0: Math.round(p.y + 7 * scale) });
+      });
+      tags.forEach((o) => { o.w = o.tag.offsetWidth; o.h = o.tag.offsetHeight || 16; });
+      /* **重なったら段を下げる。**立ち位置（staffSpotFor）は必ずばらけるが、
+         札は席の間隔より広いので、14人出勤すると隣の席の子と字が重なって
+         読めなくなる（実際に重なった）。丸写真は動かさない。
+         **動かすのは札だけ**なので、誰の札かは真上の写真で分かる。
+         幅は `transform:translateX(-50%)` で効くので、端に寄せる量にも要る
+         （決め打ちの28pxだと、長い名前が枠からはみ出て頭を欠く） */
+      const put = [];
+      tags.forEach((o) => {
+        const half = Math.min(o.w / 2 + 1, floorW * scale / 2);
+        const cx = Math.min(Math.floor(floorW * scale - half),
+                            Math.max(Math.ceil(half), Math.round(o.x)));
+        const a = cx - o.w / 2, b = cx + o.w / 2;
+        let top = o.y0;
+        for (let lane = 1; lane <= 6 && put.some((q) =>
+          top < q.top + q.h && q.top < top + o.h && q.a < b && a < q.b); lane++) {
+          top = o.y0 + lane * (o.h + 1);
+        }
+        put.push({ a, b, top, h: o.h });
+        o.tag.style.left = cx + 'px';
+        o.tag.style.top = top + 'px';
       });
       if (live.full) {
         const t = tables[0];
@@ -1872,7 +1898,10 @@ const JansouFloor = (() => {
         seatsOf(t).forEach((s, si) => { if (!used.has(ti + ':' + si)) spots.push({ x: s.x + 1, y: s.y + 9 }); });
       });
       staffList.forEach((c, i) => {
-        const p = spots[i] || { x: 10 + (i % 6) * 28, y: FLOOR_H - 18 };
+        /* 空き席が足りないぶんは床の下端に並べる。**7人目からは段を上げる。**
+           横に剰余だけで折り返すと7人目が1人目と同じ場所に重なり、
+           丸写真が一枚に見える（staffSpotFor が席で同じ罠を避けているのと同じ話） */
+        const p = spots[i] || { x: 10 + (i % 6) * 28, y: FLOOR_H - 18 - Math.floor(i / 6) * 13 };
         live.staff.set(c.id, { x: p.x, y: p.y, fx: p.x, fy: p.y, tx: p.x, ty: p.y, t0: -9 });
         if (c.nominated) live.hearts.add(c.id);
       });
