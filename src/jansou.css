@@ -1,0 +1,284 @@
+/* ============================================================
+   直営雀荘 — jansou.css
+   読み込み順は style.css → theme.css → これ。
+   他画面と同じく、面は --panel、線は --gold-dim、強調は --kin。
+   ============================================================ */
+
+.jnRoot{max-width:760px;margin:0 auto;padding:10px 10px 30px}
+.jnTitle{
+  font-size:20px;letter-spacing:.14em;margin:6px 0 2px;
+  background-image:var(--kin);-webkit-background-clip:text;background-clip:text;color:transparent;
+}
+.jnDay{font-size:12px;letter-spacing:.1em;color:var(--muted);-webkit-text-fill-color:var(--muted)}
+.jnLead{font-size:13px;line-height:1.9;color:var(--ivory-2);margin:4px 0 14px}
+
+/* ---------- 開店前 ---------- */
+.jnOpenBox{
+  margin-top:14px;padding:18px 14px;text-align:center;
+  background:var(--panel);border:1px solid var(--gold-dim);border-radius:6px;
+}
+.jnOpenCost{font-size:15px;color:var(--ivory)}
+.jnOpenCost b{font-size:18px;color:var(--gold)}
+.jnOpenNote{font-size:12px;color:var(--muted);margin:6px 0 12px}
+.jnOpenBtn{
+  font-size:15px;letter-spacing:.18em;padding:10px 34px;border-radius:4px;cursor:pointer;
+  border:1px solid var(--gold);background:rgba(201,162,74,.12);color:var(--gold);
+}
+.jnOpenBtn[disabled]{opacity:.4;cursor:default}
+.jnOpenLack{font-size:12px;color:var(--shu);margin-top:8px}
+
+/* ---------- 上部の数字 ---------- */
+.jnStats{display:flex;gap:16px;align-items:center;flex-wrap:wrap;margin:2px 0 6px}
+.jnStat{font-size:12px;color:var(--muted);display:flex;align-items:center;gap:6px}
+.jnStat b{font-size:13px;color:var(--ivory)}
+.jnRepTrack{
+  display:inline-block;width:88px;height:7px;border-radius:4px;overflow:hidden;
+  background:rgba(255,255,255,.09);border:1px solid rgba(255,255,255,.08);
+}
+.jnRepFill{display:block;height:100%;background:var(--kin)}
+.plus{color:#9fd8a8}
+.minus{color:#e0837a}
+
+.jnSecT{
+  font-size:13px;letter-spacing:.2em;color:var(--gold);
+  margin:18px 0 8px;padding-bottom:4px;border-bottom:1px solid var(--gold-dim);
+}
+.jnEmpty{font-size:12.5px;color:var(--muted)}
+
+/* ---------- シフト表 ---------- */
+.jnShift{display:flex;flex-direction:column;gap:6px}
+.jnRow{
+  display:flex;align-items:center;gap:10px;padding:6px 8px;
+  background:var(--panel);border:1px solid rgba(255,255,255,.07);border-radius:5px;
+}
+/* **`position` を上書きすること。** 元の `.mkFace` は
+   `position:absolute;inset:0`（`meikan.css`。名鑑の札の中で imgのz-indexを
+   閉じ込めるための指定）。ここは名鑑の札ではなく flex の並びなので、
+   position を戻さないと**行から抜けてページの左上に貼り付く**。
+   幅と高さを書いてあるので絵は出る。しかも14人ぶんが同じ 0,0 に重なるので、
+   「枠の外に四角い顔写真が一枚」に見える（実際にこれを追いかけた）。
+   `inset` も併せて外す。relative のままだと top/left が効いてずれる */
+.jnRow .mkFace{
+  position:relative;inset:auto;
+  width:42px;height:56px;flex:none;border-radius:4px;overflow:hidden;
+  background:var(--urushi-2) var(--sil-img) center/70% no-repeat;
+}
+.jnRow .mkFace img{width:100%;height:100%;object-fit:cover;object-position:top}
+.jnRowBody{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.jnRowName{font-size:13.5px;color:var(--ivory);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.jnRowSub{font-size:10.5px;color:var(--muted)}
+.jnChips{display:flex;gap:4px;flex:none}
+.jnChip{
+  font-size:12px;padding:7px 10px;border-radius:4px;cursor:pointer;
+  border:1px solid rgba(255,255,255,.14);background:transparent;color:var(--muted);
+}
+.jnChip.on{border-color:var(--gold);background:rgba(201,162,74,.14);color:var(--gold)}
+.jnChip:focus-visible{outline:2px solid var(--gold);outline-offset:1px}
+
+/* ---------- 設備 ---------- */
+.jnFacils{display:flex;flex-direction:column;gap:6px}
+.jnFacil{
+  display:flex;align-items:center;gap:10px;padding:8px 10px;
+  background:var(--panel);border:1px solid rgba(255,255,255,.07);border-radius:5px;
+}
+.jnFacilBody{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.jnFacilName{font-size:13px;color:var(--ivory)}
+.jnFacilNow{font-size:10.5px;color:var(--muted)}
+.jnFacilMax{font-size:10.5px;color:#5c6d66;flex:none}
+.jnUp{
+  flex:none;display:flex;flex-direction:column;align-items:flex-end;gap:1px;
+  font-size:11px;padding:6px 10px;border-radius:4px;cursor:pointer;text-align:right;
+  border:1px solid var(--gold-dim);background:rgba(201,162,74,.07);color:var(--ivory-2);
+  max-width:52%;
+}
+.jnUp b{font-size:11.5px;color:var(--gold)}
+.jnUp[disabled]{opacity:.4;cursor:default}
+
+/* ---------- 営業ボタン ---------- */
+.jnRun{margin:18px 0 4px;display:flex;flex-direction:column;gap:10px;align-items:center}
+.jnJoin{font-size:12.5px;color:var(--ivory-2);display:flex;align-items:center;gap:7px;cursor:pointer}
+.jnJoin input{width:16px;height:16px;accent-color:var(--gold)}
+.jnRunBtn{
+  font-size:15px;letter-spacing:.22em;padding:12px 40px;border-radius:5px;cursor:pointer;
+  border:1px solid var(--gold);background:rgba(201,162,74,.12);color:var(--gold);
+}
+.jnRunBtn[disabled]{opacity:.4;cursor:default}
+/* 事務所がハブになっている本編では、営業開始の釦のかわりにこれを出す
+   （入口を一本にする。office/spec.md §6.1）。単体ページでは出ない */
+.jnRunNote{margin:0;max-width:420px;text-align:center;font-size:11.5px;line-height:1.7;color:var(--muted)}
+
+/* ---------- 最近の営業 ---------- */
+.jnLog{display:flex;flex-direction:column;gap:3px}
+.jnLogRow{
+  display:flex;gap:12px;font-size:12px;color:var(--muted);
+  padding:4px 8px;border-bottom:1px dashed rgba(255,255,255,.07);
+}
+.jnLogRow span:first-child{width:56px}
+.jnLogRow span:nth-child(2){flex:1}
+.jnLogRow b{font-weight:700}
+
+/* ---------- ポップアップ（イベント・営業結果） ---------- */
+.jnPopBox{max-width:400px}
+.jnPopTitle{
+  font-size:15px;letter-spacing:.1em;margin:8px 0 6px;
+  background-image:var(--kin);-webkit-background-clip:text;background-clip:text;color:transparent;
+}
+.jnPopText{font-size:12.5px;line-height:1.8;color:var(--ivory-2);margin:0 0 10px;text-align:left}
+.jnPopChoices{display:flex;flex-direction:column;gap:7px}
+.jnPopBtn{
+  display:flex;flex-direction:column;align-items:center;gap:2px;
+  font-size:13.5px;padding:9px 12px;border-radius:4px;cursor:pointer;
+  border:1px solid var(--gold-dim);background:rgba(201,162,74,.07);color:var(--ivory);
+}
+.jnPopBtn span{font-size:10.5px;color:var(--muted)}
+.jnPopBtn[disabled]{opacity:.4;cursor:default}
+.jnPopBtn:focus-visible{outline:2px solid var(--gold);outline-offset:1px}
+
+/* 営業結果の行。p の中に入れるので span で組む */
+.jnRepWrap{display:flex;flex-direction:column;gap:3px}
+.jnRepRow{display:flex;align-items:baseline;gap:8px;font-size:12.5px;color:var(--ivory-2)}
+.jnRepRow i{font-style:normal;font-size:10px;color:var(--muted);margin-left:4px}
+.jnRepRow em{font-style:normal;font-size:10px;color:var(--gold);margin-left:4px}
+.jnRepRow span:first-child{flex:1;text-align:left}
+.jnRepRow b{font-weight:700}
+.jnRepRow.line{border-top:1px dashed rgba(255,255,255,.12);padding-top:5px;margin-top:3px}
+.jnRepRow.total{
+  border-top:1px solid var(--gold-dim);padding-top:6px;margin-top:4px;
+  font-size:13.5px;color:var(--ivory);
+}
+.jnRepEv{
+  font-size:12px;color:var(--gold);text-align:left;
+  padding:4px 0 0;
+}
+.jnRepGrowth{
+  display:flex;flex-direction:column;gap:2px;margin-top:8px;
+  padding-top:6px;border-top:1px dashed rgba(255,255,255,.12);
+  font-size:11.5px;color:var(--muted);text-align:left;
+}
+.jnRepGrowth em{font-style:normal;color:var(--gold)}
+
+/* ---------- ボトル在庫（ボトル勝負で負けたときにおごるぶん。§9） ---------- */
+.jnSecNote{font-size:11px;letter-spacing:0;color:var(--muted);margin-left:8px;font-weight:400}
+.jnBottles{display:grid;gap:6px}
+.jnBottleRow{
+  display:flex;align-items:center;gap:10px;padding:7px 10px;
+  background:var(--panel);border:1px solid var(--gold-dim);border-radius:5px;
+}
+.jnBottleIcon{flex:none;width:16px;line-height:0}
+.jnBottleBody{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.jnBottleName{font-size:13px;color:var(--ivory)}
+.jnBottleName i{font-style:normal;font-size:11px;color:var(--muted);margin-left:6px}
+.jnBottleSub{font-size:11px;color:var(--muted)}
+.jnBottleSub b{color:var(--gold);font-size:13px}
+.jnUp i{display:block;font-style:normal;font-size:10px;color:var(--muted);margin-top:2px}
+.jnUp.small{font-size:11px;padding:5px 9px}
+.jnUp.small b{font-size:11px}
+
+/* 模様替えの入口（設備の段の下） */
+.jnFacilFoot{margin-top:8px}
+.jnUp.wide{display:block;width:100%;text-align:center;padding:8px 10px}
+
+/* ============================================================
+   月末決算・月報（monthly.md §4）
+   帯は div の幅で描く。**canvas は表紙の一枚だけ**（spec.md §2）。
+   評判のバー（.jnRepTrack / .jnRepFill）と同じ作りを使い回している。
+   ============================================================ */
+.jnMonBox{max-width:420px}
+/* popupBox は中身なりに伸びるので、長い月報は中で流す */
+.jnMonBox .popupBody{max-height:78dvh;overflow-y:auto;overscroll-behavior:contain}
+.jnMonBox .jnPopText{margin:0}
+
+.jnMon{display:flex;flex-direction:column;gap:14px;text-align:left}
+
+/* 節は上から順に現れる。触ったら飛ぶ（.done） */
+.jnMonHead,.jnMonSec{
+  display:flex;flex-direction:column;gap:4px;
+  opacity:0;transform:translateY(4px);
+  animation:jnMonIn .28s ease-out forwards;
+  animation-delay:calc(var(--i) * .08s);
+}
+.jnMonWrap.done .jnMonHead,.jnMonWrap.done .jnMonSec{
+  animation:none;opacity:1;transform:none;
+}
+@keyframes jnMonIn{to{opacity:1;transform:none}}
+@media (prefers-reduced-motion:reduce){
+  .jnMonHead,.jnMonSec{animation:none;opacity:1;transform:none}
+  .jnMonFill{transition:none}
+}
+
+.jnMonHead{align-items:center;gap:2px;padding-bottom:4px}
+.jnMonNo{font-size:12px;letter-spacing:.18em;color:var(--gold)}
+.jnMonKessan{
+  font-size:22px;font-weight:800;letter-spacing:.22em;
+  background:var(--kin);-webkit-background-clip:text;background-clip:text;color:transparent;
+}
+.jnMonRange{font-size:11px;color:var(--muted)}
+
+.jnMonH{
+  font-size:11px;letter-spacing:.1em;color:var(--gold);
+  padding-bottom:2px;border-bottom:1px solid var(--gold-dim);margin-bottom:2px;
+}
+
+/* 場代の帯。三本の合計が場代に厳密一致する（spec.md §5.3 / monthly.md §7） */
+.jnMonBand{
+  display:grid;grid-template-columns:auto 1fr auto;gap:2px 8px;align-items:baseline;
+  font-size:12.5px;color:var(--ivory-2);
+}
+.jnMonBandName{color:var(--ivory)}
+.jnMonBandName i{font-style:normal;font-size:10px;color:var(--muted);margin-left:4px}
+.jnMonBandNum{text-align:right;font-size:11.5px;color:var(--muted)}
+.jnMonBand b{font-weight:700;text-align:right}
+.jnMonTrack{
+  grid-column:1 / -1;display:block;height:5px;border-radius:3px;
+  background:rgba(255,255,255,.07);overflow:hidden;margin:1px 0 3px;
+}
+.jnMonTrack.wide{flex:1;margin:0}
+.jnMonFill{
+  display:block;height:100%;width:0;background:var(--kin);
+  transition:width .5s cubic-bezier(.22,.9,.3,1);
+}
+.jnMonWrap.done .jnMonFill{transition:none}
+
+.jnMonRow{display:flex;align-items:baseline;gap:8px;font-size:12.5px;color:var(--ivory-2)}
+.jnMonRow span:first-child{flex:1}
+.jnMonRow b{font-weight:700;font-variant-numeric:tabular-nums}
+.jnMonRow em{font-style:normal;font-size:10.5px;color:var(--gold)}
+.jnMonRow.total{
+  border-top:1px solid var(--gold-dim);padding-top:5px;margin-top:3px;
+  font-size:14px;color:var(--ivory);
+}
+.jnMonRow .plus{color:var(--gold-hi)}
+.jnMonRow .minus{color:var(--shu)}
+/* 臨時収入の内訳。一段下げて添えるだけで、帯として数えない（monthly.md §3） */
+.jnMonSub{font-size:10.5px;color:var(--muted);padding-left:10px;margin-top:-2px}
+.jnMonLine{display:block;font-size:11.5px;color:var(--muted);padding-top:2px}
+.jnMonRegVs{font-size:10.5px;color:var(--muted)}
+
+.jnMonTop{display:grid;grid-template-columns:auto 1fr;gap:0 8px;align-items:baseline;font-size:12.5px}
+.jnMonRank{grid-row:span 2;color:var(--gold);font-size:14px}
+.jnMonTopName{color:var(--ivory)}
+.jnMonTopSub{font-size:10.5px;color:var(--muted)}
+.jnMonGrow{
+  display:flex;flex-direction:column;align-items:flex-start;gap:2px;margin-top:6px;padding-top:5px;
+  border-top:1px dashed rgba(255,255,255,.12);font-size:11.5px;color:var(--muted);
+}
+.jnMonGrow em{font-style:normal;color:var(--gold)}
+.jnMonEv{display:block;font-size:12px;color:var(--ivory-2)}
+.jnMonSub{display:block}
+
+.jnMonRep{display:flex;align-items:center;gap:8px;font-size:12.5px}
+.jnMonRepNum{color:var(--muted);font-variant-numeric:tabular-nums;min-width:22px}
+.jnMonRep .jnMonFill.rep{background:var(--kin)}
+.jnMonRep b{font-weight:700}
+.jnMonRep .plus{color:var(--gold-hi)}
+.jnMonRep .minus{color:var(--shu)}
+
+/* 雀荘の画面に置く「先月の決算を見る」 */
+.jnMonBtn{
+  display:flex;align-items:center;justify-content:center;gap:8px;width:100%;
+  margin-top:12px;padding:10px;border-radius:8px;cursor:pointer;
+  border:1px solid var(--gold-dim);background:rgba(201,162,74,.07);
+  color:var(--ivory);font:inherit;font-size:13px;
+}
+.jnMonBtn span{font-size:10.5px;color:var(--muted)}
+.jnMonBtn:focus-visible{outline:2px solid var(--gold);outline-offset:1px}

@@ -46,6 +46,36 @@ git push -u origin main
 セーブは `localStorage` に入る。使えない環境では毎回最初からになり、
 画面上部に「この環境では保存できません」と出る。
 
+## PLiCyの500KB制限と、外部ファイル
+
+**PLiCyには index.html が500KBまでという制限がある。**
+公式FAQには載っていないが、実際に何度も弾かれている（実証済み）。
+
+この制限は index.html だけに掛かる。ZIP全体は2GBまで許される。
+そこで2026年9月に、CSSとJSを `src/` に置いたまま
+`<link>` と `<script>` で読む形にした。
+
+```
+python3 build.py            index.html は約13KB
+```
+
+**PLiCyで外部のCSS・JSが読めることは確認済み（2026年9月・ゆう）。**
+表紙が正しく描画され、サムネイルも撮れている。
+これを確かめたので、以前あった一枚版（`--single`）は廃止した。
+`index.html` は shell.html にタグを差し込むだけになり、
+以後どれだけ足しても上限には掛からない。
+
+**ZIPには `src/` を必ず含めること。** `src/*.js` と `src/*.css` を
+読みに行く。含め忘れると真っ白な画面になる。
+
+**逆に、開発用の2つは外すこと。**`debug.html` と `src/debug.js` は
+`build.py` が読んでいないので `index.html` には入らないが、
+ZIPに混ぜるとURLを知っている人には届いてしまう。
+
+```
+zip -r jandol.zip . -x '.git/*' 'debug.html' 'src/debug.js' 'tools/*' 'docs/*'
+```
+
 ## 直したあと
 
 `src/` を編集したら、リポジトリ直下で
@@ -56,7 +86,7 @@ python3 build.py
 
 `index.html` が作り直される。**`index.html` を直接編集しないこと**（次のビルドで消える）。
 
-画面ごとに単体で確認したいときは、直下の `meikan.html` `team.html`
+画面ごとに単体で確認したいときは、直下の `office.html` `meikan.html` `team.html`
 `taikai.html` `scout.html` を開く。ビルド不要で `src/` を直に読む。
 動作確認用のボタン（所持金を足す、全員発見にする、など）が下に付いている。
 
@@ -65,13 +95,15 @@ python3 build.py
 ```
 index.html          ビルド結果。これを配布する（500KB以下に保つこと）
 shell.html          外枠。表紙・タブ・セーブ。ビルド時にCSS/JSが差し込まれる
-build.py            src/ を index.html に束ねる
+build.py            index.html を組み立てる（約13KB。CSS/JSは src/ のまま読む）
 tools/make-font.py  表紙の丸ゴシックを作り直す
 
-meikan.html         ┐
+office.html         ┐
+meikan.html         │
 team.html           │ 画面ごとの単体ページ（開発用）
 taikai.html         │
-scout.html          ┘
+scout.html          │
+jansou.html         ┘
 
 src/
   engine.js         麻雀エンジン（シャンテン・和了判定・役・符・点数）テスト35件合格
@@ -82,7 +114,11 @@ src/
   style.css         対局画面のスタイルと配色トークン
 
   characters.js     雀ドル73人＋打ち筋20種＋地域＋契約条件
+  serifu.js         セリフ323本（性格19種 × 8場面）
   tournament.js     育成（完成度と伸びしろ）と大会（組み合わせ・自動処理）
+
+  geo.js            47都道府県（座標・規模・所属地方）、距離と遠さの段階
+  office.js/.css    事務所ハブ。朝と夜、本拠地の選択、所属一覧（pop と favor）
 
   theme.css         全画面に効く「華」の層（金箔・漆・朱）
   maru.css          丸ゴシックの読み込み定義（tools/make-font.py が生成）
@@ -91,12 +127,26 @@ src/
   team.js/.css      チーム編成
   taikai.js/.css    大会
   scout.js/.css     スカウト
+  jansou.js/.css    直営雀荘（シフト・設備・イベント・営業の収支・模様替え）
+  jansou-floor.js   フロアのマス目と設置物、タイムライン生成、一日の再生
+  jansou-floor.css  フロアと客カード・ボトル・模様替えのスタイル
+  jansou-guests.js  客タイプ24種、名前と常連、ボトル勝負の判定
 
 fonts/              maru-ui.woff2（本文・568KB）／ maru-title.woff2（題字・4KB）
 tiles/              牌の絵39枚（SVG・770KB）。出典は tiles/LICENSE.txt
 img/                001.webp 〜 073.webp（雀ドル73人）
                     p01.webp 〜 p12.webp（プレイヤーの顔・十二人から選ぶ）
 docs/HANDOVER.md    設計の経緯、決めごと、ハマった罠
+docs/ROADMAP.md     これからの構想と順番を一枚に（なぜこの順か・再測をいつやるか）
+docs/design/jansou/ 直営雀荘の設計一式（spec.md ＝リニューアル、
+                    placement.md ＝卓の自由配置と隣接コンボ、
+                    monthly.md ＝月末決算と月報）
+docs/design/office/ 事務所ハブと日進行の統一（spec.md ＝全5段階）
+tools/test-office.js 事務所の純関数テスト（node tools/test-office.js）
+tools/test-jansou.js 雀荘の純関数テスト（node tools/test-jansou.js）
+tools/drive-jansou.js 雀荘をブラウザで自動で回す（node tools/drive-jansou.js --help）
+debug.html          開発用の入口。遊べる状態を作って本編へ入る（配布から外す）
+src/debug.js        その中身。build.py は読まない（配布から外す）
 ```
 
 ## できていること
@@ -108,18 +158,44 @@ docs/HANDOVER.md    設計の経緯、決めごと、ハマった罠
 - チーム編成 … 初期メンバー10人から3人選ぶ。組み合わせで講評が変わる
 - 大会 … 5種の大会、出走表、卓割り、勝ち上がり、賞金、育成、昇段
 - スカウト … 雀荘をまわって発掘、契約条件10種の判定、事務所の拡張
+- **おまかせ** … 対局中いつでも降りられる。押すと以降は自分の手もCPUが打つ。
+  「早送り」と「見ながら自動」の二択。着順はごまかさずそのまま結果になる
+- **顔とセリフ** … 四人ぶんの顔を並べ、喋った人だけ大きくする。吹き出しは
+  四回捨てられるまで残る。縦持ちは卓の下の余りに横並び、横持ちの広い画面
+  （900px以上）では右の余白に縦積み
 - **実対局** … 大会で自分が座る卓は実際に打つ。他の卓は結果だけ。
   対局の設定（自分で打つ／自動、速さ、補助表示）は大会画面の下にある
+- **直営雀荘** … 開店資金50万で開く。所属全員にシフト（昼・夕・夜）を組み、
+  一日単位で営業する。出勤者の人気(pop)が客を呼び、月給の日割り（日当）を払う。
+  設備投資4種（卓・内装・卓の型・宣伝）、イベント6種、夜は自分も卓に着ける。
+  一日の営業はフロアで流れる（スキップ・倍速。**スキップしても結果は同一**）
+- **月末決算** … 30日で締めて月報が出る。時間帯別の場代、収支、客数と常連の育ち、
+  いちばん客を呼んだ子、できごと、評判の推移。あとから読み返せる。
+  **見せるだけで、経済には触れていない**
+- **模様替え** … 卓と設備を 8px のマス目に自分で置ける。卓は席4つぶんの
+  広さを使う。隣り合わせで**コンボ**（くつろぎ席・カウンター席・入口席・
+  静かな席・花道・ラウンジ）が付き、誰が座るか・どれだけ居るか・
+  誰から立つか・チップ・ボトルの格が変わる。**客数と売上は変わらない**
+- **事務所ハブ** … 表紙から入ると事務所に着き、一日が朝→昼→夜→朝と回る。
+  新規開始で事務所名と本拠地の県（47から一つ）を決める。
+  **営業開始の入口は事務所だけ**で、雀荘は設備とシフトを整える場所になった。
+  所属一覧に人気(`pop`)と好感度(`favor`)が出る。
+  **店が無い日も日は進み、所属の日当は出ていく**ので、
+  「まず店を持つ」が序盤の最初の目標になる。
+  設計は `docs/design/office/spec.md`（全5段階のうち第一段）
 
 この四つが繋がって、**発掘 → スカウト → 所属 → 大会 → 賞金 → 事務所強化** の
 一周が閉じている。
+**入口はすべて事務所**で、一日は事務所で始まり事務所で終わる。
 
 ## まだできていないこと
 
+- **大会とスカウトが日を消費しない**。事務所ハブの第一段までしか入っていないので、
+  時間軸はまだ半分だけ一本化されている（`docs/design/office/spec.md` §14）。
 - **イベント**。契約条件が `event` の6人（天城リオを含む）は現状どうやっても
-  契約できない。このままだと図鑑が埋まらないので、公開前に暫定条件を置くか
-  イベントを作るかを決める必要がある。
-- トップページ、発掘の演出、全国マップ、年俸などの経営、団体戦。
+  契約できない。このままだと図鑑が埋まらない。
+  上の指示書の第四段（届く依頼）で解く予定。
+- トップページ、発掘の演出、全国マップ、団体戦。
 
 ## 決めごと
 
@@ -136,9 +212,27 @@ docs/HANDOVER.md    設計の経緯、決めごと、ハマった罠
 | 係数がCPUに効く強さ | `src/ai.js` の `chooseDiscard` `shouldRiichi` `shouldCall` |
 | 未熟さ（最善でない牌を選ぶ率） | `src/ai.js` の `slip` |
 | 配色・明るさ・字体 | `src/theme.css` |
+| 顔の大きさ・出る条件 | `src/match.css` の `#tachie` `.tcSlot`（`min-width:900px`） |
+| 吹き出しが残る長さ | `src/ui.js` の `BUBBLE_TURNS`（捨て牌の数） |
+| セリフ | `src/serifu.js` の `LINES`（性格名が鍵） |
+| 雑談が出る確率 | `src/ui.js` の `maybeIdle` の `0.18` |
+| おまかせの動き | `src/ui.js` の `giveUp` と `src/match.js` の `#giveup` |
 | 題字・副題と表紙の絵 | `src/title.js` の `TITLE` `SUBTITLE` `drawCover` |
 | プレイヤーの顔の候補 | `src/title.js` の `FACES` |
 | 成長曲線 | `src/tournament.js` の `GROWTH_CURVE` |
+| 雀荘の開店資金・場代・回転 | `src/jansou.js` の `OPEN_COST` `SLOTS` |
+| 雀荘の設備（卓・内装・卓の型・宣伝） | `src/jansou.js` の `TABLE_COST` `INTERIOR` `AUTO` `SIGN` |
+| 雀荘の日当・家賃 | `src/jansou.js` の `BASE_WAGE` `wageOf` `utilOf` |
+| 雀荘のイベントの重みと発生率 | `src/jansou.js` の `pickEvent` と `SIGN` の `ev` |
+| ひと月の日数（`wageOf` の割る数と対） | `src/jansou.js` の `MONTH_DAYS` |
+| 月報を残す期の数 | `src/jansou.js` の `MONTHS_KEPT` |
+| 雀荘の観葉植物の値段 | `src/jansou.js` の `PLANT_COST` |
+| 雀荘のマス目と設置物の大きさ | `src/jansou-floor.js` の `GRID` `COLS` `ROWS` `KINDS` `DOOR` |
+| 雀荘の自動配置（既存セーブの再現） | `src/jansou-floor.js` の `ROWS_FOR` `SOFA_SPOTS` `COUNTER_SPOTS` |
+| 雀荘の隣接コンボと効き目 | `src/jansou-floor.js` の `COMBOS` `TIP_PER_GUEST` `DWELL_RELAX` `DWELL_DOOR` `tableTraits` |
+| 47都道府県の座標・規模・所属地方・紹介文 | `src/geo.js` の `PREFS` |
+| 遠さの段階（遠征の日数と費用のもと） | `src/geo.js` の `FAR_KM` |
+| 事務所名の文字数 | `src/office.js` の `NAME_MAX` |
 
 ## 実対局
 
@@ -300,6 +394,7 @@ PLiCyの上限（500KB）を超える。`build.py` は超えたらエラーで�
 - **セーブはlocalStorageのままでよい。**PLiCyにはlocalStorageをクラウド保存する機能があり、
   公式にセーブデータのlocalStorage保存が推奨されている（IndexedDB/WebSQLはコピーされない）
 - **`index.html` は500KB以下**。`build.py` が毎回確認して、超えたら止まる
+- **`debug.html` と `src/debug.js` はZIPに入れない**（開発用の入口。上の zip の例を使う）
 - 説明文に「下ネタ」「エッチ」などの語が入ると**無条件でR15**になる。雀ドルの紹介文に注意
 - ファイル名は英数字のみにする（OSをまたぐと日本語名が文字化けする）
 - zipを圧縮した端末からアップロードすること

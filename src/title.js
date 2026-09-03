@@ -13,6 +13,13 @@
    state に足すもの：
      playerName  プレイヤーの名前
      playerFace  'p01'〜'p12'（画像のファイル名。idではないので雀ドルの番号と衝突しない）
+     officeName  事務所名（12文字まで。**入力がそのまま入るので必ず esc()**）
+     officePref  本拠地の県 key（`geo.js` の PREFS。一度きりの選択）
+
+   事務所名と本拠地は `docs/design/office/spec.md` §5。
+   **県を選ぶ部品は `office.js` の `Office.prefPickerHtml` / `bindPicker` を借りる。**
+   単体ページ（team.html / taikai.html / meikan.html）は `geo.js` も `office.js` も
+   読んでいないので、**無ければその二つの欄を出さない**。名前と顔だけで通る。
    ============================================================ */
 
 const Title = (() => {
@@ -179,6 +186,9 @@ const Title = (() => {
   /* ------------------------------------------------------------
      マウント
   ------------------------------------------------------------ */
+  /* いま張ってある resize の後始末用。mount は表紙に戻るたび呼ばれる */
+  let mounted = null;
+
   function mount(root, store) {
     ensureSilVar();
     root.innerHTML = '';
@@ -187,6 +197,11 @@ const Title = (() => {
     let screen = 'top';
     let name = store.get().playerName || DEFAULT_NAME;
     let face = normalizeFace(store.get().playerFace);
+    /* 事務所は office.js が居るときだけ聞く（単体ページには無い） */
+    const hasOffice = typeof Office !== 'undefined' && typeof Geo !== 'undefined';
+    let office = String(store.get().officeName || '').trim();
+    let officeTouched = !!office;      // 触るまでは名前に追従させる
+    let pref = store.get().officePref || null;
 
     /* ---------- 表紙 ---------- */
     function renderTop() {
@@ -221,6 +236,46 @@ const Title = (() => {
           </div>
           <p class="ttFoot">本格麻雀。イカサマなし、牌操作なし。</p>
         </div>`;
+      fitTop();
+    }
+
+    /* 表紙が画面に収まるか実測して、はみ出すぶんだけ中身を落とす。
+
+       表紙の高さは title.css が max-height で詰めるが、下限（150px）を
+       割ると題字が読めなくなる。そこから先は中身のほうを落とす。
+       **落とす順は あらすじ → ロスター。**題字は表紙でしか見せられないが、
+       あらすじは他でも読ませられるので、優先順位は題字が上。
+
+       メディアクエリではなく実測にしてあるのは、**同じ画面の高さでも
+       セーブの進み具合で中身の高さが変わる**ため。新規のセーブは
+       ボタンが1つで「事務所の様子」も無いので余裕があり、あらすじを
+       消す必要がない。あらすじは新規のプレイヤーにこそ要る文章なので、
+       消さずに済むなら残す。書体が代替に落ちて行数が増えた場合にも効く。 */
+    const FIT_MARGIN = 8;         // 端ぎりぎりに置かない
+
+    /* **スクロール位置に依存しない測り方をすること。**
+       getBoundingClientRect は見えている枠が基準なので、#scroll が下に
+       送られたまま測ると、ボタンが上にあるように見えて「収まっている」と
+       誤判定する（設定から戻ったときに実際そうなった）。
+       枠の中身の座標に直してから、枠の見える高さと比べる。
+       単体ページには #scroll が無いので、そのときは文書全体で測る。 */
+    function fitsInView() {
+      const btns = root.querySelectorAll('.ttBtn');
+      const last = btns[btns.length - 1];
+      if (!last) return true;
+      const host = document.getElementById('scroll') || document.documentElement;
+      const bottom = last.getBoundingClientRect().bottom
+        - host.getBoundingClientRect().top + host.scrollTop;
+      return bottom <= host.clientHeight - FIT_MARGIN;
+    }
+
+    function fitTop() {
+      if (screen !== 'top') return;
+      root.classList.remove('noLead', 'noRoster');
+      if (fitsInView()) return;
+      root.classList.add('noLead');
+      if (fitsInView()) return;
+      root.classList.add('noRoster');
     }
 
     /* ---------- プレイヤー設定 ---------- */
@@ -247,12 +302,52 @@ const Title = (() => {
             <p class="ttNote">押すと大きく見られます。十二人から選べます。あとから変えられます。</p>
           </div>
 
+          ${hasOffice ? `
+          <div class="ttField">
+            <label class="ttLabel" for="ttOffice">事務所の名前</label>
+            <input class="ttInput" id="ttOffice" type="text" maxlength="${Office.NAME_MAX}"
+              value="${esc(officeName())}" autocomplete="off" spellcheck="false">
+            <p class="ttNote">${Office.NAME_MAX}文字まで。空のままにすると名前から作ります。</p>
+          </div>
+
+          <div class="ttField">
+            <span class="ttLabel">本拠地</span>
+            <p class="ttNote">遠征の起点になります。<b>あとから変えられません。</b></p>
+            ${Office.prefPickerHtml(pref)}
+          </div>` : ''}
+
           <hr class="kinsen">
-          <button type="button" class="ttBtn" data-act="go">この人ではじめる</button>
+          <button type="button" class="ttBtn" data-act="go"
+            ${hasOffice && !pref ? 'disabled' : ''}>この人ではじめる</button>
           <button type="button" class="ttBtn ghost" data-act="back" style="margin-top:8px">戻る</button>
         </div>`;
       const input = root.querySelector('#ttName');
-      input.addEventListener('input', () => { name = input.value; });
+      input.addEventListener('input', () => {
+        name = input.value;
+        /* 事務所名を触っていないあいだは、名前に追従させる */
+        if (!officeTouched) {
+          const oi = root.querySelector('#ttOffice');
+          if (oi) oi.value = officeName();
+        }
+      });
+      const oin = root.querySelector('#ttOffice');
+      if (oin) oin.addEventListener('input', () => {
+        office = oin.value;
+        officeTouched = true;
+      });
+      if (hasOffice) Office.bindPicker(root, (key) => {
+        pref = key;
+        renderSetup();
+        /* 描き直したので、入力中の値を書き戻す */
+        const ni = root.querySelector('#ttName'); if (ni) ni.value = name;
+        const oi = root.querySelector('#ttOffice'); if (oi) oi.value = officeName();
+      });
+    }
+
+    /* いま出す事務所名。触っていなければ「{名前の先頭語}事務所」（spec.md §5） */
+    function officeName() {
+      if (officeTouched) return office;
+      return hasOffice ? Office.defaultName((name || '').trim() || DEFAULT_NAME) : '';
     }
 
     /* ---------- 操作 ---------- */
@@ -301,23 +396,44 @@ const Title = (() => {
       } else if (act.dataset.act === 'new') {
         screen = 'setup';
         renderSetup();
-        window.scrollTo(0, 0);
+        toTop();
       } else if (act.dataset.act === 'back') {
         screen = 'top';
         renderTop();
-        window.scrollTo(0, 0);
+        toTop();
       } else if (act.dataset.act === 'go') {
+        if (hasOffice && !pref) return;              // 本拠地は必ず選ばせる
         const clean = (name || '').trim() || DEFAULT_NAME;
-        store.set({ playerName: clean, playerFace: face });
+        const patch = { playerName: clean, playerFace: face };
+        if (hasOffice) {
+          /* **入力された文字がそのまま入る。**出すときは必ず esc() を通すこと */
+          const on = (officeTouched ? office : Office.defaultName(clean)).trim();
+          patch.officeName = (on || Office.defaultName(clean)).slice(0, Office.NAME_MAX);
+          patch.officePref = pref;
+        }
+        store.set(patch);
         if (typeof store.onStart === 'function') store.onStart(clean, face);
       }
     });
+
+    /* 流れるのは shell.html の #scroll。単体ページにはそれが無い */
+    function toTop() {
+      const sc = document.getElementById('scroll');
+      if (sc) sc.scrollTop = 0; else window.scrollTo(0, 0);
+    }
+
+    /* 画面の高さが変わったら測り直す。
+       mount は表紙に戻るたび呼ばれるので、前の分を必ず外してから足す */
+    if (mounted) window.removeEventListener('resize', mounted);
+    mounted = () => fitTop();
+    window.addEventListener('resize', mounted);
 
     renderTop();
     return {
       refresh: function () { if (screen === 'top') renderTop(); else renderSetup(); },
     };
   }
+
 
   function ensureSilVar() {
     if (document.documentElement.style.getPropertyValue('--sil-img')) return;

@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2032%2032%22%3E%3Crect%20width%3D%2232%22%20height%3D%2232%22%20rx%3D%226%22%20fill%3D%22%2313201c%22/%3E%3Crect%20x%3D%228%22%20y%3D%225%22%20width%3D%2216%22%20height%3D%2222%22%20rx%3D%223%22%20fill%3D%22%23f7f1e4%22/%3E%3Ctext%20x%3D%2216%22%20y%3D%2217%22%20text-anchor%3D%22middle%22%20font-size%3D%2212%22%20font-family%3D%22serif%22%20fill%3D%22%23c0392b%22%3E%E9%9B%80%3C/text%3E%3Ctext%20x%3D%2216%22%20y%3D%2225%22%20text-anchor%3D%22middle%22%20font-size%3D%228%22%20font-family%3D%22serif%22%20fill%3D%22%238c2f28%22%3E%E8%90%AC%3C/text%3E%3C/svg%3E">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>事務所</title>
+<link rel="stylesheet" href="src/style.css">
+<link rel="stylesheet" href="src/maru.css">
+<link rel="stylesheet" href="src/theme.css">
+<link rel="stylesheet" href="src/meikan.css">
+<link rel="stylesheet" href="src/office.css">
+<style>
+  body{display:block}
+  .dbg{max-width:760px;margin:0 auto;padding:0 8px 30px;display:flex;gap:6px;flex-wrap:wrap}
+  .dbg button{
+    font-size:11px;padding:4px 9px;border-radius:3px;cursor:pointer;
+    border:1px dashed var(--gold-dim);background:transparent;color:var(--muted);
+  }
+  .dbg span{font-size:11px;color:#5c6d66;align-self:center}
+</style>
+</head>
+<body>
+<div id="office"></div>
+
+<div class="dbg">
+  <span>動作確認：</span>
+  <button id="dbgNight">夜（日報）を見る</button>
+  <button id="dbgMoney">1000万円足す</button>
+  <button id="dbgPref">本拠地を選び直す</button>
+  <button id="dbgRoster">8人契約させる</button>
+  <button id="dbgReset">セーブを消す</button>
+</div>
+
+<script src="src/characters.js"></script>
+<script src="src/geo.js"></script>
+<script src="src/tournament.js"></script>
+<script src="src/office.js"></script>
+<script src="src/jansou-guests.js"></script>
+<script src="src/jansou-floor.js"></script>
+<script src="src/jansou.js"></script>
+<script>
+/* 単体ページ。本編と同じセーブを共有する。
+   **`store.go` と `store.startDay` を入れていない。**入れられないのではなく、
+   ここには行き先（他の画面）が無いから。office.js は無ければ入口の釦を
+   disabled にするので、朝の見た目と夜の日報はこれで確かめられる。
+   **店が無い日は、このページでも「今日を始める」で回せる**
+   （雀荘へ委譲しないので行き先が要らない）。
+   **店がある日を回すのは index.html 側**（雀荘の再生と実対局が要る）。 */
+const SAVE_KEY = 'jandol_save_v1';
+
+function blankState() {
+  return {
+    discovered: FREE_AGENTS.map((c) => c.id),
+    contracted: [], comp: Object.fromEntries(FREE_AGENTS.map((c) => [c.id, c.comp])),
+    compMax: {}, grades: {}, favor: {}, team: [], teamDecided: false,
+    money: 0, playerRank: 'D', playerWins: 0, records: {}, recent: [],
+    agency: 1, beaten: [],
+    officeName: '', officePref: null,
+  };
+}
+function loadState() {
+  try {
+    const raw = localStorage.getItem(SAVE_KEY);
+    if (!raw) return blankState();
+    const s = JSON.parse(raw);
+    const b = blankState();
+    /* この画面が知らない項目も必ずそのまま残す */
+    return Object.assign({}, s, {
+      discovered: Array.isArray(s.discovered) ? s.discovered : b.discovered,
+      contracted: Array.isArray(s.contracted) ? s.contracted : [],
+      comp: Object.assign({}, b.comp, s.comp || {}),
+      compMax: s.compMax || {},
+      grades: s.grades || {},
+      favor: s.favor || {},
+      team: Array.isArray(s.team) ? s.team : [],
+      money: typeof s.money === 'number' ? s.money : 0,
+      agency: typeof s.agency === 'number' ? s.agency : 1,
+      officeName: typeof s.officeName === 'string' ? s.officeName : '',
+      officePref: typeof s.officePref === 'string' ? s.officePref : null,
+    });
+  } catch (e) { return blankState(); }
+}
+function saveState(st) {
+  try { localStorage.setItem(SAVE_KEY, JSON.stringify(st)); } catch (e) {}
+}
+
+let state = loadState();
+
+const store = {
+  get: () => state,
+  set: (patch) => { Object.assign(state, patch); saveState(state); },
+};
+
+const host = document.getElementById('office');
+Office.mount(host, store);
+
+/* ---------- 動作確認 ---------- */
+document.getElementById('dbgNight').addEventListener('click', () => {
+  Office.mount(host, store, { phase: 'night' });
+});
+document.getElementById('dbgMoney').addEventListener('click', () => {
+  store.set({ money: (state.money || 0) + 10000000 }); location.reload();
+});
+document.getElementById('dbgPref').addEventListener('click', () => {
+  store.set({ officePref: null }); location.reload();
+});
+document.getElementById('dbgRoster').addEventListener('click', () => {
+  store.set({ contracted: JANDOLS.slice(0, 8).map((c) => c.id), money: 10000000 });
+  location.reload();
+});
+document.getElementById('dbgReset').addEventListener('click', () => {
+  try { localStorage.removeItem(SAVE_KEY); } catch (e) {}
+  location.reload();
+});
+</script>
+</body>
+</html>

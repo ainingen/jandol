@@ -58,7 +58,15 @@ KANA_RANGES = [
 
 
 def source_chars():
-    """src/ と shell.html に実際に書かれている文字を拾う"""
+    """src/ と shell.html に実際に書かれている文字を拾う
+
+    しきい値は 0x7E（ASCIIの終わり）。**0x2000 にしてはいけない。**
+    それだと ×（U+00D7）のような Latin-1 の記号が漏れる。画面には
+    「×1 ×2 ×4」「客足 ×1.26」と出ているので、その一文字だけ
+    別の書体になる（元書体には入っている。拾い落としているだけ）。
+    ASCII は下の KANA_RANGES が丸ごと入れているので、
+    ここで 0x7E 以下まで見に行く必要はない。
+    """
     import glob
     text = ''
     for path in sorted(glob.glob(os.path.join(ROOT, 'src', '*.js')) +
@@ -66,7 +74,7 @@ def source_chars():
                        [os.path.join(ROOT, 'shell.html')]):
         with open(path, encoding='utf-8') as f:
             text += f.read()
-    return {ch for ch in text if ord(ch) > 0x2000}
+    return {ch for ch in text if ord(ch) > 0x7E}
 
 
 def joyo_chars():

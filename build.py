@@ -1,33 +1,69 @@
 #!/usr/bin/env python3
 """
-雀ドルを探せ — 単一HTMLに束ねる
+雀ドル発掘放浪記 — index.html を組み立てる
 
-  python3 build.py            → index.html
+  python3 build.py
 
 前提：リポジトリの直下で実行すること。
-  shell.html      … 外枠（ここに束ねたCSSとJSを差し込む）
+  shell.html      … 外枠。ここに <link> と <script> を差し込む
   src/*.css *.js  … 各画面
 出力は index.html。GitHub Pages がそのまま拾う名前にしてある。
-img/ と fonts/ は同梱しない（index.html の隣にあれば読まれる）。
 
-**index.html は 500KB を超えないこと。**PLiCyに上限がある。
-フォントをCSSに埋め込むと一気に1MBを超えるので、fonts/ に外出ししてある。
+--------------------------------------------------------------------
+なぜ分割するのか
+--------------------------------------------------------------------
+**PLiCyには index.html が500KBまでという制限がある。**
+公式FAQには載っていないが、実際に何度も弾かれている（ゆう・実証済み）。
 
-注意：module.exports の除去は「最初に現れる if (typeof module から
-ファイル末尾まで」を丸ごと落とす。引き継ぎ書 §4 にあるとおり、
-正規表現に m フラグを付けると複数行の export ブロックを消しきれず、
-閉じ括弧だけが残って構文エラーになる。
+ただしこの制限は index.html だけに掛かる。ZIP全体は2GBまで許される。
+そこで CSS と JS を `src/` に置いたまま `<link>` と `<script>` で読む形にした。
+index.html は約30KBで、以後どれだけ足しても上限には掛からない。
+
+**PLiCyで外部のCSS・JSが読めることは確認済み（2026年9月・ゆう）。**
+表紙が正しく描画され、サムネイルも撮れている。
+以前あった一枚版（--single）は役目を終えたので廃止した。
+
+--------------------------------------------------------------------
+注意
+--------------------------------------------------------------------
+・読み込み順は下の CSS / JS のリストの順。依存がある（例：ui.js は
+  engine.js を前提にする）ので、並べ替えるときは依存を確認すること。
+  scriptタグに defer は付けない。付けるなら全部に付ける。
+  混ぜると順序が崩れる。
+
+・**ZIPには src/ を必ず含めること。** 含め忘れると真っ白な画面になる。
+
+・url(../fonts/) は書き換えない。CSSは src/ に置いたまま読むので、
+  src/ から見た ../fonts/ が正しく解決される。
+
+・module.exports は削らない。typeof で守られているのでブラウザでは
+  無視される（node のテストから読むために置いてある）。
 """
 import os
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-
 SRC = os.path.join(HERE, 'src')
 
-CSS = ['style.css', 'theme.css', 'maru.css', 'title.css', 'meikan.css', 'team.css', 'taikai.css', 'scout.css', 'match.css']
+# 読み込み順。並べ替えるときは依存を確認すること
+CSS = ['style.css', 'theme.css', 'maru.css', 'title.css', 'meikan.css',
+       'team.css', 'taikai.css', 'scout.css', 'office.css',
+       'jansou.css', 'jansou-floor.css', 'match.css']
+# jansou.js は jansou-guests.js / jansou-floor.js を参照するので、必ず後ろに置く。
+# geo.js は office.js と title.js（本拠地の選択）より前に置く。
+# office.js は Jansou.normalize を「呼ぶとき」にだけ参照するので、
+# jansou.js より前でも構わない（読み込み時には触らない）
 JS = ['engine.js', 'ai.js', 'game.js', 'ui.js', 'match.js',
-      'characters.js', 'tournament.js', 'title.js', 'meikan.js', 'team.js', 'taikai.js', 'scout.js']
+      'characters.js', 'geo.js', 'tournament.js', 'office.js', 'title.js', 'meikan.js',
+      'team.js', 'taikai.js', 'scout.js',
+      'jansou-guests.js', 'jansou-floor.js', 'jansou.js', 'serifu.js']
+
+# 開発用。**ここに足さないこと。**足すと本番の index.html に入り、
+# 普通のプレイヤーにデバッグの入口が見えてしまう。
+# 配布ZIPを作るときも、この2つは外すこと（README.md の配布の手順）。
+DEV_ONLY = ['debug.html', 'src/debug.js']
+
+LIMIT = 500 * 1024          # PLiCyの上限。分割版では掛からないはずの保険
 
 
 def read(name, base=SRC):
@@ -35,13 +71,12 @@ def read(name, base=SRC):
         return f.read()
 
 
-def strip_exports(src):
-    """末尾の module.exports を落とす。exports は必ずファイル末尾にある前提。"""
-    marker = 'if (typeof module'
-    i = src.find(marker)
-    if i == -1:
-        return src
-    return src[:i].rstrip() + '\n'
+def build_styles():
+    return '\n'.join('<link rel="stylesheet" href="src/%s">' % n for n in CSS)
+
+
+def build_scripts():
+    return '\n'.join('<script src="src/%s"></script>' % n for n in JS)
 
 
 def main():
@@ -52,36 +87,46 @@ def main():
         print('見つからないファイル:', ', '.join(missing), file=sys.stderr)
         return 1
 
-    css = '\n'.join(f'/* ===== {n} ===== */\n{read(n)}' for n in CSS)
-    # CSSは src/ にあるが、束ねた先の index.html は直下にある。
-    # url() はCSSの位置から解決されるので、取り込むときにパスを詰める
-    css = css.replace('url(../fonts/', 'url(fonts/')
-    js = '\n'.join(f'/* ===== {n} ===== */\n{strip_exports(read(n))}' for n in JS)
-
     shell = read('shell.html', HERE)
-    out = shell.replace('/*__CSS__*/', css).replace('/*__JS__*/', js)
+    for mark in ('<!--__STYLES__-->', '<!--__SCRIPTS__-->'):
+        if mark not in shell:
+            print('shell.html に %s がありません' % mark, file=sys.stderr)
+            return 1
 
-    # 束ねたあとに export の残骸が無いか確認する
-    if 'module.exports' in out:
-        print('module.exports が残っています', file=sys.stderr)
-        return 1
+    out = (shell
+           .replace('<!--__STYLES__-->', build_styles())
+           .replace('<!--__SCRIPTS__-->', build_scripts()))
 
     path = os.path.join(HERE, 'index.html')
     with open(path, 'w', encoding='utf-8') as f:
         f.write(out)
 
     size = len(out.encode('utf-8'))
-    print(f'{path}  {size / 1024:.0f}KB')
+    print('%s  %.0fKB' % (path, size / 1024))
 
-    # PLiCyの上限。超えたら投稿できないので、ここで気づけるようにしておく
-    limit = 500 * 1024
-    if size > limit:
+    if size > LIMIT:
         print('index.html が %.0fKB あります。PLiCyの上限は500KBです。'
               % (size / 1024), file=sys.stderr)
-        print('フォントをCSSに埋め込んでいないか確認してください'
-              '（src/maru.css は fonts/ を参照する形が正しい）。', file=sys.stderr)
+        print('shell.html に直接書いたものが増えすぎていないか確認してください。',
+              file=sys.stderr)
         return 1
-    print('  上限500KBに対して残り %.0fKB' % ((limit - size) / 1024))
+
+    total = sum(os.path.getsize(os.path.join(SRC, n)) for n in CSS + JS)
+    print('  src/ の %d 個（%.0fKB）を読みに行く。ZIPには src/ を必ず含めること'
+          % (len(CSS + JS), total / 1024))
+
+    # 開発用の入口が本番に混ざっていないことを、毎回ここで確かめる。
+    # 混ざっても画面は普通に動いてしまうので、目では気づけない
+    leaked = [n for n in DEV_ONLY if os.path.basename(n) in out]
+    if leaked:
+        print('本番の index.html に開発用が入っています: %s' % ', '.join(leaked),
+              file=sys.stderr)
+        print('build.py の JS / CSS のリストから外すこと。', file=sys.stderr)
+        return 1
+    present = [n for n in DEV_ONLY if os.path.exists(os.path.join(HERE, n))]
+    if present:
+        print('  開発用（index.html には入っていない。配布ZIPからは外すこと）: %s'
+              % ', '.join(present))
     return 0
 
 

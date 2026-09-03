@@ -165,7 +165,8 @@ class Game {
   async playHand() {
     this.deal();
     this.io.update();
-    await this.io.event(`${KAZE[this.bakaze - 27]}${((this.kyoku - 1) % 4) + 1}局 ${this.honba}本場`, 900);
+    await this.io.event(`${KAZE[this.bakaze - 27]}${((this.kyoku - 1) % 4) + 1}局 ${this.honba}本場`, 900,
+      { seat: this.dealer, kind: 'start' });
 
     let turn = this.dealer;
     let firstRound = true;
@@ -287,14 +288,14 @@ class Game {
           p.hand = p.hand.filter((id) => Engine.kindOf(id) !== k);
           p.melds.push({ type: 'ankan', tile: k, tiles, from: p.seat });
           for (const q of this.players) q.ippatsu = false;
-          await this.io.event(`${p.name} 暗槓`, 700);
+          await this.io.event(`${p.name} 暗槓`, 700, { seat: p.seat, kind: 'call' });
           this.addKanDora();
         } else {
           const meld = p.melds.find((m) => m.type === 'pon' && m.tile === k);
           const id = p.hand.find((x) => Engine.kindOf(x) === k);
           p.hand = p.hand.filter((x) => x !== id);
           meld.type = 'kakan'; meld.tiles.push(id);
-          await this.io.event(`${p.name} 加槓`, 700);
+          await this.io.event(`${p.name} 加槓`, 700, { seat: p.seat, kind: 'call' });
           const ron = await this.checkChankan(p, id);
           if (ron) return ron;
           for (const q of this.players) q.ippatsu = false;
@@ -314,7 +315,7 @@ class Game {
         p.doubleRiichi = firstRound && this.noCallsYet;
         p.score -= 1000;
         this.riichiSticks++;
-        await this.io.event(`${p.name} リーチ`, 800);
+        await this.io.event(`${p.name} リーチ`, 800, { seat: p.seat, kind: 'riichi' });
       }
       p.hand = p.hand.filter((id) => id !== discardId);
       this.sortHand(p);
@@ -515,7 +516,7 @@ class Game {
     }
     for (const q of this.players) q.ippatsu = false;
     const label = { pon: 'ポン', chi: 'チー', minkan: 'カン' }[type];
-    await this.io.event(`${p.name} ${label}`, 700);
+    await this.io.event(`${p.name} ${label}`, 700, { seat: p.seat, kind: 'call' });
     this.io.update();
     return { type: 'call', seat: p.seat, kan: type === 'minkan', forbid };
   }

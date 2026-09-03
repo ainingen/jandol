@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2032%2032%22%3E%3Crect%20width%3D%2232%22%20height%3D%2232%22%20rx%3D%226%22%20fill%3D%22%2313201c%22/%3E%3Crect%20x%3D%228%22%20y%3D%225%22%20width%3D%2216%22%20height%3D%2222%22%20rx%3D%223%22%20fill%3D%22%23f7f1e4%22/%3E%3Ctext%20x%3D%2216%22%20y%3D%2217%22%20text-anchor%3D%22middle%22%20font-size%3D%2212%22%20font-family%3D%22serif%22%20fill%3D%22%23c0392b%22%3E%E9%9B%80%3C/text%3E%3Ctext%20x%3D%2216%22%20y%3D%2225%22%20text-anchor%3D%22middle%22%20font-size%3D%228%22%20font-family%3D%22serif%22%20fill%3D%22%238c2f28%22%3E%E8%90%AC%3C/text%3E%3C/svg%3E">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>直営雀荘</title>
+<link rel="stylesheet" href="src/style.css">
+<link rel="stylesheet" href="src/maru.css">
+<link rel="stylesheet" href="src/theme.css">
+<link rel="stylesheet" href="src/meikan.css">
+<link rel="stylesheet" href="src/jansou.css">
+<link rel="stylesheet" href="src/jansou-floor.css">
+<style>
+  body{display:block}
+  .dbg{max-width:760px;margin:0 auto;padding:0 8px 30px;display:flex;gap:6px;flex-wrap:wrap}
+  .dbg button{
+    font-size:11px;padding:4px 9px;border-radius:3px;cursor:pointer;
+    border:1px dashed var(--gold-dim);background:transparent;color:var(--muted);
+  }
+  .dbg span{font-size:11px;color:#5c6d66;align-self:center}
+</style>
+</head>
+<body>
+<div id="jansou"></div>
+
+<div class="dbg">
+  <span>動作確認：</span>
+  <button id="dbgPlay">遊べる状態</button>
+  <button id="dbgAll">全部盛り</button>
+  <button id="dbgMoney">1000万円足す</button>
+  <button id="dbgHire">初期メンバーを5人契約する</button>
+  <button id="dbgRep">評判を+30する</button>
+  <button id="dbgMonthEnd">月末まで進める</button>
+  <button id="dbgMonthFake">月を捏造して月報を開く</button>
+  <button id="dbgOld">古いセーブを作る（47日目・月の概念なし）</button>
+  <button id="dbgReset">セーブを消す</button>
+</div>
+
+<script src="src/characters.js"></script>
+<script src="src/tournament.js"></script>
+<script src="src/jansou-guests.js"></script>
+<script src="src/jansou-floor.js"></script>
+<script src="src/jansou.js"></script>
+<!-- 開発用。build.py は読まない（本番の index.html には入らない） -->
+<script src="src/debug.js"></script>
+<script>
+/* meikan.html / team.html などと同じセーブを共有する */
+const SAVE_KEY = 'jandol_save_v1';
+
+function blankState() {
+  return {
+    discovered: FREE_AGENTS.map((c) => c.id),
+    contracted: [], comp: Object.fromEntries(FREE_AGENTS.map((c) => [c.id, c.comp])),
+    compMax: {}, grades: {}, favor: {}, team: [], teamDecided: false,
+    money: 0, playerRank: 'D', playerWins: 0, records: {}, recent: [],
+    agency: 1, beaten: [],
+  };
+}
+function loadState() {
+  try {
+    const raw = localStorage.getItem(SAVE_KEY);
+    if (!raw) return blankState();
+    const s = JSON.parse(raw);
+    const b = blankState();
+    /* この画面が知らない項目も必ずそのまま残す */
+    return Object.assign({}, s, {
+      discovered: Array.isArray(s.discovered) ? s.discovered : b.discovered,
+      contracted: Array.isArray(s.contracted) ? s.contracted : [],
+      comp: Object.assign({}, b.comp, s.comp || {}),
+      compMax: s.compMax || {}, grades: s.grades || {}, favor: s.favor || {},
+      team: Array.isArray(s.team) ? s.team : [],
+      money: typeof s.money === 'number' ? s.money : 0,
+    });
+  } catch (e) { return blankState(); }
+}
+function saveState(st) {
+  try { localStorage.setItem(SAVE_KEY, JSON.stringify(st)); } catch (e) {}
+}
+
+let state = loadState();
+
+const store = {
+  get: () => state,
+  set: (patch) => { Object.assign(state, patch); saveState(state); },
+  /* 単体ページでは実対局を繋がない → 自動処理に落ちる */
+};
+
+Jansou.mount(document.getElementById('jansou'), store);
+
+/* ---------- 動作確認 ---------- */
+/* 揃った状態を一発で作る（debug.html と同じもの。src/debug.js が持っている） */
+document.getElementById('dbgPlay').addEventListener('click', () => {
+  JandolDebug.apply('asobu'); location.reload();
+});
+document.getElementById('dbgAll').addEventListener('click', () => {
+  JandolDebug.apply('zenbu'); location.reload();
+});
+
+document.getElementById('dbgMoney').addEventListener('click', () => {
+  store.set({ money: (state.money || 0) + 10000000 }); location.reload();
+});
+document.getElementById('dbgHire').addEventListener('click', () => {
+  const ids = FREE_AGENTS.slice(0, 5).map((c) => c.id);
+  store.set({ contracted: Array.from(new Set((state.contracted || []).concat(ids))) });
+  location.reload();
+});
+document.getElementById('dbgRep').addEventListener('click', () => {
+  const p = Jansou.normalize(state.parlor);
+  p.rep = Math.min(100, p.rep + 30);
+  store.set({ parlor: p }); location.reload();
+});
+/* 月末の確認（monthly.md §8）。これが無いと月報を見るのに30回クリックが要る */
+document.getElementById('dbgMonthEnd').addEventListener('click', () => {
+  const p = Jansou.normalize(state.parlor);
+  /* あと一日で締まるところまで from を寄せる */
+  p.month = Object.assign({}, p.month, { from: p.day - (Jansou.MONTH_DAYS - 1) });
+  store.set({ parlor: p }); location.reload();
+});
+
+/* もっともらしい月を流し込んで月報だけ開く（帯の一致を目で見る用）。
+   **これは確認専用。**セーブには書かない */
+document.getElementById('dbgMonthFake').addEventListener('click', () => {
+  const p = Jansou.normalize(state.parlor);
+  let m = Jansou.blankMonth(60, 38, [2, 1, 0, 0, 0, 0]);
+  const ids = (state.team || []).concat(state.contracted || []).slice(0, 4);
+  for (let i = 0; i < Jansou.MONTH_DAYS; i++) {
+    const g = [38 + (i % 9), 62 + (i % 11), 88 + (i % 7)];
+    const slots = [{ guests: g[0], sales: g[0] * 1600 },
+                   { guests: g[1], sales: g[1] * 2100 },
+                   { guests: g[2], sales: g[2] * 2600 }];
+    const wages = 42000 + (i % 5) * 800, util = 8000 + 5 * 1500;
+    const eb = i % 4 === 0 ? 60000 : 0, et = 900 + (i % 3) * 300, eo = i % 9 === 0 ? -30000 : 0;
+    const fee = slots.reduce((a, s) => a + s.sales, 0);
+    const work = {}, nom = {}, grow = {};
+    ids.forEach((id, k) => { if ((i + k) % 4 !== 0) { work[id] = 1 + (k % 3); grow[id] = 0.08 + k * 0.02; } });
+    if (ids[0] != null && i % 2 === 0) nom[ids[0]] = 1;
+    if (ids[1] != null && i % 3 === 0) nom[ids[1]] = 1;
+    m = Jansou.accrue(m, {
+      slots, wages, util, extraBottle: eb, extraTip: et, extraOther: eo,
+      full: i % 3 === 0, profit: fee + eb + et + eo - wages - util,
+      events: { bottle: i % 4 === 0 ? 1 : 0, bottleWin: i % 8 === 0 ? 1 : 0,
+                arashi: i % 10 === 0 ? 1 : 0, arashiWin: i % 20 === 0 ? 1 : 0,
+                guest: i % 5 === 0 ? 1 : 0, treat: i % 7 === 0 ? 1 : 0,
+                shuzai: i % 14 === 0 ? 1 : 0, kosho: i % 25 === 0 ? 1 : 0 },
+      work, nominate: nom, grow,
+      promo: { stage1: i % 3 === 0 ? 1 : 0, stage2: i % 9 === 0 ? 1 : 0, stage3: i % 28 === 0 ? 1 : 0 },
+    });
+  }
+  const names = {};
+  const ALL = JANDOLS.concat(FREE_AGENTS);
+  ids.forEach((id) => { const c = ALL.find((x) => x.id === id); if (c) names[id] = { name: c.name, pop: c.pop }; });
+  const prev = { fee: 9800000, profit: 7200000, guests: 4800, regulars: { s1: 28, s2: 9, s3: 2 } };
+  const rep = Jansou.closeMonth(m, prev, {
+    no: 3, toDay: 90, rep: 52, bottles: [3, 2, 1, 0, 0, 0],
+    regulars: { s1: 34, s2: 12, s3: 3 },
+    names, promotedNames: ids[1] != null ? { [ids[1]]: 'C' } : {},
+  });
+  Jansou.showMonthReport(rep);
+});
+
+/* 月の概念が無い既存セーブを作る（§10 の移行を見る） */
+document.getElementById('dbgOld').addEventListener('click', () => {
+  const p = Jansou.normalize(state.parlor);
+  p.open = true; p.day = 47; p.rep = 38; p.tables = 4;
+  delete p.month; delete p.months;          // 月の概念が無い状態
+  const raw = Object.assign({}, state, { parlor: p });
+  localStorage.setItem(SAVE_KEY, JSON.stringify(raw));
+  location.reload();
+});
+
+document.getElementById('dbgReset').addEventListener('click', () => {
+  localStorage.removeItem(SAVE_KEY); location.reload();
+});
+</script>
+</body>
+</html>
