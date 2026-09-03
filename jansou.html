@@ -26,6 +26,8 @@
 
 <div class="dbg">
   <span>動作確認：</span>
+  <button id="dbgPlay">遊べる状態</button>
+  <button id="dbgAll">全部盛り</button>
   <button id="dbgMoney">1000万円足す</button>
   <button id="dbgHire">初期メンバーを5人契約する</button>
   <button id="dbgRep">評判を+30する</button>
@@ -40,6 +42,8 @@
 <script src="src/jansou-guests.js"></script>
 <script src="src/jansou-floor.js"></script>
 <script src="src/jansou.js"></script>
+<!-- 開発用。build.py は読まない（本番の index.html には入らない） -->
+<script src="src/debug.js"></script>
 <script>
 /* meikan.html / team.html などと同じセーブを共有する */
 const SAVE_KEY = 'jandol_save_v1';
@@ -85,6 +89,14 @@ const store = {
 Jansou.mount(document.getElementById('jansou'), store);
 
 /* ---------- 動作確認 ---------- */
+/* 揃った状態を一発で作る（debug.html と同じもの。src/debug.js が持っている） */
+document.getElementById('dbgPlay').addEventListener('click', () => {
+  JandolDebug.apply('asobu'); location.reload();
+});
+document.getElementById('dbgAll').addEventListener('click', () => {
+  JandolDebug.apply('zenbu'); location.reload();
+});
+
 document.getElementById('dbgMoney').addEventListener('click', () => {
   store.set({ money: (state.money || 0) + 10000000 }); location.reload();
 });

@@ -68,6 +68,14 @@ python3 build.py            index.html は約13KB
 **ZIPには `src/` を必ず含めること。** `src/*.js` と `src/*.css` を
 読みに行く。含め忘れると真っ白な画面になる。
 
+**逆に、開発用の2つは外すこと。**`debug.html` と `src/debug.js` は
+`build.py` が読んでいないので `index.html` には入らないが、
+ZIPに混ぜるとURLを知っている人には届いてしまう。
+
+```
+zip -r jandol.zip . -x '.git/*' 'debug.html' 'src/debug.js' 'tools/*' 'docs/*'
+```
+
 ## 直したあと
 
 `src/` を編集したら、リポジトリ直下で
@@ -130,6 +138,8 @@ docs/design/jansou/ 直営雀荘の設計一式（spec.md ＝リニューアル�
                     monthly.md ＝月末決算と月報）
 tools/test-jansou.js 雀荘の純関数テスト（node tools/test-jansou.js）
 tools/drive-jansou.js 雀荘をブラウザで自動で回す（node tools/drive-jansou.js --help）
+debug.html          開発用の入口。遊べる状態を作って本編へ入る（配布から外す）
+src/debug.js        その中身。build.py は読まない（配布から外す）
 ```
 
 ## できていること
@@ -364,6 +374,7 @@ PLiCyの上限（500KB）を超える。`build.py` は超えたらエラーで�
 - **セーブはlocalStorageのままでよい。**PLiCyにはlocalStorageをクラウド保存する機能があり、
   公式にセーブデータのlocalStorage保存が推奨されている（IndexedDB/WebSQLはコピーされない）
 - **`index.html` は500KB以下**。`build.py` が毎回確認して、超えたら止まる
+- **`debug.html` と `src/debug.js` はZIPに入れない**（開発用の入口。上の zip の例を使う）
 - 説明文に「下ネタ」「エッチ」などの語が入ると**無条件でR15**になる。雀ドルの紹介文に注意
 - ファイル名は英数字のみにする（OSをまたぐと日本語名が文字化けする）
 - zipを圧縮した端末からアップロードすること

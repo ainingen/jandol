@@ -55,6 +55,11 @@ JS = ['engine.js', 'ai.js', 'game.js', 'ui.js', 'match.js',
       'team.js', 'taikai.js', 'scout.js',
       'jansou-guests.js', 'jansou-floor.js', 'jansou.js', 'serifu.js']
 
+# 開発用。**ここに足さないこと。**足すと本番の index.html に入り、
+# 普通のプレイヤーにデバッグの入口が見えてしまう。
+# 配布ZIPを作るときも、この2つは外すこと（README.md の配布の手順）。
+DEV_ONLY = ['debug.html', 'src/debug.js']
+
 LIMIT = 500 * 1024          # PLiCyの上限。分割版では掛からないはずの保険
 
 
@@ -106,6 +111,19 @@ def main():
     total = sum(os.path.getsize(os.path.join(SRC, n)) for n in CSS + JS)
     print('  src/ の %d 個（%.0fKB）を読みに行く。ZIPには src/ を必ず含めること'
           % (len(CSS + JS), total / 1024))
+
+    # 開発用の入口が本番に混ざっていないことを、毎回ここで確かめる。
+    # 混ざっても画面は普通に動いてしまうので、目では気づけない
+    leaked = [n for n in DEV_ONLY if os.path.basename(n) in out]
+    if leaked:
+        print('本番の index.html に開発用が入っています: %s' % ', '.join(leaked),
+              file=sys.stderr)
+        print('build.py の JS / CSS のリストから外すこと。', file=sys.stderr)
+        return 1
+    present = [n for n in DEV_ONLY if os.path.exists(os.path.join(HERE, n))]
+    if present:
+        print('  開発用（index.html には入っていない。配布ZIPからは外すこと）: %s'
+              % ', '.join(present))
     return 0
 
 
