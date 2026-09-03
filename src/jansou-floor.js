@@ -1144,6 +1144,16 @@ const JansouFloor = (() => {
   const SLOT_HOURS = ['12〜17時', '17〜21時', '21〜26時'];
   const yen = (n) => Math.round(n).toLocaleString('ja-JP') + '円';
 
+  /* スキップ釦を隠すか（monthly.md §13）。**純関数。**
+     再生中だけ出す。**割り込み（ask・実対局）と客カードで止まっている間は消す。**
+     ポップアップは画面ぜんぶを覆うので、その下に押せる釦を残してはいけない。
+     残すと、自動で回すときクリックが覆いに吸われて、
+     ページが固まったようにしか見えなくなる（実際に一度これを追いかけた） */
+  function skipHidden(st) {
+    st = st || {};
+    return !st.playing || !!st.skipping || !!st.waiting || !!st.paused;
+  }
+
   function mount(host, opts) {
     opts = opts || {};
     const wrap = document.createElement('div');
@@ -1462,7 +1472,8 @@ const JansouFloor = (() => {
       /* **ボタンは作り直さない。** 毎フレーム innerHTML で作り直すと、
          押した瞬間に要素が入れ替わって取りこぼす（実際に押せなかった） */
       wrap.querySelectorAll('[data-speed]').forEach((b) => b.classList.toggle('on', +b.dataset.speed === live.speed));
-      wrap.querySelector('[data-skip]').hidden = !live.playing || live.skipping;
+      wrap.querySelector('[data-skip]').hidden = skipHidden(
+        { playing: live.playing, skipping: live.skipping, waiting, paused: live.paused });
       wrap.querySelector('.jnFlTicker').textContent = live.ticker || '';
 
       ui.innerHTML = '';
@@ -2205,6 +2216,8 @@ const JansouFloor = (() => {
 
   return {
     mount, fit, seatsOf, gridRects, build, slotStartTimes, spriteSvg, bottleSvg, insertEvent,
+    /* 再生の見せかたの決めごと（純関数） */
+    skipHidden,
     /* マス目と設置物（placement.md §1・§2）。純関数 */
     autoPlace, reconcile, canPlace, freeCell, tablesOf, itemsOf, ringCells, cellX, cellY,
     pickItem, clampCell, moveItem, swapItems, removeItem, setMine, addItem, tableSpots, spotsNear,

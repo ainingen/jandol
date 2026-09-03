@@ -129,6 +129,7 @@ docs/design/jansou/ 直営雀荘の設計一式（spec.md ＝リニューアル�
                     placement.md ＝卓の自由配置と隣接コンボ、
                     monthly.md ＝月末決算と月報）
 tools/test-jansou.js 雀荘の純関数テスト（node tools/test-jansou.js）
+tools/drive-jansou.js 雀荘をブラウザで自動で回す（node tools/drive-jansou.js --help）
 ```
 
 ## できていること
