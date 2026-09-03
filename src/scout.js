@@ -167,6 +167,11 @@ const Scout = (() => {
      画面
   ------------------------------------------------------------ */
   function mount(root, store) {
+    /* **「探す」は遠征に置き換わった**（office/spec.md §14 の 3）。
+       事務所がいるときは、ここに探索の釦を出さない。入口を一本にするため。
+       雀荘の営業釦と同じ作法で、ハブがいるかは `store.startDay` の有無で見る。
+       単体ページ（scout.html）にはハブが無いので、いままでどおり残る */
+    const hub = typeof store.startDay === 'function';
     ensureSilVar();
     root.innerHTML = '';
     root.classList.add('scRoot');
@@ -235,12 +240,19 @@ const Scout = (() => {
           ${['all'].concat(REGIONS).map((r) => `<button type="button" class="scChip"
             data-region="${esc(r)}" aria-pressed="${region === r}">${r === 'all' ? '全国' : esc(r)}</button>`).join('')}
         </div>
-        <button type="button" class="scGo" data-scout="1"
+        ${hub ? `<p class="scQuiet"><b>探すのは事務所からの遠征になりました。</b>
+            行き先の県と同行者を決めて出ると、滞在した日数ぶん探せます。
+            遠いほど長く居られるぶん、多く引けます。
+            上の地方は、いま声をかけられる子を絞り込むためのものです。</p>`
+        : `<button type="button" class="scGo" data-scout="1"
           ${(st.money || 0) >= SCOUT_COST ? '' : 'disabled'}>
-          ${region === 'all' ? '全国' : esc(region)}の雀荘をまわる　${yen(SCOUT_COST)}</button>
+          ${region === 'all' ? '全国' : esc(region)}の雀荘をまわる　${yen(SCOUT_COST)}</button>`}
         ${flash ? `<div class="scFlash${flash.found ? '' : ' miss'}">${esc(flash.text)}</div>` : ''}
 
         <h2 class="scSecT">口説く<span>${found.length}人</span></h2>
+        ${hub ? `<p class="scQuiet">条件を満たしていれば、ここで契約できます。
+          条件が <b>イベント</b> の子は、事務所に届く依頼から。
+          遠征で「口説く」を選ぶと、現地で一局打ってから話をします。</p>` : ''}
         ${cards || '<p class="scQuiet">この地域に、まだ声をかけられる雀ドルはいません。雀荘をまわって探してください。</p>'}`;
     }
 

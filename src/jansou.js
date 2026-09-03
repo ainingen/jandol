@@ -636,6 +636,137 @@ const Jansou = (() => {
     return out;
   }
 
+  /* ---------- 代表が留守の日（office/spec.md §7.4） ----------
+     遠征中も店は毎日営業する。変わるのは二点だけ。
+
+       ・**代表戦（荒らし・果たし状）を留守番の子が打つ。**`simulateTable` に
+         固定し、プレイヤーは受けるかどうかも選ばない
+       ・**`joinNight` が効かない**（代表がいない）
+
+     **日ごとの再生はしない**（§7.5）。フロアもポップアップも出さず、
+     `computeDay` の結果を日ごとに積んで、帰った日の夜にまとめて出す。
+     だからここは DOM に触らない。締めは営業日と同じ `settle` を通る。
+
+     選べないぶんは既定で倒す（代理が現場で判断した、という扱い）：
+
+       ゲスト来店  ふつうに接客（もてなさない。金を出す判断は代表のもの）
+       卓の故障    払えるなら修理。払えなければ明日一卓閉める
+       荒らし      留守番の子が打つ。任せる子がいなければ警察を呼ぶ
+       祝儀・お忍び・取材  選択が要らないので settle がそのまま処理する */
+  function awayDayPlan(st, list, rng) {
+    rng = rng || Math.random;
+    const parlor = normalize(st.parlor);
+    const onDuty = parlorRoster(st, list);
+    const slotWorkers = [[], [], []];
+    onDuty.forEach((c) => {
+      shiftOf(parlor, c.id).forEach((on, i) => { if (on) slotWorkers[i].push(c); });
+    });
+    const dayWorkers = onDuty.filter((c) => shiftOf(parlor, c.id).some(Boolean));
+
+    let pullBonus = 0, closedTables = 0;
+    parlor.buffs.forEach((b) => {
+      if (b.kind === 'pull') pullBonus += b.val;
+      if (b.kind === 'closed') closedTables += b.val;
+    });
+
+    const day = computeDay({
+      tables: parlor.tables, interior: parlor.interior, auto: parlor.auto, sign: parlor.sign,
+      rep: parlor.rep,
+      slotPop: slotWorkers.map((w) => w.reduce((a, c) => a + (c.pop || 0), 0)),
+      slotWorkers: slotWorkers.map((w) => w.length),
+      pullBonus, closedTables,
+      playerNight: false,          // **代表がいないので joinNight は効かない**
+    }, rng);
+
+    const ev = pickEvent(st, parlor, dayWorkers, rng);
+    const rolls = {};
+    dayWorkers.forEach((c) => {
+      const n = shiftOf(parlor, c.id).filter(Boolean).length;
+      rolls[c.id] = [];
+      for (let i = 0; i < n; i++) rolls[c.id].push(rng() < 0.08 ? 1 : rng() < 0.30 ? 2 : rng() < 0.65 ? 3 : 4);
+    });
+
+    return {
+      st0: st, parlor, list, away: true,
+      slotWorkers, dayWorkers, day, ev, rolls,
+      fillers: [], challenge: null,
+      arashiTier: ev && ev.kind === 'arashi' && typeof JansouGuests !== 'undefined'
+        ? JansouGuests.arashiTier(rng) : 0,
+      closedTables, myTable: -1, tableIdx: [],
+      timeline: [], summary: null, faces: [], names: {}, tips: 0, combo: null,
+      /* 日当は契約基準（§6.3）。遠征中の同行者も所属なので払う */
+      wages: list.reduce((a, c) => a + wageOf(c), 0),
+      util: utilOf(parlor.tables),
+    };
+  }
+
+  /* 留守の日の結果。**乱数は simulateTable の中だけ**（代表戦の着順）。
+     deputy は `Office.deputyOf` が選んだ留守番の子。いなければ null */
+  function resolveAway(plan, deputy) {
+    const R = { extraMoney: 0, repDelta: 0, lines: [], favor: {}, buffsAdd: [],
+                extraPlace: {}, myLine: null, bottleMoney: 0,
+                treated: false, arashiFought: false, arashiWin: false,
+                bottleFought: false, bottleWon: false, bottles: [0, 0, 0, 0, 0, 0] };
+    const st0 = plan.st0, ev = plan.ev;
+    if (!ev) return R;
+
+    if (ev.kind === 'guest' && ev.chara) {
+      /* もてなすかどうかは金を出す判断なので、代表がいない日はしない */
+      const base = (st0.favor || {})[ev.chara.id] || 0;
+      R.favor[ev.chara.id] = Math.min(100, base + 4);
+      R.lines.push(`${ev.chara.name} が来店（好感度 +4）`);
+    } else if (ev.kind === 'kosho') {
+      if ((st0.money || 0) >= 50000) {
+        R.extraMoney -= 50000;
+        R.lines.push('壊れた卓を代理で修理した（−50,000円）');
+      } else {
+        R.buffsAdd.push({ kind: 'closed', val: 1, days: 1 });
+        R.repDelta -= 2;
+        R.lines.push('直す金が無く、明日は一卓閉めることにした（評判 −2）');
+      }
+    } else if (ev.kind === 'arashi' && ev.chara && typeof JansouGuests !== 'undefined') {
+      const tier = plan.arashiTier || 3;
+      const stock = plan.parlor.bottles[tier - 1] | 0;
+      const night = plan.day.slots[2].sales;
+      let outcome = 'police';
+      if (deputy) {
+        const mates = plan.dayWorkers.filter((c) => c.id !== deputy.id).slice(0, 2);
+        const table = [deputy, ev.chara].concat(mates);
+        while (table.length < 4) table.push(Object.assign({}, deputy, { id: 9400 + table.length }));
+        const rank = simulateTable(table, STYLES);
+        const hers = rank.find((r) => r.chara.id === deputy.id);
+        const his = rank.find((r) => r.chara.id === ev.chara.id);
+        outcome = hers && his && hers.place < his.place ? 'aceWin' : 'aceLose';
+      }
+      const res = JansouGuests.resolveBottle('arashi', tier, outcome, stock, { nightSales: night });
+      R.extraMoney += res.extraMoney; R.repDelta += res.repDelta;
+      R.bottleMoney += res.extraMoney;
+      R.bottles[tier - 1] += res.bottleDelta;
+      R.buffsAdd = R.buffsAdd.concat(res.buffs);
+      res.lines.forEach((l) => R.lines.push(l));
+      if (outcome === 'aceWin' || outcome === 'aceLose') {
+        R.arashiFought = true;
+        if (outcome === 'aceWin') R.arashiWin = true;
+      }
+      if (deputy) {
+        R.lines.push(`${deputy.name} が店を守った`);
+        /* 任された子には出番が付き、好感度が少し上がる（§7.4） */
+        const base = (st0.favor || {})[deputy.id] || 0;
+        R.favor[deputy.id] = Math.min(100, base + 2);
+      }
+    }
+    return R;
+  }
+
+  /* 留守の一日を回してセーブに書く。戻り値は営業日と同じ形 */
+  function runAwayDay(store, list, deputy) {
+    const st = store.get();
+    const plan = awayDayPlan(st, list);
+    const out = settle(plan, resolveAway(plan, deputy), st);
+    store.set(out.patch);
+    return { out, plan };
+  }
+
   /* ---------- 一日の締め（純関数） ----------
      plan と results だけから、セーブへの書き込みを組み立てる。
      **`parlor.day` が進むのはここ一箇所だけ。**乱数も Date も引かない。
@@ -1814,6 +1945,7 @@ const Jansou = (() => {
 
   return { mount, shiftOf, setShift, parlorRoster, computeDay, normalize, pickEvent, wageOf, utilOf,
            settle, closedDayPlan, closedDayResults, runClosedDay,
+           awayDayPlan, resolveAway, runAwayDay,
            blankMonth, normalizeMonth, accrue, closeMonth, renderMonth, showMonthReport, nextMonthNo,
            OPEN_COST, SLOTS, TABLE_COST, INTERIOR, AUTO, SIGN, MONTH_DAYS, MONTHS_KEPT };
 })();
