@@ -602,6 +602,7 @@ const Jansou = (() => {
 
      roster は呼ぶ側が渡す（`mount` の閉包と同じ形を外から作らないため） */
   function closedDayPlan(st, list) {
+    /* 日当の式は営業日と同じ（`prepareDay` の `wages`）。**契約基準** */
     const parlor = normalize(st.parlor);
     return {
       st0: st, parlor, list, closed: true,
@@ -1466,7 +1467,14 @@ const Jansou = (() => {
       return {
         st0, parlor, list, slotWorkers, dayWorkers, day, ev, rolls, fillers, challenge, arashiTier,
         closedTables, myTable, tableIdx, timeline, summary, faces, names, tips, combo,
-        wages: dayWorkers.reduce((a, c) => a + wageOf(c), 0),
+        /* **日当は契約基準。出勤の有無に関係なく、所属の全員に毎日払う**
+           （office/spec.md §6.3・§7.2）。以前は dayWorkers の合計だったが、
+           §7.2 が「日当は既に毎日払われているので、遠征中の人件費は
+           何も足さずに自動でかかる」と書いており、それには契約基準でないと
+           辻褄が合わない。店が無い日（§1.2）もすでに全員ぶん払っている。
+           **HANDOVER §4 の三局面はどれも全員が出勤しているので、
+           客も一日の利益も動かない**（tools/measure-jansou.js で確認済み） */
+        wages: list.reduce((a, c) => a + wageOf(c), 0),
         util: utilOf(parlor.tables),
       };
     }
@@ -1776,7 +1784,7 @@ const Jansou = (() => {
 
     /* ---------- 結果。時間帯の内訳は再生で見せたので、締めだけ（§12） ---------- */
     async function showResult(plan, results, out) {
-      const { day, dayWorkers, wages, util } = plan;
+      const { day, wages, util } = plan;
       const growthHTML = out.growth.length
         ? `<div class="jnRepGrowth">${out.growth.map((g) =>
             `<span>${esc(g.name)} +${g.gain.toFixed(1)}${g.promoted ? `　<em>${g.promoted}級に昇格</em>` : ''}</span>`
@@ -1791,7 +1799,7 @@ const Jansou = (() => {
           <span class="jnRepRow"><span>場代（${day.guests}人）</span><span></span><b>${yen(day.sales)}</b></span>
           ${out.extraMoney ? `<span class="jnRepRow"><span>臨時</span><span></span>
             <b class="${out.extraMoney >= 0 ? 'plus' : 'minus'}">${signedYen(out.extraMoney)}</b></span>` : ''}
-          <span class="jnRepRow"><span>日当（${dayWorkers.length}人）・家賃</span><span></span>
+          <span class="jnRepRow"><span>日当（所属${plan.list.length}人）・家賃</span><span></span>
             <b>−${yen(wages + util)}</b></span>
           ${evHTML}
           ${growthHTML}</span>`,

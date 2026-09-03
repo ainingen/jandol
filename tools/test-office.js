@@ -317,6 +317,7 @@ function eq(a, b, name) {
   /* 店が無いセーブで一日を回す */
   const a = JANDOLS[0], b = JANDOLS[1];
   const list = [a, b];
+  const plan0Wages = (l) => Jansou.closedDayPlan({ parlor: {} }, l).wages;
   const wages = list.reduce((x, c) => x + Jansou.wageOf(c), 0);
   ok(wages > 0, '日当は0円ではない');
 
@@ -337,6 +338,10 @@ function eq(a, b, name) {
   eq(st.parlor.log[st.parlor.log.length - 1].guests, 0, '日誌の客は0');
   eq(st.parlor.log[st.parlor.log.length - 1].sales, 0, '日誌の場代は0');
   eq(st.somethingFuture, 'あとから足したキー', '知らないキーが残る');
+
+  /* **日当は契約基準**（spec.md §6.3・§7.2）。出勤の有無に関係なく
+     所属の全員に払う。営業日も店が無い日も同じ式 */
+  eq(plan0Wages(list), wages, '日当は所属の全員ぶん');
 
   /* **家賃は掛からない。**店が無いのだから */
   ok(Jansou.utilOf(2) > 0, '営業日には家賃が掛かる（前提の確認）');

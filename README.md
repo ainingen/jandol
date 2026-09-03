@@ -143,6 +143,7 @@ docs/design/jansou/ 直営雀荘の設計一式（spec.md ＝リニューアル�
                     monthly.md ＝月末決算と月報）
 docs/design/office/ 事務所ハブと日進行の統一（spec.md ＝全5段階）
 tools/test-office.js 事務所の純関数テスト（node tools/test-office.js）
+tools/measure-jansou.js 直営店の経済を測る（HANDOVER §4 の表を作り直す）
 tools/test-jansou.js 雀荘の純関数テスト（node tools/test-jansou.js）
 tools/drive-jansou.js 雀荘をブラウザで自動で回す（node tools/drive-jansou.js --help）
 debug.html          開発用の入口。遊べる状態を作って本編へ入る（配布から外す）
@@ -224,7 +225,7 @@ src/debug.js        その中身。build.py は読まない（配布から外す
 | 成長曲線 | `src/tournament.js` の `GROWTH_CURVE` |
 | 雀荘の開店資金・場代・回転 | `src/jansou.js` の `OPEN_COST` `SLOTS` |
 | 雀荘の設備（卓・内装・卓の型・宣伝） | `src/jansou.js` の `TABLE_COST` `INTERIOR` `AUTO` `SIGN` |
-| 雀荘の日当・家賃 | `src/jansou.js` の `BASE_WAGE` `wageOf` `utilOf` |
+| 雀荘の日当・家賃 | `src/jansou.js` の `BASE_WAGE` `wageOf` `utilOf`（日当は**契約基準**。所属の全員に毎日払う） |
 | 雀荘のイベントの重みと発生率 | `src/jansou.js` の `pickEvent` と `SIGN` の `ev` |
 | ひと月の日数（`wageOf` の割る数と対） | `src/jansou.js` の `MONTH_DAYS` |
 | 月報を残す期の数 | `src/jansou.js` の `MONTHS_KEPT` |
