@@ -15,7 +15,7 @@
   --jnInk:#fff6e0; --jnSub:#eebee1; --jnPink:#ff56b2; --jnGold:#ffce50;
   --jnGreen:#96ffb4;
   margin:10px auto 0;width:max-content;max-width:100%;
-  font-family:'MaruUI',system-ui,sans-serif;
+  font-family:'Maru',system-ui,sans-serif;
 }
 
 /* ---------- 上部バー ---------- */
@@ -135,7 +135,7 @@
   --jnPink:#ff56b2; --jnGold:#ffce50;
   --jnCat:#60e8ff;
   max-width:400px;border:3px solid var(--jnCat);border-radius:14px;overflow:hidden;
-  background:var(--jnPanel);color:var(--jnInk);font-family:'MaruUI',system-ui,sans-serif;
+  background:var(--jnPanel);color:var(--jnInk);font-family:'Maru',system-ui,sans-serif;
   box-shadow:0 12px 40px rgba(0,0,0,.6);
 }
 .jnCardHead{
@@ -180,7 +180,7 @@
 .jnBottle{
   --jnPanel:#542c4c; --jnInk:#fff6e0; --jnSub:#eebee1; --jnPink:#ff56b2; --jnGold:#ffce50;
   max-width:420px;border:3px solid var(--jnGold);border-radius:14px;overflow:hidden;
-  background:var(--jnPanel);color:var(--jnInk);font-family:'MaruUI',system-ui,sans-serif;
+  background:var(--jnPanel);color:var(--jnInk);font-family:'Maru',system-ui,sans-serif;
   box-shadow:0 12px 40px rgba(0,0,0,.6);
 }
 .jnBtHead{
