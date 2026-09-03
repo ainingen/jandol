@@ -175,6 +175,9 @@
 .ofShopFoundName{font-family:var(--maru);font-size:14px;color:var(--ivory)}
 .ofShopFoundName i{font-style:normal;font-size:11px;color:var(--gold);margin-left:6px}
 .ofShopFoundSub{font-size:10.5px;color:var(--muted)}
+/* 「あの癖はこの打ち筋だった」の一言。観察の報酬なので、
+   打ち筋の行より目を引く色にする（scout/spec.md §4.4） */
+.ofShopFoundTell{font-size:10.5px;color:var(--gold);line-height:1.6}
 .ofShopFoundCopy{font-size:11px;color:var(--ivory-2);line-height:1.6}
 
 .ofShopNote{

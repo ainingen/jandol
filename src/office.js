@@ -386,6 +386,9 @@ const Office = (() => {
        （`idle()` は rAF を回しっぱなしにする） */
     let shopCtl = null;
     let shopNote = '';
+    /* 見つけた子の「癖はこの打ち筋だった」の一言（`scout/spec.md` §4.4 の末尾）。
+       **観察の報酬を言葉にするためだけのもの**で、判定には効かない */
+    let shopTell = '';
     /* 見つけた子。**シルエットが顔に変わるのはここ。**
        床のスプライトはドット絵なので、写真は札で出す */
     let shopFound = null;
@@ -427,7 +430,7 @@ const Office = (() => {
       if (firedFor !== mark) { firedFor = mark; fireOffers(store); }
       /* 遠征中なら、その日の店を用意する（scout/spec.md §6.2） */
       const t0 = tripOf(store.get());
-      if (t0 && ensureShop(store, t0, mark)) { shopNote = ''; shopFound = null; }
+      if (t0 && ensureShop(store, t0, mark)) { shopNote = ''; shopFound = null; shopTell = ''; }
       const st = store.get();
       const pref = prefOf(st);
       const parlor = parlorOf(st);
@@ -466,6 +469,7 @@ const Office = (() => {
               <span class="ofShopFoundName">${esc(shopFound.name)}
                 <i>${esc(shopFound.rank)}級</i></span>
               <span class="ofShopFoundSub">${esc(STYLES[shopFound.style].name)}　${esc(shopFound.region)}</span>
+              ${shopTell ? `<span class="ofShopFoundTell">${esc(shopTell)}</span>` : ''}
               <span class="ofShopFoundCopy">「${esc(shopFound.copy)}」</span>
             </span>
           </div>` : ''}
@@ -842,6 +846,7 @@ const Office = (() => {
       const r = callOn(store, idx);
       if (!r) return;
       shopFound = r.found || null;
+      shopTell = r.found ? tellOf(r.seat, r.found) : '';
       shopNote = r.found
         ? `${r.found.name} を見つけた。名鑑に載った。　あと ${r.calls} 回`
         : `ただの客だった。　あと ${r.calls} 回`;
@@ -857,6 +862,20 @@ const Office = (() => {
         }
       }
       render();
+    }
+
+    /* 「あの癖はこの打ち筋だった」の一言（`scout/spec.md` §4.4）。
+       **札に出る打ち筋そのものは変えない。**観察が当たっていたことを
+       言葉にして添えるだけ——見てから押した人にだけ意味が出る。
+
+       先頭の癖が**打ち筋から来たほう**（`ScoutShop.quirksFor` が
+       そう並べている）。二つめは系統を埋めるためのものなので使わない */
+    function tellOf(seat, found) {
+      const q = ((seat && seat.quirk) || [])[0];
+      const def = q && ScoutShop.QUIRK_BY_KEY[q];
+      const style = found && STYLES[found.style];
+      if (!def || !style) return '';
+      return `${def.tell}、${style.name}だったから。`;
     }
 
     /* ---------- 遠征に出る（spec.md §7.1） ---------- */

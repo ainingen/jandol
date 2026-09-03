@@ -7,10 +7,12 @@
      ScoutShop.buildShop(st, trip, rng) -> shop     **純関数**
      ScoutShop.palOf(typeKey)           -> PAL への浅い上書き
      ScoutShop.pickType(scale, rng)     -> 店の型
+     ScoutShop.quirkOf(styleKey)        -> 癖のキー（打ち筋20種 → 癖6種）
+     ScoutShop.quirksFor(styleKey, rng) -> 席一つぶんの癖の配列
 
-   設計は docs/design/scout/spec.md。第一段（A4.5-1）の範囲：
-   **店の型・色・誰がいるか・声をかける回数だけ。**
-   癖（§4）と交渉（§5）はまだ入っていない。
+   設計は docs/design/scout/spec.md。ここまでの範囲：
+   **店の型・色・誰がいるか・声をかける回数**（A4.5-1）と
+   **癖**（A4.5-2。§4.4）。交渉（§5）はまだ入っていない。
 
    ------------------------------------------------------------
    遠征先の店は帳簿を持たない（§1）
@@ -144,6 +146,74 @@ const ScoutShop = (() => {
   const CALLS_PER_DAY = 3;
 
   /* ------------------------------------------------------------
+     癖（spec.md §4.4）— A4.5-2
+
+     **打ち筋20種を癖6種へ写す。写像は全単射にしない。**
+     一対一だと観察が対応表を引く作業になる。6種に束ねると
+     「攻め型の誰かが3人いる」までしか分からず、そこから先は選ぶことになる
+     （§4.4「これは妥協ではなく設計」）。
+
+     癖には**二つの系統**がある。
+
+       beat … 打牌の2フレームの振りかた（`fast` / `slow` / `still`）
+       mark … 12×16 の中に置く1〜3ドットの印（`bou` / `meld` / `guard`）
+
+     **雀ドルは beat と mark が一つずつ揃う（二拍）。
+     ただの客はどちらか一つだけ（一拍）。**
+
+     系統を分けたのは、**二つ付いたときに互いを打ち消さないため。**
+     beat を二つ持たせると（たとえば `fast` と `slow`）片方しか描けず、
+     ただの客と見分けが付かない——「二拍そろう」が目で判る形に
+     なっているのは、この分けかたのおかげ。
+  ------------------------------------------------------------ */
+  const QUIRKS = [
+    { key: 'fast',  kind: 'beat', name: '手が速い',       tell: '手が速かったのは' },
+    { key: 'slow',  kind: 'beat', name: '長考する',       tell: '長考していたのは' },
+    { key: 'still', kind: 'beat', name: '動かない',       tell: '動きが少なかったのは' },
+    { key: 'bou',   kind: 'mark', name: '立直棒が早い',   tell: '立直棒を早くから置いていたのは' },
+    { key: 'meld',  kind: 'mark', name: '鳴きが多い',     tell: '鳴きが多かったのは' },
+    { key: 'guard', kind: 'mark', name: '河が横に伸びる', tell: '河が横に伸びていたのは' },
+  ];
+  const QUIRK_BY_KEY = {};
+  QUIRKS.forEach((q) => { QUIRK_BY_KEY[q.key] = q; });
+  const BEATS = QUIRKS.filter((q) => q.kind === 'beat').map((q) => q.key);
+  const MARKS = QUIRKS.filter((q) => q.kind === 'mark').map((q) => q.key);
+
+  /* 打ち筋20種 → 癖6種（spec.md §4.4 の表そのまま）。
+     **`characters.js` の STYLES の20キーを漏れなく埋めること。**
+     `tools/test-scout.js` が20種すべて写ることを見ている */
+  const STYLE_QUIRK = {
+    speed: 'fast',   lasukai: 'fast',  balance: 'fast',
+    judge: 'slow',   read: 'slow',     perfect: 'slow',
+    menzen: 'bou',   oya: 'bou',       shoubu: 'bou',   top: 'bou',
+    naki: 'meld',    toitoi: 'meld',   some: 'meld',
+    wall: 'guard',   betaori: 'guard',
+    chiitoi: 'still', mura: 'still',   mental: 'still', oorasu: 'still', gyakkyo: 'still',
+  };
+  function quirkOf(styleKey) { return STYLE_QUIRK[styleKey] || null; }
+
+  /* ただの客に癖が付く割合。**初期値。§8 で実機を見てから決める** */
+  const PLAIN_QUIRK = 0.25;
+
+  /* 席一つぶんの癖を配る（純関数。`rng` は buildShop から）。
+     `styleKey` が無ければただの客。
+
+     **打ち筋から来るほうを必ず先頭に置く**——声をかけたあとに
+     「あの癖はこの打ち筋だった」と結んで札に出すため（§4.4 の末尾） */
+  function quirksFor(styleKey, rng) {
+    if (!styleKey) {
+      if (rng() >= PLAIN_QUIRK) return [];
+      const pool = rng() < 0.5 ? BEATS : MARKS;
+      return [pool[Math.floor(rng() * pool.length)]];
+    }
+    const own = quirkOf(styleKey);
+    if (!own) return [];
+    /* 二つめは**必ずもう一方の系統から**。同じ系統だと片方が描けない */
+    const other = QUIRK_BY_KEY[own].kind === 'beat' ? MARKS : BEATS;
+    return [own, other[Math.floor(rng() * other.length)]];
+  }
+
+  /* ------------------------------------------------------------
      店の名前。`jansou-guests.js` の姓の表を借りて「雀荘 ○○」にする。
      **新しい名前の表を作らない**（字が増えるとフォントを回し直すことになる）
   ------------------------------------------------------------ */
@@ -209,7 +279,7 @@ const ScoutShop = (() => {
     for (let ti = 0; ti < tables; ti++) {
       for (let si = 0; si < 4; si++) {
         if (rng() > fill) continue;
-        seats.push({ table: ti, seat: si, typeKey: weighted(pool, rng), charaId: null });
+        seats.push({ table: ti, seat: si, typeKey: weighted(pool, rng), charaId: null, quirk: null });
       }
     }
 
@@ -229,7 +299,14 @@ const ScoutShop = (() => {
       if (!free.length) break;
       const s = free[Math.floor(rng() * free.length)];
       s.charaId = c.id;
+      /* **雀ドルは二拍**（打ち筋から来る癖＋もう一方の系統の癖。§4.4） */
+      s.quirk = quirksFor(c.style, rng);
     }
+
+    /* --- 残りはただの客。**一部にだけ癖が付く**（§4.3） ---
+       「癖がある＝雀ドル」にすると観察が完全情報になり、
+       3回の上限も見抜く余地も意味を失う。**打てる常連はいる** */
+    seats.forEach((s) => { if (!s.quirk) s.quirk = quirksFor(null, rng); });
 
     return {
       day: -1,                      // 呼ぶ側が parlor.day を入れる（引き直しの印）
@@ -272,7 +349,11 @@ const ScoutShop = (() => {
   function stateOf(shop, st) {
     return {
       parlor: shop.parlor,
-      guests: shop.seats.map((s) => ({ table: s.table, seat: s.seat, typeKey: s.typeKey })),
+      /* **癖はここでだけ渡す。**自分の店の `Jansou` は `guests` に
+         `quirk` を入れないので、床は何も描かない（§4 の「自分の店には出さない」） */
+      guests: shop.seats.map((s) => ({
+        table: s.table, seat: s.seat, typeKey: s.typeKey, quirk: (s.quirk || []).slice(),
+      })),
       staff: [],
       closedTables: 0, myTable: -1,
       slot: 2, sales: 0,
@@ -293,7 +374,9 @@ const ScoutShop = (() => {
 
   return {
     SHOP_TYPES, TYPE_BY_KEY, PALETTES, ANY_CHANCE, TWO_CHANCE, CALLS_PER_DAY,
+    QUIRKS, QUIRK_BY_KEY, STYLE_QUIRK, BEATS, MARKS, PLAIN_QUIRK,
     seeded, palOf, pickType, jandolCount, nameOf, buildShop, stateOf, seatOfGuestId,
+    quirkOf, quirksFor,
   };
 })();
 

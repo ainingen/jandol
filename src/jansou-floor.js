@@ -1442,18 +1442,74 @@ const JansouFloor = (() => {
       });
     }
 
+    /* ---------- 癖（`scout/spec.md` §4.4。遠征先の店だけ） ----------
+       **`live.clock` だけから決める。乱数を混ぜない**（§4.2。常時アニメと同じ扱い）。
+       同じ時刻に描き直せば同じ絵になるので、朝の描き直しで癖が動かない。
+
+       系統は二つ。**beat は振りかた、mark は印**で、互いを潰さない
+       （`ScoutShop.QUIRKS` の `kind`）。雀ドルは二つ、ただの客は一つか無し。 */
+    const BEAT_DEFAULT = 1.6;      // 既定の打牌。3拍に1回なので周期は約1.9秒
+    const BEAT_FAST = 6.7;         // 手が速い。同じ勘定で約0.45秒
+    const SLOW_CYCLE = 3.6;        // 長考。3.0秒止まって、残りの0.6秒で二拍だけ振る
+
+    function beatFrame(quirk, c, ph) {
+      const has = (k) => quirk && quirk.indexOf(k) >= 0;
+      if (has('still')) return 0;
+      if (has('fast')) return (Math.floor(c * BEAT_FAST + ph) % 3) === 0 ? 1 : 0;
+      if (has('slow')) {
+        const t = (c + ph) % SLOW_CYCLE;
+        return t > 3.0 && (Math.floor(t * 6) % 2) === 0 ? 1 : 0;
+      }
+      return (Math.floor(c * BEAT_DEFAULT + ph) % 3) === 0 ? 1 : 0;
+    }
+
+    /* 印は 12×16 の中に収める（§4.4「1〜3ドットの印」）。
+       **席の向きでは動かさない。**この大きさでは「体のどこに付いているか」が
+       読み取れる唯一の手がかりなので、どの席でも同じ場所に出す。
+
+       色は `PAL`（＝ PAL0）から取る。**`pal` を使わないこと**——
+       店の型で印の色まで変わると、型をまたいで癖を覚えられない */
+    function drawQuirkMark(quirk, p, c, ph) {
+      const x = Math.round(p.x), y = Math.round(p.y);
+      if (quirk.indexOf('bou') >= 0) {
+        /* 立直棒。足元に白い3ドット。真ん中の1ドットだけ赤くして
+           「河が伸びる」（同じ場所に出る）と形で見分けられるようにする */
+        actG.appendChild(rect(x + 4, y + SEAT_H, 3, 1, PAL.tile));
+        actG.appendChild(rect(x + 5, y + SEAT_H, 1, 1, PAL.felt));
+      }
+      if (quirk.indexOf('meld') >= 0) {
+        /* 晒し牌。体の右に3×2。**時々1枚増える**（左へ伸ばす。箱から出さない） */
+        const more = (Math.floor(c * 0.5 + ph) % 4) === 0 ? 1 : 0;
+        actG.appendChild(rect(x + 9 - more, y + 10, 3 + more, 2, PAL.tile));
+        actG.appendChild(rect(x + 9 - more, y + 11, 3 + more, 1, PAL.tileLow));
+      }
+      if (quirk.indexOf('guard') >= 0) {
+        /* 河が横に伸びる。足元の列が1ドットずつ伸びて、5つで戻る */
+        const n = 1 + (Math.floor(c * 1.2 + ph) % 5);
+        for (let i = 0; i < n; i++) actG.appendChild(rect(x + 2 + i * 2, y + SEAT_H, 1, 1, PAL.tileLow));
+      }
+    }
+
     /* ---------- 役者（毎フレーム組み直す） ---------- */
     function drawActors() {
       while (actG.firstChild) actG.removeChild(actG.firstChild);
       const c = live.clock;
 
-      /* 座っている客。席番号を位相にして打牌の手を動かす（時刻だけから） */
+      /* 座っている客。席番号を位相にして打牌の手を動かす（時刻だけから）。
+         `g.quirk` があれば癖で振りかたが変わり、印が足される
+         （遠征先の店だけ。`scout/spec.md` §4.4） */
       live.seated.forEach((g) => {
         g.seats.forEach((s, j) => {
           const p = seatPos(s.table, s.seat);
           if (!p) return;
-          const frame = (Math.floor(c * 1.6 + (s.table * 4 + s.seat) * 0.7) % 3) === 0 ? 1 : 0;
-          putGuest(g.look || g.typeKey, p.x, p.y, frame);
+          const ph = (s.table * 4 + s.seat) * 0.7;
+          const q = g.quirk;
+          const frame = beatFrame(q, c, ph);
+          /* `still` は打牌を振らないかわりに肩が1ドット上下する
+             ——**動かないことが見えるように**、まったくの静止にはしない */
+          const lift = q && q.indexOf('still') >= 0 ? (Math.floor(c * 1.1 + ph) % 2) : 0;
+          putGuest(g.look || g.typeKey, p.x, p.y - lift, frame);
+          if (q) drawQuirkMark(q, p, c, ph);
         });
       });
       /* 歩いている客（入る／出る）。足は進み具合から */
@@ -1933,7 +1989,11 @@ const JansouFloor = (() => {
       live.speed = parlor.speed || 1;
       buildRoom();
       (st.guests || []).forEach((g, i) => {
-        live.seated.set('p' + i, { typeKey: g.typeKey, count: 1, seats: [{ table: g.table, seat: g.seat }] });
+        /* `quirk` は遠征先の店だけが渡す（`ScoutShop.stateOf`）。
+           自分の店の `Jansou` は入れないので null のまま＝何も描かれない */
+        live.seated.set('p' + i, { typeKey: g.typeKey, count: 1,
+          quirk: (g.quirk && g.quirk.length) ? g.quirk : null,
+          seats: [{ table: g.table, seat: g.seat }] });
       });
       /* スタッフは空いている席に。埋まっていれば通路に */
       const used = new Set((st.guests || []).map((g) => g.table + ':' + g.seat));

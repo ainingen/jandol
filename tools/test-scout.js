@@ -1,13 +1,13 @@
 #!/usr/bin/env node
 /*
-  遠征先の店の純関数テスト（A4.5-1）
+  遠征先の店の純関数テスト（A4.5-1／A4.5-2）
 
     node tools/test-scout.js
 
   ここに書くのは **DOMに触らない関数だけ**（test-jansou.js / test-office.js と同じ方針）。
   絵そのものはブラウザ検証（docs/design/scout/spec.md §9）。
 
-  A4.5-2（癖）と A4.5-3（交渉）が入ったら、spec.md §9 の残りをここに足すこと。
+  A4.5-3（交渉）が入ったら、spec.md §9 の残りをここに足すこと。
 */
 'use strict';
 
@@ -372,6 +372,120 @@ function fakeStore(st) {
   const p = Jansou.normalize({ day: 3, shop: { type: 'lux' } });
   ok(p.shop === undefined, 'normalize は parlor の下の shop を捨てる（だから置かない）');
   ok(store.get().trip.shop, 'shop は trip の下にある');
+}
+
+/* ============================================================
+   癖（spec.md §4.4）— A4.5-2
+   ============================================================ */
+{
+  const Q = ScoutShop;
+  eq(Q.QUIRKS.length, 6, '癖は6種');
+  eq(new Set(Q.QUIRKS.map((q) => q.key)).size, 6, 'key が重複していない');
+  eq(Q.BEATS.length + Q.MARKS.length, 6, '系統は beat と mark で尽きる');
+  ok(Q.BEATS.length === 3 && Q.MARKS.length === 3, '系統は3つずつ');
+  ok(Q.QUIRKS.every((q) => q.name && q.tell), '名前と一言がそろっている');
+
+  /* --- 写像は関数で、全単射でない（§4.4） --- */
+  const styles = Object.keys(STYLES);
+  eq(styles.length, 20, '打ち筋は20種');
+  ok(styles.every((k) => Q.quirkOf(k)), '打ち筋20種すべてが癖に写る');
+  ok(styles.every((k) => Q.QUIRK_BY_KEY[Q.quirkOf(k)]), '写った先は6種のいずれか');
+  ok(styles.every((k) => Q.quirkOf(k) === Q.quirkOf(k)), '写像は関数（一つの打ち筋に癖は一つ）');
+  eq(new Set(styles.map((k) => Q.quirkOf(k))).size, 6, '6種すべてに誰かが写る');
+  /* **ここが設計の要**。一対一だと観察が対応表を引く作業になる */
+  ok(styles.length > 6, '20 → 6 なので全単射ではない');
+  const per = {};
+  styles.forEach((k) => { const q = Q.quirkOf(k); per[q] = (per[q] || 0) + 1; });
+  ok(Object.keys(per).every((q) => per[q] >= 2), '癖ごとに打ち筋が2つ以上束なっている',
+     JSON.stringify(per));
+  eq(Q.quirkOf('しらない打ち筋'), null, '知らない打ち筋は null');
+
+  /* --- 一席ぶんの配り（雀ドルは二拍・ただの客は一拍） --- */
+  const kindOf = (k) => Q.QUIRK_BY_KEY[k].kind;
+  styles.forEach((k) => {
+    const q = Q.quirksFor(k, ScoutShop.seeded(k.length * 31 + 7));
+    ok(q.length === 2, '雀ドルは二拍そろう（' + k + '）', JSON.stringify(q));
+    eq(q[0], Q.quirkOf(k), '先頭は打ち筋から来た癖（' + k + '）');
+    ok(kindOf(q[0]) !== kindOf(q[1]), '二つは別の系統（' + k + '）', JSON.stringify(q));
+  });
+
+  /* ただの客。**割合はここでは固定しない**（§8 で実機を見てから決める）。
+     見るのは「0本か1本しか付かない」ことと「両方の系統が出る」ことだけ */
+  {
+    let none = 0, one = 0, other = 0;
+    const seen = new Set();
+    for (let i = 0; i < 4000; i++) {
+      const q = Q.quirksFor(null, ScoutShop.seeded(i * 13 + 1));
+      if (q.length === 0) none++;
+      else if (q.length === 1) { one++; seen.add(q[0]); }
+      else other++;
+    }
+    eq(other, 0, 'ただの客に二拍は付かない');
+    ok(none > 0 && one > 0, '付かない客と付く客が両方いる');
+    eq(seen.size, 6, 'ただの客の癖も6種すべて出る（雀ドル専用の癖を作らない）');
+  }
+
+  /* --- 店の中で（§4.3「癖がある＝雀ドル」にしない） --- */
+  {
+    const st = blank();
+    st.discovered = [];
+    const trip = { pref: 'fukuoka', purpose: 'find', days: 3, dayLeft: 3 };
+    const shop = ScoutShop.buildShop(st, trip, ScoutShop.seeded(4242));
+    ok(shop.seats.length > 0, '席がある');
+    ok(shop.seats.every((s) => Array.isArray(s.quirk)), '全席が癖の配列を持つ（無しは空配列）');
+    shop.seats.forEach((s) => {
+      if (s.charaId != null) ok(s.quirk.length === 2, '雀ドルの席は二拍', JSON.stringify(s.quirk));
+      else ok(s.quirk.length <= 1, 'ただの客の席は一拍か無し', JSON.stringify(s.quirk));
+    });
+    /* 雀ドルの癖の先頭は、その子の打ち筋から来ていること */
+    const all = JANDOLS.concat(FREE_AGENTS);
+    shop.seats.filter((s) => s.charaId != null).forEach((s) => {
+      const c = all.find((x) => x.id === s.charaId);
+      eq(s.quirk[0], ScoutShop.quirkOf(c.style), '先頭は打ち筋から（' + c.name + '）');
+    });
+
+    /* **同じ朝を描き直しても癖の配置が変わらない**（朝に一度だけ引く） */
+    const again = ScoutShop.buildShop(st, trip, ScoutShop.seeded(4242));
+    eq(JSON.stringify(again.seats), JSON.stringify(shop.seats), '同じ種なら席も癖も同じ');
+    const other = ScoutShop.buildShop(st, trip, ScoutShop.seeded(4243));
+    ok(JSON.stringify(other.seats) !== JSON.stringify(shop.seats), '種が違えば変わる');
+
+    /* 床へ渡る形 */
+    const state = ScoutShop.stateOf(shop, st);
+    ok(state.guests.every((g) => Array.isArray(g.quirk)), '床には癖の配列が渡る');
+    eq(state.guests.length, shop.seats.length, '席の数だけ渡る');
+    /* 渡したあとに触っても店が変わらない（写しを渡している） */
+    state.guests[0].quirk.push('fast');
+    eq(shop.seats[0].quirk.length, state.guests[0].quirk.length - 1, '床へ渡すのは写し');
+  }
+
+  /* --- **自分の店の床には出さない**（§4） ---
+     `jansou.js` は `guests` に `quirk` を入れない。入れた瞬間に
+     自分の店の客にまで印が付くので、機械的に見て固定しておく
+     （`test-office.js` が依頼の `when` を見ているのと同じ形） */
+  {
+    const src = require('fs').readFileSync(__dirname + '/../src/jansou.js', 'utf8');
+    ok(!/quirk/.test(src), 'jansou.js は quirk を扱わない（自分の店の床には出ない）');
+  }
+
+  /* --- ただの客にも癖が付いていること（複数の店で見る） ---
+     ここが崩れると観察が完全情報になり、3回の上限が意味を失う（§4.3） */
+  {
+    let plainWithQuirk = 0, plainSeats = 0;
+    for (let d = 0; d < 60; d++) {
+      const st = blank();
+      const trip = { pref: 'tokyo', purpose: 'find', days: 3, dayLeft: 3 };
+      const shop = ScoutShop.buildShop(st, trip, ScoutShop.seeded(d * 7919 + 11));
+      shop.seats.forEach((s) => {
+        if (s.charaId != null) return;
+        plainSeats++;
+        if (s.quirk.length) plainWithQuirk++;
+      });
+    }
+    ok(plainSeats > 100, 'ただの客の席がじゅうぶんある', String(plainSeats));
+    ok(plainWithQuirk > 0, '**ただの客にも癖が付く**（癖がある＝雀ドルではない）');
+    ok(plainWithQuirk < plainSeats, '全員に付くわけでもない');
+  }
 }
 
 /* ============================================================ */
