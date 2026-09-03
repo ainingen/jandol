@@ -27,6 +27,7 @@ global.JansouGuests = require('../src/jansou-guests.js').JansouGuests;
 global.JansouFloor = require('../src/jansou-floor.js').JansouFloor;
 global.Jansou = require('../src/jansou.js').Jansou;
 global.Offers = require('../src/offers.js').Offers;
+global.SERIFU = require('../src/serifu.js').SERIFU;
 const { ScoutShop } = require('../src/scoutshop.js');
 global.ScoutShop = ScoutShop;
 const { Office } = require('../src/office.js');
@@ -485,6 +486,167 @@ function fakeStore(st) {
     ok(plainSeats > 100, 'ただの客の席がじゅうぶんある', String(plainSeats));
     ok(plainWithQuirk > 0, '**ただの客にも癖が付く**（癖がある＝雀ドルではない）');
     ok(plainWithQuirk < plainSeats, '全員に付くわけでもない');
+  }
+}
+
+/* ============================================================
+   交渉（spec.md §5）— A4.5-3
+   ============================================================ */
+{
+  const all = JANDOLS.concat(FREE_AGENTS);
+
+  /* --- セリフ。3場面 × 19種 × 2本が埋まっているか（§5.4） --- */
+  {
+    const SC = ['scoutMeet', 'scoutWin', 'scoutLose'];
+    const keys = Object.keys(SERIFU.LINES);
+    eq(keys.length, 19, 'chara は19種');
+    let holes = [];
+    keys.forEach((k) => SC.forEach((sc) => {
+      const v = SERIFU.LINES[k][sc];
+      if (!Array.isArray(v) || v.length < 2 || v.some((x) => typeof x !== 'string' || !x.trim())) {
+        holes.push(k + '/' + sc);
+      }
+    }));
+    eq(holes.length, 0, '3場面が19種すべて埋まっている（空文字なし）', holes.slice(0, 4).join(' '));
+    SC.forEach((sc) => ok(Array.isArray(SERIFU.PLAYER_LINES[sc]) && SERIFU.PLAYER_LINES[sc].length,
+      'FALLBACK にも ' + sc + ' がある（知らない chara で null にならない）'));
+    /* **条件の文面をセリフに書かない**（§5.4）。`RULES` の detail が正 */
+    const flat = JSON.stringify(SERIFU.LINES);
+    ok(!/事務所ランク\d/.test(flat), 'セリフに「事務所ランク○」を書いていない');
+    ok(!/必要です/.test(flat), 'セリフに条件文（「〜が必要です」）を書いていない');
+  }
+
+  /* --- 好感度の値引き（§5.3） --- */
+  {
+    const c = all.find((x) => x.contract === 'free') || all[0];
+    const zero = { favor: {} };
+    const full = { favor: { [c.id]: 100 } };
+    const a0 = Scout.costOf(c, zero), a1 = Scout.costOf(c, full);
+    eq(a1 * 2, a0, 'favor 0 と 100 で契約金が2倍違う（満額で半額）',
+       a0 + ' / ' + a1);
+    eq(Scout.costOf(c), a0, 'st を渡さなければ素の額');
+    /* 途中の値も線形（favor/200） */
+    eq(Scout.costOf(c, { favor: { [c.id]: 50 } }), Math.round(a0 * 0.75), 'favor 50 で 3/4');
+    /* **緩むのは金だけ。**格の条件は動かない */
+    const poor = { agency: 1, money: 0, favor: { [c.id]: 100 }, records: {}, beaten: [] };
+    const v = Scout.evaluate(all.find((x) => x.rank === 'S'), poor, []);
+    ok(!v.ok, '好感度が満額でも、事務所が小さければ通らない');
+    ok(/事務所ランク/.test(v.detail), 'そのときの detail は格の話');
+  }
+
+  /* --- 交渉の一行は「性格の一言」＋「既存の detail」（§5.4） --- */
+  {
+    const c = all[0];
+    const v = { ok: false, detail: 'ここが RULES の detail です。', cost: 1234 };
+    const n = Office.negotiate(c, v, 'いいでしょう。話くらいは');
+    eq(n.detail, v.detail, '交渉の文面は RULES の detail をそのまま持つ');
+    eq(n.line, 'いいでしょう。話くらいは', '性格の一言はそのまま');
+    eq(n.ok, false, 'ok はそのまま');
+    eq(Office.negotiate(c, { ok: true, detail: '', cost: 0 }, 'x').detail, '',
+       '満たしていれば条件文は出さない');
+    /* **条件文を office.js に書き写していないこと。**
+       書き写すと片方を直したときに必ずずれる（`RULES.event` で一度通った話） */
+    /* **コメントは外して見る。**「条件文をここに書くな」という注意書き自体が
+       条件文を例に挙げているので、素の本文で見ると必ず引っかかる */
+    const code = require('fs').readFileSync(__dirname + '/../src/office.js', 'utf8')
+      .replace(/\/\*[\s\S]*?\*\//g, '');
+    ok(!/事務所ランク/.test(code), 'office.js が「事務所ランク○」を書いていない');
+    ok(!/で優勝すると/.test(code), 'office.js が大会の条件文を書いていない');
+    ok(!/話が早くなります/.test(code), 'office.js が同郷の条件文を書いていない');
+    ok(!/必要です/.test(code), 'office.js が「〜が必要です」を書いていない');
+  }
+
+  /* --- 好感度は勝っても負けても積む（§5.1 の 5） --- */
+  {
+    eq(Office.favorGain(true), Office.FAVOR_GAIN.win, '勝ったときの積み');
+    eq(Office.favorGain(false), Office.FAVOR_GAIN.lose, '負けたときの積み');
+    ok(Office.favorGain(false) > 0, '**負けても favor が積まれる**（空手で帰らせない）');
+    ok(Office.favorGain(true) > Office.favorGain(false), '勝ったほうが積む');
+    const st = { favor: { 7: 3 } };
+    eq(Office.addFavor(st, 7, false)[7], 3 + Office.favorGain(false), '負けでも足される');
+    eq(Office.addFavor({ favor: {} }, 7, true)[7], Office.favorGain(true), '無いところからでも積む');
+    eq(Office.addFavor({ favor: { 7: 98 } }, 7, true)[7], 100, '上限は100');
+    eq(st.favor[7], 3, '元の表は書き換えない（純関数）');
+  }
+
+  /* --- 課題は相手ごとに一枠（§5.2） --- */
+  {
+    const c = all[5];
+    const q = Offers.questFor(c.id);
+    ok(q, '相手ごとの課題がある');
+    eq(q.kind, 'quest', "kind は 'quest'");
+    eq(q.slot, 'quest:' + c.id, 'slot は相手ごと');
+    eq(q.days, 0, '日は使わない');
+    eq(q.when(), false, '**when は常に偽**（fire では届かない。積むのは push）');
+
+    let st = { offers: [], favor: {}, agency: 1, money: 0, discovered: [], contracted: [] };
+    st.offers = Offers.push(st, q.id);
+    eq(st.offers.length, 1, '一度目で一件');
+    st.offers = Offers.push(st, q.id);
+    eq(st.offers.length, 1, '**二度失敗しても二件にならない**（slot で上書き）');
+    eq(st.offers[0].id, q.id, '入っているのはその相手の課題');
+    /* 別の相手なら増える */
+    const c2 = all[6];
+    st.offers = Offers.push(st, Offers.questFor(c2.id).id);
+    eq(st.offers.length, 2, '別の相手の課題は別枠');
+
+    /* 契約できたら落ちる */
+    const after = Office.dropQuest(st, c.id);
+    eq(after.length, 1, '契約した相手の課題は落ちる');
+    eq(after[0].id, Offers.questFor(c2.id).id, '落ちるのはその相手のぶんだけ');
+
+    /* `fire` は課題を引かない */
+    const fired = Offers.fire({ offerFired: [], offers: [], officePref: 'tokyo',
+      contracted: [], discovered: [], favor: {}, records: {}, agency: 1 }, [], () => 0.5);
+    eq(fired.filter((o) => o.kind === 'quest').length, 0, 'fire は課題を引かない');
+
+    /* 見出しと文面。**条件は evaluate から引く**（二か所に書かない） */
+    eq(Offers.titleOf({ id: q.id }), c.name + 'の課題', '見出しは「○○の課題」');
+    const poor = { agency: 1, money: 0, favor: {}, records: {}, beaten: [], contracted: [] };
+    const v = Scout.evaluate(c, poor, []);
+    const text = Offers.textOf({ id: q.id }, poor, []);
+    ok(text.indexOf(c.name) >= 0, '文面に相手の名前が入る');
+    if (!v.ok) ok(text.indexOf(v.detail) >= 0, '文面に RULES の detail がそのまま入る', text);
+    /* 課題の定義に文面を持たせていない（持たせると二重になる） */
+    eq(q.text, '', '課題の定義は文面を持たない');
+    ok(!q.payload.detail, '課題の payload に detail を焼き込んでいない');
+  }
+
+  /* --- 課題を果たしたあとなら evaluate が通る（§5.1 の 3） ---
+     条件は `RULES` のままで、変えたのは前後に見せるものだけ */
+  {
+    /* `rank` 条件の子で、事務所ランクを上げれば通ることを見る */
+    const c = all.find((x) => x.contract === 'rank' && x.rank !== 'S');
+    ok(c, "contract === 'rank' の子がいる");
+    if (c) {
+      const need = RANK_INFO[c.rank].minAgency;
+      const before = { agency: 1, money: 99999999, favor: {}, records: {}, beaten: [],
+                       contracted: [], discovered: [] };
+      const v0 = Scout.evaluate(c, before, []);
+      ok(!v0.ok, '課題の前は通らない');
+      const after = Object.assign({}, before, { agency: need });
+      const v1 = Scout.evaluate(c, after, []);
+      ok(v1.ok, '**課題を果たしたあとは通る**', v1.detail);
+      /* そのとき課題は用済み */
+      const st = { offers: Offers.push({ offers: [] }, Offers.questFor(c.id).id) };
+      eq(Office.dropQuest(st, c.id).length, 0, '契約できたら課題は落ちる');
+    }
+  }
+
+  /* --- 同郷の一言（§5.1・§5.4） --- */
+  {
+    const c = all[0];
+    const mate = { name: '同郷 のこ', region: c.region };
+    const line = ScoutShop.aishoLine(mate, c, () => 0.1);
+    ok(line.indexOf(mate.name) >= 0 || line.indexOf(c.name) >= 0, '同郷の一言に名前が入る');
+    ok(ScoutShop.AISHO_LINES.length >= 2, '文面は複数ある');
+    ok(ScoutShop.AISHO_LINES.length < 19, '**19本も持たない**（性格ではなく関係の話）');
+    eq(ScoutShop.aishoLine(null, c), '', '同郷がいなければ空');
+    /* 差し込みが残らない */
+    ScoutShop.AISHO_LINES.forEach((t, i) => {
+      const out = ScoutShop.aishoLine(mate, c, () => i / ScoutShop.AISHO_LINES.length);
+      ok(!/\{(mate|name|region)\}/.test(out), '差し込みが残らない（' + i + '）', out);
+    });
   }
 }
 

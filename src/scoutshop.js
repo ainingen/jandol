@@ -214,6 +214,30 @@ const ScoutShop = (() => {
   }
 
   /* ------------------------------------------------------------
+     同郷の一言（spec.md §5.1・§5.4）— A4.5-3
+
+     同行者に**同じ地方の子**がいると、対局の前に場が和む。
+     **性格ではなく関係の話**なので `serifu.js` には置かない
+     （19本も要らない。`RULES.aisho` と同じ考えかたで `region` を見るだけ）。
+
+     判定そのものは `office.js` がやる（同行者の一覧を持っているのは向こう）。
+     ここが持つのは文面だけ。
+  ------------------------------------------------------------ */
+  const AISHO_LINES = [
+    '{mate}が{region}の話をはじめて、場が少しほどけた。',
+    '{mate}「{name}さん、うちの代表です。悪い話じゃないですよ」',
+    '同じ{region}と分かって、{name}の口ぶりが変わった。',
+  ];
+  function aishoLine(mate, chara, rng) {
+    if (!mate || !chara) return '';
+    rng = rng || Math.random;
+    const t = AISHO_LINES[Math.floor(rng() * AISHO_LINES.length)];
+    return t.replace(/\{mate\}/g, mate.name)
+            .replace(/\{name\}/g, chara.name)
+            .replace(/\{region\}/g, chara.region);
+  }
+
+  /* ------------------------------------------------------------
      店の名前。`jansou-guests.js` の姓の表を借りて「雀荘 ○○」にする。
      **新しい名前の表を作らない**（字が増えるとフォントを回し直すことになる）
   ------------------------------------------------------------ */
@@ -374,7 +398,8 @@ const ScoutShop = (() => {
 
   return {
     SHOP_TYPES, TYPE_BY_KEY, PALETTES, ANY_CHANCE, TWO_CHANCE, CALLS_PER_DAY,
-    QUIRKS, QUIRK_BY_KEY, STYLE_QUIRK, BEATS, MARKS, PLAIN_QUIRK,
+    QUIRKS, QUIRK_BY_KEY, STYLE_QUIRK, BEATS, MARKS, PLAIN_QUIRK, AISHO_LINES,
+    aishoLine,
     seeded, palOf, pickType, jandolCount, nameOf, buildShop, stateOf, seatOfGuestId,
     quirkOf, quirksFor,
   };

@@ -243,3 +243,35 @@
   .ofMate .mkFace{width:32px;height:32px}
   .ofMateNums{flex-direction:row;gap:8px;align-items:baseline}
 }
+
+/* ------------------------------------------------------------
+   交渉の吹き出し（scout/spec.md §5）— A4.5-3
+   枠は theme.css の `.popup` / `.popupBox` / `.popupPhoto` を借りる。
+   **幅は 400px を超えないこと。**380px の端末で横に溢れる
+------------------------------------------------------------ */
+.ofSayBox{max-width:360px}
+.ofSayName{
+  font-family:var(--maru);font-weight:700;font-size:15px;color:var(--ivory);
+  margin:2px 0 8px;letter-spacing:.04em;
+}
+.ofSayName i{font-style:normal;font-size:11px;color:var(--gold);margin-left:6px}
+/* セリフ。長い一言でも折り返して収まるように、両端は詰めない */
+.ofSayLine{
+  font-size:13px;line-height:1.8;color:var(--ivory-2);margin:0 0 8px;
+  text-align:left;overflow-wrap:anywhere;
+}
+/* 同郷の一言か、RULES の detail。**条件文はここに流し込むだけ** */
+.ofSaySub{
+  font-size:11.5px;line-height:1.75;color:var(--gold);margin:0 0 8px;
+  text-align:left;overflow-wrap:anywhere;
+}
+.ofSayNote{font-size:11px;line-height:1.7;color:var(--muted);margin:0 0 10px}
+.ofSayBtns{display:flex;justify-content:center}
+.ofSayBtn{
+  font:inherit;font-size:13px;padding:9px 26px;border-radius:7px;cursor:pointer;
+  border:1px solid var(--gold-dim);background:transparent;color:var(--ivory);
+}
+.ofSayBtn:hover{border-color:var(--gold);color:var(--gold)}
+.ofSayBtn:focus-visible{outline:2px solid var(--gold);outline-offset:1px}
+/* 課題の札。届いている話の中で、他の依頼と見分けが付くように */
+.ofOffer.k-quest{border-left:3px solid var(--gold-dim)}

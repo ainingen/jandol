@@ -30,7 +30,8 @@
    一件の形（§8.1）
    ------------------------------------------------------------
      id       文字列。**セーブに残るので変えないこと**
-     kind     'tournament' | 'contract' | 'idol'
+     kind     'tournament' | 'contract' | 'idol' | 'quest'
+     slot     同じ枠を奪い合う印（省くと id そのもの）。`push` が見る
      when     (st, roster) => boolean
      once     一度きりか（true なら st.offerFired を見る）
      prio     1〜9。同じ日に複数届いたときの並び（大きいほど上）
@@ -165,7 +166,35 @@ const Offers = (() => {
                match: !!e.match, fit: e.fit || [] },
   }));
 
-  const TABLE = TOURNAMENT_OFFERS.concat(CONTRACT_OFFERS, IDOL_OFFERS);
+  /* ------------------------------------------------------------
+     課題（`scout/spec.md` §5.2）— A4.5-3
+
+     遠征で口説きに行って**勝ったのに条件が足りなかった**とき、
+     その場で積む。空手で帰らせないための器。
+
+     **`when` は常に偽。`fire()` は引かない。**発火の理由が
+     プレイヤーの状態ではなく「その相手に会って勝った」という
+     **出来事**だから。§8.1 の「発火条件に日付を書かない」には
+     触れていない（日付は見ていない）。積むのは `push()`。
+
+     **相手ごとに一枠**（`slot`）。二度失敗しても二件にならず、
+     新しいものが古いものを置き換える（§5.2）。
+
+     **文面をここに持たない。**条件は `Scout.evaluate` の `detail` が正で、
+     `textOf` がそのつど引く。ここに書くと二重になり、
+     片方を直したときに必ずずれる（`RULES.event` で一度通った話）。
+  ------------------------------------------------------------ */
+  const QUEST_OFFERS = all().map((c) => ({
+    id: 'quest-' + c.id,
+    kind: 'quest',
+    slot: 'quest:' + c.id,
+    when: () => false,
+    once: false, prio: 8, days: 0, members: { min: 0, max: 0 },
+    text: '',
+    payload: { charaId: c.id },
+  }));
+
+  const TABLE = TOURNAMENT_OFFERS.concat(CONTRACT_OFFERS, IDOL_OFFERS, QUEST_OFFERS);
   const BY_ID = {};
   TABLE.forEach((o) => { BY_ID[o.id] = o; });
   function byId(id) { return BY_ID[id] || null; }
@@ -219,10 +248,41 @@ const Offers = (() => {
       .map((o) => ({ id: o.id, kind: o.kind }));
   }
 
-  /* 文面。契約イベントは相手の名前と条件を添える */
-  function textOf(o, st) {
+  /* 課題を直接積む（`fire` を通さない。§5.2）。
+     **同じ `slot` の古いものを落として置き換える。**
+     返すのは新しい `offers` の配列（純関数。書くのは呼ぶ側） */
+  function push(st, id) {
+    const def = byId(id);
+    const open = (st.offers || []).slice();
+    if (!def) return open;
+    const slot = def.slot || def.id;
+    const kept = open.filter((o) => {
+      const d = byId(o.id);
+      return !d || (d.slot || d.id) !== slot;
+    });
+    return kept.concat([{ id: def.id, kind: def.kind }]);
+  }
+
+  /* その相手の課題の定義。無ければ null */
+  function questFor(charaId) { return byId('quest-' + charaId); }
+
+  /* 文面。契約イベントは相手の名前と条件を添える。
+     **課題は条件を持たない。**`Scout.evaluate` の `detail` をそのつど引く
+     （§5.4。条件文を二か所に書かないため）。`roster` は evaluate が要る */
+  function textOf(o, st, roster) {
     const def = byId(o.id || o);
     if (!def) return '';
+    if (def.kind === 'quest') {
+      const c = findChara(def.payload.charaId);
+      if (!c) return '';
+      let v = null;
+      if (typeof Scout !== 'undefined') {
+        try { v = Scout.evaluate(c, st || {}, roster || []); } catch (e) { v = null; }
+      }
+      const who = `${c.name}（${c.rank}級・${c.region}）`;
+      if (v && v.ok) return `${who}の条件は満たしている。もう一度会いに行けば契約できる。`;
+      return `${who}に会ってきた。` + (v && v.detail ? `いまは「${v.detail}」` : '');
+    }
     if (def.kind !== 'contract') return def.text;
     const c = findChara(def.payload.charaId);
     return def.text + (c ? `（${c.name}・${c.rank}級・${c.region}）` : '');
@@ -235,10 +295,12 @@ const Offers = (() => {
     if (def.kind === 'tournament') return TOURNAMENTS[def.payload.tierId].name + 'の招待';
     if (def.kind === 'idol') return def.payload.name;
     const c = findChara(def.payload.charaId);
+    if (def.kind === 'quest') return (c ? c.name : '') + 'の課題';
     return (c ? c.name : '') + 'の話';
   }
 
-  return { TABLE, byId, fire, textOf, titleOf, accepted, canEnter, DAYS_BY_SIZE, MAX_OPEN };
+  return { TABLE, byId, fire, push, questFor, textOf, titleOf, accepted, canEnter,
+           DAYS_BY_SIZE, MAX_OPEN };
 })();
 
 if (typeof module !== 'undefined' && module.exports) {

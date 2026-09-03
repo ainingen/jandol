@@ -307,13 +307,17 @@ function eq(a, b, name) {
    ============================================================ */
 {
   const Offers = global.Offers;
-  eq(Offers.TABLE.length, 15, '大会5・契約6・アイドル4の15件');
+  /* **課題（A4.5-3）は雀ドル一人につき一件。**`fire` は引かないが表には載る
+     （`byId` で引けないと `st.offers` から戻せない。`scout/spec.md` §5.2） */
+  const CHARA_N = JANDOLS.concat(FREE_AGENTS).length;
+  eq(Offers.TABLE.length, 15 + CHARA_N, '大会5・契約6・アイドル4 ＋ 課題は雀ドルの数だけ');
   const kinds = Offers.TABLE.reduce((a, o) => { a[o.kind] = (a[o.kind] || 0) + 1; return a; }, {});
   eq(kinds.tournament, 5, '大会は既存の5つ');
   eq(kinds.contract, 6, "契約イベントは contract === 'event' の6人ぶん");
   eq(kinds.idol, 4, 'アイドル案件は4種');
+  eq(kinds.quest, CHARA_N, '課題は雀ドル一人につき一件（相手ごとに一枠）');
 
-  eq(new Set(Offers.TABLE.map((o) => o.id)).size, 15, 'id が重複していない');
+  eq(new Set(Offers.TABLE.map((o) => o.id)).size, Offers.TABLE.length, 'id が重複していない');
   ok(Offers.TABLE.every((o) => typeof o.when === 'function'), '全件に when がある');
   ok(Offers.TABLE.every((o) => o.prio >= 1 && o.prio <= 9), 'prio は1〜9');
   ok(Offers.TABLE.every((o) => o.members && o.members.max >= o.members.min),

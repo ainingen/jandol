@@ -261,6 +261,14 @@ const Office = (() => {
     store.set({ offers: (st.offers || []).filter((o) => o.id !== id) });
   }
 
+  /* その相手の課題を落とす。契約できたら用済み（`scout/spec.md` §5.2）。
+     返すのは新しい `offers` の配列（純関数） */
+  function dropQuest(st, charaId) {
+    const q = typeof Offers !== 'undefined' ? Offers.questFor(charaId) : null;
+    const open = (st.offers || []).slice();
+    return q ? open.filter((o) => o.id !== q.id) : open;
+  }
+
   /* 受ける。契約イベントは `offerAccepted` に入れるだけで、
      あとは遠征の「口説く」で会いに行く（§8.2）。
      大会とアイドル案件は、そのまま昼の仕事になる */
@@ -345,6 +353,42 @@ const Office = (() => {
     if (found) patch.discovered = (st.discovered || []).concat(found.id);
     store.set(patch);
     return { found, calls, seat };
+  }
+
+  /* ------------------------------------------------------------
+     交渉（`scout/spec.md` §5）— A4.5-3
+  ------------------------------------------------------------ */
+  /* 会いに行った一回で積む好感度（§5.1 の 5）。
+     **勝っても負けても積む。**空手で帰らせないため——
+     負けが永久の失敗にならないのが第三段からの決めごと */
+  const FAVOR_GAIN = { win: 12, lose: 5 };
+  function favorGain(won) { return won ? FAVOR_GAIN.win : FAVOR_GAIN.lose; }
+
+  /* 好感度を足した新しい表を返す（純関数）。上限100 */
+  function addFavor(st, charaId, won) {
+    const base = ((st.favor || {})[charaId]) | 0;
+    return Object.assign({}, st.favor || {},
+      { [charaId]: Math.min(100, base + favorGain(won)) });
+  }
+
+  /* 交渉の一行。**「性格の一言」＋「既存の `detail`」の合成**（§5.4）。
+
+     **条件文をここに書かないこと。**「事務所ランク5が必要です」は
+     `scout.js` の `RULES` が `detail` に持っている。ここに書き写すと
+     二重になり、片方を直したときに必ずずれる
+     （`RULES.event` で一度通った話。`office/spec.md` §8.2）。
+
+     `line` は `SERIFU.pick(chara, 'scoutWin')`。無ければ空でよい */
+  function negotiate(chara, verdict, line) {
+    const v = verdict || {};
+    return {
+      name: chara ? chara.name : '',
+      line: line || '',
+      ok: !!v.ok,
+      /* **`v.detail` をそのまま。**加工も言い換えもしない */
+      detail: v.ok ? '' : (v.detail || ''),
+      cost: v.cost != null ? v.cost : null,
+    };
   }
 
   /* ------------------------------------------------------------
@@ -491,13 +535,17 @@ const Office = (() => {
               <span class="ofOfferT">${esc(Offers.titleOf(o))}</span>
               <span class="ofOfferMeta">${def.days ? def.days + '日' : '日は使わない'}・${need}</span>
             </div>
-            <p class="ofOfferText">${esc(Offers.textOf(o, st))}</p>
+            <p class="ofOfferText">${esc(Offers.textOf(o, st, list))}</p>
             <div class="ofOfferBtns">
-              <button type="button" class="ofTake" data-take="${o.id}"
-                ${trip ? 'disabled' : ''}>受ける</button>
-              <button type="button" class="ofPass" data-pass="${o.id}">見送る</button>
+              ${def.kind === 'quest' ? '' : `
+                <button type="button" class="ofTake" data-take="${o.id}"
+                  ${trip ? 'disabled' : ''}>受ける</button>`}
+              <button type="button" class="ofPass" data-pass="${o.id}">${
+                def.kind === 'quest' ? '忘れる' : '見送る'}</button>
             </div>
-            ${trip ? '<p class="ofNote" style="margin:4px 0 0">遠征から帰るまで受けられません。</p>' : ''}
+            ${def.kind === 'quest'
+              ? '<p class="ofNote" style="margin:4px 0 0">条件が揃ったら、もう一度会いに行くこと。</p>'
+              : trip ? '<p class="ofNote" style="margin:4px 0 0">遠征から帰るまで受けられません。</p>' : ''}
           </div>`;
         }).join('')}</div>` : '';
       const mates = list.length ? list.map((c) => {
@@ -1042,11 +1090,31 @@ const Office = (() => {
           log.push(`${prefName}の${shop.name}を覗いたが、誰にも声をかけなかった`);
         }
       } else if (arrived && trip.target != null) {
-        /* **着いた日に現地で対局**（§7.3）。勝てば evaluate、負けても favor */
+        /* **着いた日に現地で対局**（§7.3）。
+           A4.5-3 で前後が厚くなった（`scout/spec.md` §5.1）——
+           **対局の前に一言 → 対局 → 勝ったら交渉 → 足りなければ課題を届ける。**
+           判定そのもの（`Scout.evaluate` と `RULES`）は一行も変えていない。
+           変えたのは、判定の前後に何を見せるか */
         const all = JANDOLS.concat(FREE_AGENTS);
         const c = all.find((x) => x.id === trip.target);
         if (c) {
           const mates = list.filter((x) => (trip.members || []).indexOf(x.id) >= 0);
+
+          /* --- 1. 会う。同行者に同郷の子がいれば場が和む（§5.1） ---
+             **`RULES.aisho` と同じ考えかた**で `region` を見るだけ。
+             文面は `ScoutShop.aishoLine`（性格ではなく関係の話なので serifu ではない） */
+          const mate = mates.find((m) => m.region === c.region) || null;
+          const meet = typeof SERIFU !== 'undefined'
+            ? SERIFU.pick(c.chara, 'scoutMeet') : '';
+          await say({
+            id: c.id, name: c.name, rank: c.rank, line: meet,
+            sub: mate && typeof ScoutShop !== 'undefined'
+              ? ScoutShop.aishoLine(mate, c) : '',
+            label: '打つ',
+          });
+          if (mate) log.push(`${mate.name}が同郷で、${c.name}との場が和んだ`);
+
+          /* --- 2. 対局（第三段のまま） --- */
           const table = [playerCard(st), c].concat(mates.slice(0, 2));
           /* 卓が埋まらないぶんは相手と同格のCPUで埋める */
           for (let i = table.length; i < 4; i++) {
@@ -1056,17 +1124,30 @@ const Office = (() => {
           const mine = rank.find((r) => r.chara.id === 0);
           const his = rank.find((r) => r.chara.id === c.id);
           const won = !!(mine && his && mine.place < his.place);
+
+          /* --- 3. 好感度は勝っても負けても積む（§5.1 の 5。空手で帰らせない） --- */
           st = store.get();
           const base = (st.favor || {})[c.id] || 0;
-          const gain = won ? 12 : 5;
-          const favor = Object.assign({}, st.favor || {}, { [c.id]: Math.min(100, base + gain) });
+          const gain = favorGain(won);
+          const favor = addFavor(st, c.id, won);
           store.set({ favor });
           log.push(won ? `${c.name}に勝った（好感度 +${gain}）` : `${c.name}に負けた（好感度 +${gain}）`);
 
-          if (won) {
+          if (!won) {
+            const lose = typeof SERIFU !== 'undefined'
+              ? SERIFU.pick(c.chara, 'scoutLose') : '';
+            await say({ id: c.id, name: c.name, rank: c.rank, line: lose,
+              note: `好感度 +${gain}（いま ${Math.min(100, base + gain)}）`, label: '引き上げる' });
+          } else {
+            /* --- 4. 勝ったら交渉。ここで初めて条件が明かされる（§5.1 の 3） --- */
             st = store.get();
             const v = Scout.evaluate(c, st, rosterOf(st));
-            if (v.ok && (st.money || 0) >= (v.cost || 0)) {
+            const winLine = typeof SERIFU !== 'undefined'
+              ? SERIFU.pick(c.chara, 'scoutWin') : '';
+            const n = negotiate(c, v, winLine);
+            const enough = n.ok && (st.money || 0) >= (v.cost || 0);
+
+            if (enough) {
               const comp = Object.assign({}, st.comp);
               if (comp[c.id] == null) comp[c.id] = compFromRank(c.rank);
               store.set({
@@ -1075,11 +1156,24 @@ const Office = (() => {
                 discovered: (st.discovered || []).includes(c.id)
                   ? st.discovered : (st.discovered || []).concat(c.id),
                 comp,
+                /* 契約できたら、その相手の課題は用済み（§5.2） */
+                offers: dropQuest(store.get(), c.id),
               });
               signed.push(c.id);
               log.push(`${c.name}と契約した（${v.cost ? yen(v.cost) : '契約金なし'}）`);
+              await say({ id: c.id, name: c.name, rank: c.rank, line: n.line,
+                note: `契約した（${v.cost ? yen(v.cost) : '契約金なし'}）`, label: '連れて帰る' });
             } else {
-              log.push(`${c.name}「${v.detail || 'まだ話は聞けない'}」`);
+              /* --- 5. 足りない。**空手で帰らせない**——課題として事務所に届ける（§5.2）。
+                 **相手ごとに一枠。**二度失敗しても二件にならない */
+              const short = !n.ok ? n.detail
+                : `あと ${yen((v.cost || 0) - (st.money || 0))} 足りません。`;
+              const q = typeof Offers !== 'undefined' ? Offers.questFor(c.id) : null;
+              if (q) store.set({ offers: Offers.push(store.get(), q.id) });
+              log.push(`${c.name}「${short}」`);
+              if (q) log.push(`${c.name}の課題が事務所に届いた`);
+              await say({ id: c.id, name: c.name, rank: c.rank, line: n.line,
+                sub: short, note: q ? '事務所に課題として届きます' : '', label: '出直す' });
             }
           }
         }
@@ -1113,6 +1207,40 @@ const Office = (() => {
         isPlayer: true,
         rank: st.playerRank || 'D',
         playerStrength: strengths[st.playerRank || 'D'] || 50,
+      });
+    }
+
+    /* 交渉の吹き出し（`scout/spec.md` §5）。相手の顔と一言を出して待つ。
+       **`jansou.js` の `ask` と同じ作り**（`.popup` は `theme.css`）だが、
+       選ぶことは無いので釦は一つ。読ませて閉じるだけ。
+
+       `sub` は同郷の一言か、`RULES` の `detail`。**ここで条件を組み立てない**
+       ——呼ぶ側が `negotiate()` から受け取ったものを渡す */
+    function say(o) {
+      return new Promise((resolve) => {
+        const ov = document.createElement('div');
+        ov.className = 'popup';
+        ov.innerHTML = `<div class="popupBox ofSayBox" role="dialog" aria-modal="true"
+            aria-label="${esc(o.name || '')}">
+          <div class="popupPhoto"><div class="mkFace sil">
+            <img src="img/${pad3(o.id)}.webp" alt="" onerror="this.remove()"></div></div>
+          <div class="popupBody">
+            <div class="ofSayName">${esc(o.name || '')}${o.rank
+              ? `<i>${esc(o.rank)}級</i>` : ''}</div>
+            ${o.line ? `<p class="ofSayLine">「${esc(o.line)}」</p>` : ''}
+            ${o.sub ? `<p class="ofSaySub">${esc(o.sub)}</p>` : ''}
+            ${o.note ? `<p class="ofSayNote">${esc(o.note)}</p>` : ''}
+            <div class="ofSayBtns">
+              <button type="button" class="ofSayBtn" data-key="ok">${esc(o.label || '……')}</button>
+            </div>
+          </div>
+        </div>`;
+        document.body.appendChild(ov);
+        ov.addEventListener('click', (e) => {
+          if (!e.target.closest('[data-key]')) return;
+          ov.remove();
+          resolve('ok');
+        });
       });
     }
 
@@ -1275,8 +1403,8 @@ const Office = (() => {
   return { mount, defaultName, nameOf, prefOf, rosterOf, prefPickerHtml, bindPicker, NAME_MAX,
            ASSIGN_KINDS, assignFor, assignOf, parlorRoster, setAssign, fatigueOf, condOf,
            planTrip, deputyOf, tripOf, tripStart, regionOfPref,
-           fireOffers, dismissOffer, acceptOffer, popOf, idolResult,
-           ensureShop, callOn };
+           fireOffers, dismissOffer, acceptOffer, dropQuest, popOf, idolResult,
+           ensureShop, callOn, negotiate, favorGain, addFavor, FAVOR_GAIN };
 })();
 
 if (typeof module !== 'undefined' && module.exports) {

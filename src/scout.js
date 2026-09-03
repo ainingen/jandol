@@ -59,7 +59,7 @@ const Scout = (() => {
         detail: `いまの事務所は${agencyOf(agency).capacity}人までです。`, cost: null };
     }
 
-    const cost = costOf(chara);
+    const cost = costOf(chara, st);
     const rule = RULES[chara.contract];
     const res = rule ? rule(chara, st, roster) : { ok: true, detail: '' };
     if (!res.ok) return { ok: false, label: CONTRACTS[chara.contract], detail: res.detail, cost };
@@ -71,12 +71,20 @@ const Scout = (() => {
   }
 
   /* 契約金。free は「条件なし」であって「ただ」ではない。
-     0円にすると cheap（半額）より安くなって逆転する */
-  function costOf(chara) {
+     0円にすると cheap（半額）より安くなって逆転する。
+
+     **`st` を渡すと好感度で値引きが乗る**（`scout/spec.md` §5.3）。
+       契約金 = 素の額 × (1 − favor/200)      favor 100 で半額
+     **緩むのは金だけ。**`RULES` の判定と事務所ランクの条件は動かない
+     ——「通えば安くなるが、格が足りなければ会ってもくれない」。
+     `st` 無しで呼ぶと素の額（名鑑など、相手が決まっていない場面のため） */
+  function costOf(chara, st) {
     const base = RANK_INFO[chara.rank].scoutCost;
-    if (chara.contract === 'cheap') return Math.round(base * 0.5);
-    if (chara.contract === 'money') return base * 2;
-    return base;
+    let cost = base;
+    if (chara.contract === 'cheap') cost = Math.round(base * 0.5);
+    else if (chara.contract === 'money') cost = base * 2;
+    const favor = st ? Math.min(100, Math.max(0, ((st.favor || {})[chara.id]) | 0)) : 0;
+    return Math.round(cost * (1 - favor / 200));
   }
 
   /* 条件ごとの判定。数値は後から触りやすいよう一か所にまとめてある */
