@@ -733,6 +733,119 @@ function eq(a, b, name) {
   eq(n.day, 5, 'normalize を5回通しても day が残る');
 }
 
+/* ============================================================
+   雀エイト表（spec.md §9.1）— 第五段
+   ============================================================ */
+{
+  const all = JANDOLS.concat(FREE_AGENTS);
+  const blank = () => ({ contracted: [], comp: {}, records: {}, beaten: [], popUp: {},
+                         officeName: 'テスト事務所', officePref: 'tokyo' });
+
+  /* --- 形 --- */
+  {
+    const t = Office.eightTable(blank());
+    eq(t.length, 8, '八人');
+    eq(t[0].place, 1, '順位が付く');
+    eq(t[7].place, 8, '八位まで');
+    ok(t.every((r) => r.name && r.rank && r.agency), '名前・級・所属が埋まっている');
+    for (let i = 1; i < t.length; i++) ok(t[i - 1].power >= t[i].power, '強さの降順');
+    eq(new Set(t.map((r) => r.id)).size, 8, '同じ子が二度載らない');
+  }
+
+  /* --- **始まりは八人の S級**（RANK_INFO の label と噛み合う） --- */
+  {
+    const t = Office.eightTable(blank());
+    ok(t.every((r) => r.rank === 'S'), '最初は S級だけが載る',
+       t.map((r) => r.name + r.rank).join(' '));
+    eq(all.filter((c) => c.rank === 'S').length, 8, 'S級はちょうど八人');
+    /* **`strengthOf` だけで並べると崩れる**——だから実績を配合している */
+    const byStrength = all.map((c) => ({ c, s: strengthOf(c, STYLES) }))
+      .sort((a, b) => b.s - a.s).slice(0, 8);
+    ok(byStrength.some((x) => x.c.rank !== 'S'),
+       '強さだけで並べると S級以外が入る（実績を混ぜる理由）');
+  }
+
+  /* --- 同じセーブなら並びが揺れない（毎朝ちらつかせない） --- */
+  {
+    const st = blank();
+    eq(JSON.stringify(Office.eightTable(st)), JSON.stringify(Office.eightTable(st)),
+       '同じセーブなら同じ表');
+  }
+
+  /* --- 育てて、大会で勝つと上がる --- */
+  {
+    const a = all.find((c) => c.rank === 'A');
+    let st = Object.assign(blank(), { contracted: [a.id] });
+    const p0 = Office.powerOf(a, st, true);
+    st = Object.assign({}, st, { comp: { [a.id]: 100 } });
+    const p1 = Office.powerOf(a, st, true);
+    ok(p1 > p0, '育てると強さが上がる');
+    st = Object.assign({}, st, { records: { title: { best: '優勝' } } });
+    const p2 = Office.powerOf(a, st, true);
+    ok(p2 > p1, '大会で勝つと上がる');
+    /* 四冠まで獲れば表に入る */
+    st = Object.assign({}, st, { records: {
+      rookie: { best: '優勝' }, local: { best: '優勝' },
+      open: { best: '優勝' }, title: { best: '優勝' } } });
+    ok(Office.eightTable(st).some((r) => r.mine), '育てて四冠まで獲れば割り込める');
+  }
+
+  /* --- 実績は所属だけに乗る（NPC は級が背負っているぶんだけ） --- */
+  {
+    const a = all.find((c) => c.rank === 'A');
+    const st = Object.assign(blank(), { records: { title: { best: '優勝' } } });
+    ok(Office.powerOf(a, st, true) > Office.powerOf(a, st, false),
+       '事務所の実績は所属にだけ乗る');
+    ok(Office.agencyTitle(blank()) === 0, '何も獲っていなければ0');
+    ok(Office.agencyTitle({ records: { rookie: { best: '出場' } } }) === 0,
+       '**優勝だけを数える**（出ただけでは載らない）');
+    const full = { records: { rookie: { best: '優勝' }, local: { best: '優勝' },
+      open: { best: '優勝' }, title: { best: '優勝' }, eight: { best: '優勝' } },
+      beaten: [1, 2, 3, 4, 5, 6, 7, 8] };
+    ok(Office.agencyTitle(full) <= 40, '実績の上乗せには上限がある');
+  }
+
+  /* --- 元データを書き換えない（`popOf` と同じ作法） --- */
+  {
+    const a = all.find((c) => c.rank === 'A');
+    const before = a.comp;
+    Office.eightTable(Object.assign(blank(), { comp: { [a.id]: 100 }, contracted: [a.id] }));
+    eq(a.comp, before, 'characters.js の comp を書き換えない');
+  }
+
+  /* --- ライバル事務所（引き抜きの主体として先に存在している） --- */
+  {
+    eq(Object.keys(Office.RIVALS).length, REGIONS.length, '地方の数だけ事務所がある');
+    ok(REGIONS.every((r) => Office.RIVALS[r]), 'REGIONS の全部に事務所がある');
+    eq(new Set(Object.values(Office.RIVALS)).size, REGIONS.length, '名前が重複していない');
+    ok(FREE_AGENTS.every((c) => Office.rivalOf(c) === 'フリー'), 'フリーはどこにも属さない');
+    const j = JANDOLS[0];
+    eq(Office.rivalOf(j), Office.RIVALS[j.region], '雀ドルは地方の事務所に居る');
+    /* 所属になったら自分の事務所の名前で出る */
+    const st = Object.assign(blank(), { contracted: [j.id] });
+    const row = Office.eightTable(st).find((r) => r.id === j.id);
+    if (row) eq(row.agency, Office.nameOf(st), '所属は自分の事務所名で出る');
+  }
+
+  /* --- 「あと何点で入れるか」 --- */
+  {
+    eq(Office.eightNext(blank()), null, '所属がいなければ出さない');
+    const d = all.find((c) => c.rank === 'D');
+    const st = Object.assign(blank(), { contracted: [d.id] });
+    const n = Office.eightNext(st);
+    ok(n && n.gap > 0, '入っていなければ差が出る');
+    eq(n.name, d.name, '所属のうちいちばん近い子');
+    const inSt = Object.assign(blank(), { contracted: [all.find((c) => c.rank === 'S').id] });
+    eq(Office.eightNext(inSt), null, 'もう入っていれば出さない');
+  }
+
+  /* --- 配合（強さ6：実績4）--- */
+  {
+    eq(Office.POWER_MIX.strength + Office.POWER_MIX.title, 1, '配合は合わせて1');
+    ok(Office.POWER_MIX.strength > Office.POWER_MIX.title, '強さのほうが重い');
+  }
+}
+
 /* ============================================================ */
 console.log('通過 ' + pass + ' 件');
 if (fails.length) {

@@ -356,6 +356,121 @@ const Office = (() => {
   }
 
   /* ------------------------------------------------------------
+     雀エイト表（`office/spec.md` §9.1）— 第五段
+
+     全国上位八人。**強さと人気の二軸**で、未契約の子も載る。
+     自分の子を割り込ませていくのがゴール。
+
+     **数値（疲労・調子）とは独立している。**ここは既にあるもの
+     （`comp`・`pop`・`records`）を並べ替えて見せるだけで、
+     新しいパラメータを作らない。だから第五段の中で先に作れる。
+  ------------------------------------------------------------ */
+
+  /* ライバル事務所。**地方ごとに一つ**（`REGIONS` と一対一）。
+     引き抜きの主体として既に存在していることになっている（§9.1）ので、
+     **雀ドルごとに所属を持たせない。**その子の地方の事務所に居ることにする。
+     ——per-chara のデータを増やさずに「よそに居る」を出すための割り切り。
+     移籍そのものの振る舞いは `ROADMAP.md` [F] */
+  const RIVALS = {
+    '北海道・東北': '雪原プロダクション',
+    '関東': '銀座エイトプロ',
+    '中部': '濃尾企画',
+    '関西': '浪速麻雀社',
+    '中国・四国': '瀬戸内エージェンシー',
+    '九州・沖縄': '南風マネジメント',
+  };
+  /* フリー（`FREE_AGENTS`）はどこにも属さない。表では「フリー」と出す */
+  function rivalOf(c) {
+    if (typeof FREE_AGENTS !== 'undefined'
+        && FREE_AGENTS.some((x) => x.id === c.id)) return 'フリー';
+    return RIVALS[c.region] || 'フリー';
+  }
+
+  /* 大会実績の重み。**優勝だけを数える。**出ただけでは表に載らない */
+  const TIER_POINT = { rookie: 5, local: 10, open: 18, title: 28, eight: 40 };
+  const TITLE_CAP = 40;               // 事務所の実績が効く上限
+
+  /* いまの級が背負っている実績。**NPC には戦績のデータが無い**ので、
+     「すでにその級にいる」ことを実績の代わりに読む。
+     `RANK_INFO` の label（S級＝雀エイト）と同じ考えかた */
+  const RANK_TITLE = { S: 100, A: 72, B: 48, C: 28, D: 12 };
+
+  /* 事務所が獲ったタイトル。**個々の子の戦績はセーブに無い**
+     （`st.records` は事務所＝代表のもの）ので、所属は事務所の実績を共有する。
+     子ごとの差は `comp` が付ける——**育てた子ほど上に来る**、という形 */
+  function agencyTitle(st) {
+    const rec = st.records || {};
+    let p = 0;
+    Object.keys(TIER_POINT).forEach((t) => {
+      if (rec[t] && rec[t].best === '優勝') p += TIER_POINT[t];
+    });
+    /* 雀エイト級を大会で沈めた数も少しだけ */
+    p += Math.min(8, (st.beaten || []).length) * 2;
+    return Math.min(TITLE_CAP, p);
+  }
+
+  /* 実績の点。所属（と自分）だけが事務所の実績を上乗せできる */
+  function titleScore(c, st, mine) {
+    return (RANK_TITLE[c.rank] || 12) + (mine ? agencyTitle(st) : 0);
+  }
+
+  /* 強さ。**`strengthOf`（comp と打ち筋）と実績の配合。**
+     配合は 6:4。`strengthOf` だけで並べると A級が最初から
+     S級を三人抜いてしまい、「S級＝雀エイト」（`RANK_INFO` の label）が
+     初日から崩れる。実績を四割乗せると、**始まりは八人の S級**になり、
+     そこへ割り込んでいく形になる */
+  const POWER_MIX = { strength: 0.6, title: 0.4 };
+  function powerOf(c, st, mine) {
+    const sOf = (typeof Tournament !== 'undefined' && Tournament.strengthOf)
+      || (typeof strengthOf === 'function' ? strengthOf : null);
+    const base = sOf ? sOf(compFor(c, st), typeof STYLES !== 'undefined' ? STYLES : {}) : 50;
+    return base * POWER_MIX.strength + titleScore(c, st, mine) * POWER_MIX.title;
+  }
+
+  /* セーブの `comp` を被せた写し。**元データは書き換えない**
+     （`popOf` が `pop` でやっているのと同じ作法） */
+  function compFor(c, st) {
+    const v = (st.comp || {})[c.id];
+    return v == null ? c : Object.assign({}, c, { comp: v });
+  }
+
+  /* 雀エイト表（純関数）。強さの順に八人。
+     **未契約の子も載る。**同点は id で固定して、毎朝並びが揺れないように */
+  const EIGHT_N = 8;
+  function eightTable(st) {
+    const all = JANDOLS.concat(FREE_AGENTS);
+    const mineSet = new Set((st.contracted || []));
+    const rows = all.map((c) => {
+      const mine = mineSet.has(c.id);
+      const withComp = compFor(c, st);
+      return {
+        id: c.id, name: c.name, rank: c.rank, region: c.region,
+        pop: popOf(st, c),
+        comp: withComp.comp == null ? compFromRank(c.rank) : withComp.comp,
+        power: powerOf(c, st, mine),
+        mine,
+        agency: mine ? nameOf(st) : rivalOf(c),
+      };
+    });
+    rows.sort((a, b) => b.power - a.power || b.pop - a.pop || a.id - b.id);
+    return rows.slice(0, EIGHT_N).map((r, i) => Object.assign(r, { place: i + 1 }));
+  }
+
+  /* 自分の所属のうち、表に載っていない先頭の子と、八位との差。
+     **「あと何点で入れるか」**を出すため（表だけだと遠さが分からない） */
+  function eightNext(st) {
+    const table = eightTable(st);
+    if (table.some((r) => r.mine)) return null;      // もう入っている
+    const eighth = table[table.length - 1];
+    const mine = (st.contracted || []).map((id) =>
+      JANDOLS.concat(FREE_AGENTS).find((c) => c.id === id)).filter(Boolean);
+    if (!mine.length || !eighth) return null;
+    const best = mine.map((c) => ({ c, p: powerOf(c, st, true) }))
+      .sort((a, b) => b.p - a.p)[0];
+    return { name: best.c.name, gap: eighth.power - best.p };
+  }
+
+  /* ------------------------------------------------------------
      交渉（`scout/spec.md` §5）— A4.5-3
   ------------------------------------------------------------ */
   /* 会いに行った一回で積む好感度（§5.1 の 5）。
@@ -519,6 +634,34 @@ const Office = (() => {
           </div>` : ''}
         ${shopNote ? `<p class="ofNote ofShopNote">${esc(shopNote)}</p>` : ''}` : '';
 
+      /* 雀エイト表（§9.1）。**事務所の壁に貼ってある**という体で、
+         朝の画面に一枚だけ出す。押せるものは無い（見るだけ）。
+         `eightTable` は純関数なので、ここは並べるだけ */
+      const eight = eightTable(st);
+      const next = eightNext(st);
+      const eightHtml = `
+        <h2 class="ofSecT">雀エイト<span class="ofSecNote">全国上位八人</span></h2>
+        <div class="ofEight">${eight.map((r) => `
+          <div class="ofEightRow${r.mine ? ' mine' : ''}">
+            <span class="ofEightNo">${r.place}</span>
+            <span class="mkFace sil"><img src="img/${pad3(r.id)}.webp" alt=""
+              onerror="this.remove()"></span>
+            <span class="ofEightBody">
+              <span class="ofEightName">${esc(r.name)}<i>${esc(r.rank)}級</i></span>
+              <span class="ofEightSub">${esc(r.agency)}</span>
+            </span>
+            <span class="ofEightNums">
+              <span>強さ <b>${Math.round(r.power)}</b></span>
+              <span>人気 <b>${r.pop}</b></span>
+            </span>
+          </div>`).join('')}</div>
+        <p class="ofNote">${next
+          ? `いちばん近いのは <b>${esc(next.name)}</b>。八位まであと ${Math.ceil(next.gap)} 点。`
+              + '育てて、大会で勝つと上がる。'
+          : eight.some((r) => r.mine)
+            ? '<b>うちの子が入っている。</b>'
+            : '所属が増えると、ここに割り込む相手が見えてくる。'}</p>`;
+
       /* 届いている依頼（§8）。遠征中は受けられない（代表が留守なので、
          大会も相談も動かせない）。見送るのはいつでもできる */
       const offers = (st.offers || []);
@@ -639,6 +782,7 @@ const Office = (() => {
 
         ${shopHtml}
         ${offersHtml}
+        ${eightHtml}
 
         <h2 class="ofSecT">出かける</h2>
         ${trip ? '' : `<button type="button" class="ofRunBtn ghost" id="ofTrip"
@@ -1404,7 +1548,9 @@ const Office = (() => {
            ASSIGN_KINDS, assignFor, assignOf, parlorRoster, setAssign, fatigueOf, condOf,
            planTrip, deputyOf, tripOf, tripStart, regionOfPref,
            fireOffers, dismissOffer, acceptOffer, dropQuest, popOf, idolResult,
-           ensureShop, callOn, negotiate, favorGain, addFavor, FAVOR_GAIN };
+           ensureShop, callOn, negotiate, favorGain, addFavor, FAVOR_GAIN,
+           eightTable, eightNext, powerOf, rivalOf, RIVALS, RANK_TITLE,
+           TIER_POINT, POWER_MIX, agencyTitle, EIGHT_N };
 })();
 
 if (typeof module !== 'undefined' && module.exports) {
