@@ -549,9 +549,111 @@ const Office = (() => {
   }
 
   /* ------------------------------------------------------------
-     疲労と調子（spec.md §9）— **第五段で数値を置く。いまは器だけ。**
-     フィールドを先に切っておくのは、セーブの前方互換を保つため
-     （あとから足しても、既存セーブは既定値の0で読める）
+     疲労と調子（spec.md §9）— 第五段
+
+     **疲労はプレイヤーが管理するもの**（行動で溜まり、休みで抜ける）。
+     **調子は受け入れるもの**（毎朝決まり、疲労が高いほど悪い目が出る）。
+
+     ここに置くのは値と純関数だけ。**日を進めるのは `settle` のまま**で、
+     疲労を動かす口は呼ぶ側が持つ。乱数は朝に一度だけ引く（下の `ensureCond`）。
+  ------------------------------------------------------------ */
+
+  /* 一日の増減（`scout/spec.md` ではなく `office/spec.md` §9）。
+     **毎晩の自然回復を土台に置く**のが「回復しきる方向」（§1.3）の芯。
+     既定シフト（夜だけ）が +1／日 でほぼ持続可能、フル出勤は 11日で満タン。 */
+  const FATIGUE = {
+    night: -3,        // 毎晩。誰でも抜ける
+    slot: 4,          // 出勤 1帯
+    trip: 11,         // 遠征 1日
+    tripMatch: 4,     // そのうち現地で一局打つ日は上乗せ
+    job: 9,           // 依頼 1日
+    taikai: 13,       // 大会 1日
+    rest: -12,        // 休みの上乗せ（毎晩と合わせて −15）
+    max: 100,
+  };
+
+  const clamp100 = (v) => Math.min(FATIGUE.max, Math.max(0, Math.round(v)));
+
+  /* その日の増減を出す（純関数）。`act` は
+     { slots, trip, tripMatch, job, taikai, rest } のいずれか／組み合わせ */
+  function fatigueDelta(act) {
+    const a = act || {};
+    let d = FATIGUE.night;
+    d += (a.slots | 0) * FATIGUE.slot;
+    if (a.trip) d += FATIGUE.trip;
+    if (a.tripMatch) d += FATIGUE.tripMatch;
+    if (a.job) d += FATIGUE.job;
+    if (a.taikai) d += FATIGUE.taikai;
+    if (a.rest) d += FATIGUE.rest;
+    return d;
+  }
+
+  /* 疲労を進めた新しい表を返す（純関数。元の表は書き換えない）。
+     `acts` は { [charaId]: act }。**所属の全員を渡すこと**——
+     渡されなかった子は動かない（毎晩の回復も入らない） */
+  function stepFatigue(st, acts) {
+    const out = Object.assign({}, st.fatigue || {});
+    Object.keys(acts || {}).forEach((id) => {
+      out[id] = clamp100((out[id] | 0) + fatigueDelta(acts[id]));
+    });
+    return out;
+  }
+
+  /* 疲労が `comp` の補間位置をどれだけ戻すか（§9）。
+     **新しい計算系は作らない。**`paramsOf` の `t = comp/100` に
+     実効 comp を渡すだけ。0.25 なら満タンで一段だけ落ちる
+     （S級90 → 68 ＝ A級。0.35 では B級まで落ちて別人になる） */
+  const FATIGUE_PULL = 0.25;
+  const COND_SHIFT = 2;             // 調子1段ぶんの comp
+
+  /* 実効 comp。**疲労0・調子0なら素の comp と一致する**（第五段の入口で
+     基準が動かないこと）。`st.comp` が無ければ元データの comp */
+  function compEffOf(st, c) {
+    const raw = (st.comp || {})[c.id];
+    const base = raw == null ? c.comp : raw;
+    if (base == null) return base;
+    const f = fatigueOf(st, c.id);
+    const v = base * (1 - FATIGUE_PULL * f / FATIGUE.max) + condOf(st, c.id) * COND_SHIFT;
+    return Math.max(0, Math.min(100, v));
+  }
+
+  /* 卓に座らせる形。**元データも `st.comp` も書き換えない**（写しを返す） */
+  function tableCardOf(st, c) {
+    const v = compEffOf(st, c);
+    return v == null ? c : Object.assign({}, c, { comp: v });
+  }
+
+  /* ---- 調子（−2〜+2）。疲労が高いほど悪い目に寄る ---- */
+  const COND_W0 = [0.02, 0.13, 0.50, 0.28, 0.07];    // 疲労0
+  const COND_W1 = [0.20, 0.35, 0.35, 0.09, 0.01];    // 疲労100
+  function condWeights(fatigue) {
+    const t = Math.min(1, Math.max(0, (fatigue | 0) / FATIGUE.max));
+    return COND_W0.map((w, i) => w + (COND_W1[i] - w) * t);
+  }
+  /* 一人ぶん引く（純関数。`rng` はテストで固定する） */
+  function rollCond(fatigue, rng) {
+    const w = condWeights(fatigue);
+    let r = (rng || Math.random)();
+    for (let i = 0; i < w.length; i++) { r -= w[i]; if (r <= 0) return i - 2; }
+    return 2;
+  }
+
+  /* **朝に一度だけ引いて確定させる**（§9）。`ensureShop` と同じ形で、
+     `st.condDay !== day` のときだけ引き直す。
+     **`settle` にも再生層にも乱数を持ち込まない。**
+     戻り値は「引き直したか」。呼ぶ側は st を読み直すこと */
+  function ensureCond(store, day, rng) {
+    const st = store.get();
+    if (st.condDay === day) return false;
+    const list = rosterOf(st);
+    const cond = {};
+    list.forEach((c) => { cond[c.id] = rollCond(fatigueOf(st, c.id), rng); });
+    store.set({ cond, condDay: day });
+    return true;
+  }
+
+  /* ------------------------------------------------------------
+     疲労と調子の器（セーブの前方互換）
   ------------------------------------------------------------ */
   function fatigueOf(st, id) {
     const v = (st.fatigue || {})[id];
@@ -1593,7 +1695,9 @@ const Office = (() => {
            fireOffers, dismissOffer, acceptOffer, dropQuest, popOf, idolResult,
            ensureShop, callOn, negotiate, favorGain, addFavor, FAVOR_GAIN,
            eightTable, eightNext, powerOf, mightOf, charaTitle, rivalOf, RIVALS,
-           RANK_TITLE, TIER_POINT, POWER_MIX, FAME_MIX, agencyTitle, EIGHT_N };
+           RANK_TITLE, TIER_POINT, POWER_MIX, FAME_MIX, agencyTitle, EIGHT_N,
+           FATIGUE, FATIGUE_PULL, COND_SHIFT, fatigueDelta, stepFatigue,
+           compEffOf, tableCardOf, condWeights, rollCond, ensureCond };
 })();
 
 if (typeof module !== 'undefined' && module.exports) {

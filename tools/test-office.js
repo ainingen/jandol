@@ -910,6 +910,169 @@ function eq(a, b, name) {
 }
 
 /* ============================================================
+   疲労と調子（spec.md §9）— 第五段
+   ============================================================ */
+{
+  const all = JANDOLS.concat(FREE_AGENTS);
+  const c = all.find((x) => x.rank === 'S');
+
+  /* --- 既定値では何も動かない（第五段の入口の錠） --- */
+  {
+    const st = { comp: { [c.id]: 90 }, fatigue: {}, cond: {} };
+    eq(Office.compEffOf(st, c), 90, '疲労0・調子0なら素の comp と一致する');
+    eq(Office.tableCardOf(st, c).comp, 90, '卓に座らせる形でも一致する');
+    /* `computeDay` の二つも、旗を立てなければ効かない */
+    const cfg = { tables: 4, interior: 2, auto: 2, sign: 1, rep: 40,
+      slotPop: [150, 140, 470], slotWorkers: [2, 2, 6] };
+    const rngOf = () => { let i = 0; const xs = [0.5, 0.5, 0.5]; return () => xs[i++ % 3]; };
+    const a = Jansou.computeDay(cfg, rngOf());
+    const b = Jansou.computeDay(Object.assign({}, cfg, {
+      slotFavor: [999, 999, 9999], baseSeats: 0 }), rngOf());
+    eq(JSON.stringify(a), JSON.stringify(b),
+       '**旗を立てなければ、好感度も出勤人数も1円も動かさない**');
+  }
+
+  /* --- 疲労100の S級（comp 90）は A級に落ち、B級には落ちない --- */
+  {
+    const st = { comp: { [c.id]: 90 }, fatigue: { [c.id]: 100 }, cond: {} };
+    const e = Office.compEffOf(st, c);
+    eq(gradeOf(90), 'S', '素は S級');
+    eq(gradeOf(e), 'A', '疲労100 で A級に落ちる（' + e.toFixed(1) + '）');
+    ok(gradeOf(e) !== 'B', 'B級までは落ちない');
+    /* 途中は線形 */
+    const half = Office.compEffOf({ comp: { [c.id]: 90 }, fatigue: { [c.id]: 50 } }, c);
+    eq(Math.round(half), Math.round(90 * (1 - Office.FATIGUE_PULL * 0.5)), '疲労は線形に効く');
+  }
+
+  /* --- 調子は薄く効く --- */
+  {
+    const base = { comp: { [c.id]: 90 }, fatigue: {} };
+    const up = Office.compEffOf(Object.assign({}, base, { cond: { [c.id]: 2 } }), c);
+    const dn = Office.compEffOf(Object.assign({}, base, { cond: { [c.id]: -2 } }), c);
+    eq(up - dn, 4 * Office.COND_SHIFT, '調子の幅は ±2 段ぶん');
+    ok(up - dn < 90 * Office.FATIGUE_PULL, '疲労より薄い');
+    eq(Office.compEffOf(Object.assign({}, base, { cond: { [c.id]: 0 } }), c), 90, '調子0なら動かない');
+  }
+
+  /* --- 一日の増減 --- */
+  {
+    eq(Office.fatigueDelta({ rest: true }), -15, '休みの子は一日で −15');
+    eq(Office.fatigueDelta({ slots: 1 }), 1, '夜だけ出勤の子は +1');
+    eq(Office.fatigueDelta({ slots: 3 }), 9, 'フル出勤は +9');
+    eq(Office.fatigueDelta({}), Office.FATIGUE.night, '何もしない日は毎晩ぶんだけ抜ける');
+    eq(Office.fatigueDelta({ trip: true }), 8, '遠征は +8');
+    eq(Office.fatigueDelta({ trip: true, tripMatch: true }), 12, '現地で打つ日は上乗せ');
+    ok(Office.fatigueDelta({ rest: true }) < 0, '**回復しきる方向**');
+    /* 積む側 */
+    const st = { fatigue: { 1: 10, 2: 0 } };
+    const next = Office.stepFatigue(st, { 1: { rest: true }, 2: { slots: 3 } });
+    eq(next[1], 0, '10 から休むと 0 で止まる（下限）');
+    eq(next[2], 9, '0 からフル出勤で 9');
+    eq(st.fatigue[1], 10, '元の表を書き換えない');
+    eq(Office.stepFatigue({ fatigue: { 1: 98 } }, { 1: { taikai: true } })[1], 100, '上限は100');
+    /* 満タンまでの日数（設計の根拠がそのまま出る） */
+    eq(Math.ceil(100 / Office.fatigueDelta({ slots: 3 })), 12, 'フル出勤は12日で満タン');
+    eq(Math.ceil(100 / Office.fatigueDelta({ trip: true })), 13, '遠征は13日ぶん');
+  }
+
+  /* --- 調子は同じ朝に二度引いても変わらない（`condDay` の印） --- */
+  {
+    const roster = JANDOLS.slice(0, 4).map((x) => x.id);
+    let saved = { contracted: roster, comp: {}, fatigue: {}, popUp: {} };
+    const store = { get: () => saved, set: (patch) => { saved = Object.assign({}, saved, patch); } };
+    const seeded = (n) => { let s = n >>> 0;
+      return () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296; }; };
+
+    eq(Office.ensureCond(store, 7, seeded(1)), true, '朝に一度引く');
+    const first = JSON.stringify(saved.cond);
+    eq(saved.condDay, 7, '引いた日が印として残る');
+    eq(Office.ensureCond(store, 7, seeded(999)), false, '**同じ朝は引き直さない**');
+    eq(JSON.stringify(saved.cond), first, '種を変えても二度目は動かない');
+    eq(Office.ensureCond(store, 8, seeded(1)), true, '日が変われば引き直す');
+
+    /* 種を固定すれば再現する */
+    let s2 = { contracted: roster, comp: {}, fatigue: {}, popUp: {} };
+    const st2 = { get: () => s2, set: (p) => { s2 = Object.assign({}, s2, p); } };
+    Office.ensureCond(st2, 7, seeded(1));
+    eq(JSON.stringify(s2.cond), first, '同じ種・同じ日なら同じ結果');
+    ok(Object.keys(saved.cond).length === roster.length, '所属の全員ぶん引く');
+    Object.values(saved.cond).forEach((v) => ok(v >= -2 && v <= 2, '調子は −2〜+2'));
+  }
+
+  /* --- 疲労が高いほど悪い目に寄る --- */
+  {
+    const w0 = Office.condWeights(0), w1 = Office.condWeights(100);
+    eq(w0.length, 5, '五段');
+    ok(Math.abs(w0.reduce((a, b) => a + b, 0) - 1) < 1e-9, '重みの合計は1（疲労0）');
+    ok(Math.abs(w1.reduce((a, b) => a + b, 0) - 1) < 1e-9, '重みの合計は1（疲労100）');
+    ok(w1[0] > w0[0], '疲労が高いと −2 が出やすい');
+    ok(w1[4] < w0[4], '疲労が高いと +2 が出にくい');
+    const mean = (w) => w.reduce((a, b, i) => a + b * (i - 2), 0);
+    ok(mean(w1) < mean(w0), '期待値が下がる');
+    ok(mean(w0) > 0, '疲労0では少し良いほうに寄る');
+  }
+}
+
+/* ============================================================
+   `computeDay` の第五段の二つ（旗を立てたとき）
+   ============================================================ */
+{
+  const cfg = { tables: 8, interior: 5, auto: 3, sign: 3, rep: 85,
+    slotPop: [296, 349, 943], slotWorkers: [4, 4, 12] };
+  const flat = () => () => 0.5;
+
+  /* --- openSeats は 8 + 人数×8 を超えない。workers 0 でも 8 --- */
+  {
+    const on = Object.assign({}, cfg, { staffing: true });
+    const d = Jansou.computeDay(on, flat());
+    d.slots.forEach((sl) => {
+      const cap = Jansou.BASE_SEATS + sl.workers * Jansou.SEATS_PER_WORKER;
+      ok(sl.seats <= cap, '開けられる席は 8 + 人数×8 を超えない（' + sl.name + '）');
+      ok(sl.seats <= 32, '卓の数も超えない（' + sl.name + '）');
+    });
+    /* 終盤の顔ぶれなら、いまのシフトでは1席も削られない */
+    const off = Jansou.computeDay(cfg, flat());
+    eq(JSON.stringify(d.slots.map((x) => x.guests)), JSON.stringify(off.slots.map((x) => x.guests)),
+       '**8/8 なら三局面は動かない**');
+    /* workers 0 でも 8席は開く（代表が居る） */
+    const none = Jansou.computeDay(Object.assign({}, cfg, {
+      staffing: true, slotWorkers: [0, 0, 0], slotPop: [0, 0, 0] }), flat());
+    none.slots.forEach((sl) => eq(sl.seats, Jansou.BASE_SEATS, 'workers 0 でも 8席（' + sl.name + '）'));
+    /* baseSeats 0（代表が遠征中）なら閉まる */
+    const away = Jansou.computeDay(Object.assign({}, cfg, {
+      staffing: true, baseSeats: 0, slotWorkers: [0, 0, 0], slotPop: [0, 0, 0] }), flat());
+    away.slots.forEach((sl) => eq(sl.guests, 0, '代表も人も居なければ客は来ない（' + sl.name + '）'));
+  }
+
+  /* --- 夜の単価は +15% を超えない --- */
+  {
+    const base = Jansou.computeDay(cfg, flat());
+    const huge = Jansou.computeDay(Object.assign({}, cfg, {
+      favorFee: true, slotFavor: [0, 0, 100000] }), flat());
+    eq(huge.slots[2].guests, base.slots[2].guests, '単価は客数を動かさない');
+    const ratio = huge.slots[2].sales / base.slots[2].sales;
+    ok(ratio <= 1 + Jansou.FAVOR_FEE_CAP + 1e-6,
+       '**Σfavor がいくら大きくても +15% を超えない**（' + ratio.toFixed(4) + '）');
+    ok(ratio > 1.14, 'ちゃんと上限まで乗る');
+    eq(huge.slots[0].sales, base.slots[0].sales, '昼の単価は動かさない');
+    eq(huge.slots[1].sales, base.slots[1].sales, '夕の単価は動かさない');
+    /* 途中の値。**上限に届くのは Σfavor 450**（0.15 × 3000）。
+       そこを超えると平らになる——第五段の再測で見るべき点 */
+    const mid = Jansou.computeDay(Object.assign({}, cfg, {
+      favorFee: true, slotFavor: [0, 0, 150] }), flat());
+    ok(Math.abs(mid.slots[2].sales / base.slots[2].sales - 1.05) < 0.01,
+       'Σfavor 150 で +5%');
+    const at = Jansou.FAVOR_FEE_CAP * Jansou.FAVOR_FEE_DIV;
+    eq(at, 450, '上限に届く Σfavor は 450');
+    const capped = Jansou.computeDay(Object.assign({}, cfg, {
+      favorFee: true, slotFavor: [0, 0, at] }), flat());
+    const over = Jansou.computeDay(Object.assign({}, cfg, {
+      favorFee: true, slotFavor: [0, 0, at * 10] }), flat());
+    eq(capped.slots[2].sales, over.slots[2].sales, '450 を超えると平らになる');
+  }
+}
+
+/* ============================================================
    子ごとの大会戦績（tournament.js。office/spec.md §9.1）
    ============================================================ */
 {

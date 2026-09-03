@@ -41,6 +41,15 @@ const Jansou = (() => {
     { key: 2, name: '夜', hours: '21〜26時', base: 0.90, turns: 1.7, fee: 2600 },
   ];
 
+  /* ------------------------------------------------------------
+     第五段（A5）の定数。**`computeDay` は旗が立ったときだけ使う**
+     （`office/spec.md` §11。三局面を測り直すまで既定にしない）
+  ------------------------------------------------------------ */
+  const BASE_SEATS = 8;            // 代表が一人で回せるぶん（2卓）
+  const SEATS_PER_WORKER = 8;      // 一人が受け持てる席数
+  const FAVOR_FEE_CAP = 0.15;      // 夜の単価に乗る上限
+  const FAVOR_FEE_DIV = 3000;      // Σfavor をこれで割る
+
   const TABLE_MAX = 8;
   const PLANT_COST = 20000;          // 観葉植物（模様替えで置く小物。placement.md §4）
   const TABLE_COST = { 3: 300000, 4: 500000, 5: 800000, 6: 1200000, 7: 1800000, 8: 2500000 };
@@ -480,7 +489,9 @@ const Jansou = (() => {
 
   /* ---------- 一日の売上（純関数） ----------
      cfg = { tables, interior, auto, sign, rep, slotPop:[昼,夕,夜の出勤popの合計],
-             slotWorkers:[人数], pullBonus, closedTables, playerNight }
+             slotWorkers:[人数], slotFavor:[好感度の合計], pullBonus, closedTables,
+             playerNight, staffing, favorFee, baseSeats }
+     **`staffing` と `favorFee` は既定で偽。**第五段の再測が済むまで効かない
      rng は 0〜1 を返す関数（テストで固定できるように注入する） */
   function computeDay(cfg, rng) {
     rng = rng || Math.random;
@@ -498,6 +509,11 @@ const Jansou = (() => {
       };
     }
     const interior = INTERIOR[cfg.interior - 1];
+    /* **第五段の二つ。既定では効かない**（`office/spec.md` §11）。
+       呼ぶ側が旗を立てたときだけ通る。三局面を測り直すまで既定にしない */
+    const staffing = cfg.staffing === true;
+    const favorFee = cfg.favorFee === true;
+    const baseSeats = cfg.baseSeats == null ? BASE_SEATS : cfg.baseSeats;
     const auto = AUTO[cfg.auto - 1];
     const sign = SIGN[cfg.sign - 1];
     const tables = Math.max(1, cfg.tables - (cfg.closedTables || 0));
@@ -507,6 +523,14 @@ const Jansou = (() => {
       let seats = tables * 4;
       /* 夜に自分の卓を出すと、その卓は貸せない */
       if (s.key === 2 && cfg.playerNight) seats = Math.max(0, seats - 4);
+      /* **人が足りなければ卓を開けられない**（`office/spec.md` §11）。
+         `capacity` の式は触らない——あそこは席数と回転の上限で、
+         内装・卓の型・卓数の意味がすべて乗っている。動かすのは
+         **そこへ入る席数のほう**。`baseSeats` は「代表が居る」ぶんで、
+         2卓ぶんを一人で回せるという理屈。
+         **8 + 人数×8 なら三局面は1ドットも動かない**（席／人の最大が 8.0） */
+      const workers = (cfg.slotWorkers || [0, 0, 0])[s.key] || 0;
+      if (staffing) seats = Math.min(seats, baseSeats + workers * SEATS_PER_WORKER);
       const pop = (cfg.slotPop || [0, 0, 0])[s.key] || 0;
       const popMul = 1 + Math.min(1.0, pop / 350);          // 出勤者の人気が客を呼ぶ
       const noise = 0.82 + rng() * 0.36;                    // ±18%のぶれ
@@ -514,9 +538,17 @@ const Jansou = (() => {
         (1 + sign.pull + (cfg.pullBonus || 0)) * popMul * repMul * noise;
       const capacity = seats * s.turns * auto.rot;          // 回転の上限
       const guests = Math.round(Math.min(capacity, demand * s.turns * auto.rot));
-      const sales = guests * s.fee;
+      /* **推しファンは単価に効かせる**（`jansou/spec.md` §6.1 の先送りぶん）。
+         需要に足しても、終盤は全帯が `capacity` に張り付いていて1人も動かない
+         （帯ごとに分解して確かめた）。推しファンは `slots:[2]`・`feeMul:2.0`
+         ＝**夜にだけ来て倍払う客**なので、夜の単価に乗せるのが素直。
+         上限を置くのは、好感度を全員満額にしたときに青天井にしないため */
+      const favor = (cfg.slotFavor || [0, 0, 0])[s.key] || 0;
+      const feeMul = (favorFee && s.key === 2)
+        ? 1 + Math.min(FAVOR_FEE_CAP, favor / FAVOR_FEE_DIV) : 1;
+      const sales = Math.round(guests * s.fee * feeMul);
       return { key: s.key, name: s.name, guests, capacity: Math.round(capacity), sales,
-               workers: (cfg.slotWorkers || [0, 0, 0])[s.key] || 0, full: guests >= Math.round(capacity) };
+               seats, workers, full: guests >= Math.round(capacity) };
     });
 
     return {
@@ -1955,7 +1987,8 @@ const Jansou = (() => {
            settle, closedDayPlan, closedDayResults, runClosedDay,
            awayDayPlan, resolveAway, runAwayDay,
            blankMonth, normalizeMonth, accrue, closeMonth, renderMonth, showMonthReport, nextMonthNo,
-           OPEN_COST, SLOTS, TABLE_COST, INTERIOR, AUTO, SIGN, MONTH_DAYS, MONTHS_KEPT };
+           OPEN_COST, SLOTS, TABLE_COST, INTERIOR, AUTO, SIGN, MONTH_DAYS, MONTHS_KEPT,
+           BASE_SEATS, SEATS_PER_WORKER, FAVOR_FEE_CAP, FAVOR_FEE_DIV };
 })();
 
 if (typeof module !== 'undefined') {
