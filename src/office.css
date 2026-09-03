@@ -54,7 +54,7 @@
 /* ---------- 所属 ---------- */
 .ofMates{display:flex;flex-direction:column;gap:5px}
 .ofMate{
-  display:flex;align-items:center;gap:9px;
+  display:flex;align-items:flex-start;gap:9px;
   padding:6px 8px;border-radius:4px;
   background:rgba(255,255,255,.03);border:1px solid rgba(201,162,74,.14);
 }
@@ -73,7 +73,27 @@
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
 }
 .ofMateSub{font-size:10.5px;color:var(--muted)}
-.ofMateNums{flex:none;display:flex;flex-direction:column;gap:1px;text-align:right}
+
+/* ---------- 配置とシフト（spec.md §6.3） ----------
+   行が縦に伸びるので、所属が14人でも縦持ちで読めるように詰める。
+   **休みの子は薄くするだけで、行を隠さない**（配置は変えるまで続くので、
+   誰が休んでいるかが一目で見えている必要がある） */
+.ofMateShift{display:flex;flex-wrap:wrap;gap:3px;margin-top:3px}
+.ofWhere{
+  font-size:10.5px;padding:3px 8px;border-radius:3px;cursor:pointer;
+  border:1px solid var(--gold-dim);background:transparent;color:var(--muted);
+}
+.ofWhere[aria-pressed="true"]{border-color:var(--gold);color:var(--gold);background:rgba(201,162,74,.12)}
+.ofChip{
+  font-size:10.5px;padding:3px 7px;border-radius:3px;cursor:pointer;
+  border:1px solid rgba(255,255,255,.14);background:transparent;color:var(--muted);
+}
+.ofChip.on{border-color:var(--gold);background:rgba(201,162,74,.14);color:var(--gold)}
+.ofChip[disabled]{opacity:.3;cursor:default}
+.ofWhere:focus-visible,.ofChip:focus-visible{outline:2px solid var(--gold);outline-offset:1px}
+.ofMate.off{opacity:.62}
+.ofBusy{font-size:10.5px;color:var(--gold);letter-spacing:.08em}
+.ofMateNums{flex:none;display:flex;flex-direction:column;gap:1px;text-align:right;padding-top:2px}
 .ofNum{font-size:10px;color:var(--muted)}
 .ofNum b{font-family:var(--maru);font-size:12.5px;color:var(--ivory);margin-left:2px}
 .ofNum.on b{color:var(--gold)}
