@@ -85,11 +85,18 @@ const JandolDebug = (() => {
 
     const comp = {};
     const grades = {};
-    ALL().forEach((c) => { comp[c.id] = c.comp; grades[c.id] = c.rank; });
+    /* **`characters.js` の `comp` は全員 undefined。**実行時に
+       `compFromRank` で入るので、ここでそのまま写すと `undefined` が入り、
+       下の「少し育てておく」が `(undefined||0)+18` で 18 に潰れる
+       （契約した子の完成度が全員18になっていた） */
+    ALL().forEach((c) => {
+      comp[c.id] = c.comp == null ? compFromRank(c.rank) : c.comp;
+      grades[c.id] = c.rank;
+    });
     /* 契約した子は少し育てておく。伸びしろの天井（compMax）は触らない */
     contracted.forEach((id) => {
       const c = ALL().find((x) => x.id === id);
-      if (c) comp[id] = Math.min(100, (c.comp || 0) + 18);
+      if (c) comp[id] = Math.min(100, comp[id] + 18);
     });
 
     const shifts = {};

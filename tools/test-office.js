@@ -32,6 +32,7 @@ global.PLAYER = chars.PLAYER;
 global.RANK_INFO = chars.RANK_INFO;
 global.CONTRACTS = chars.CONTRACTS;
 Object.assign(global, require('../src/tournament.js'));
+global.Tournament = require('../src/tournament.js');
 global.Scout = require('../src/scout.js');
 global.Jansou = require('../src/jansou.js').Jansou;
 global.Offers = require('../src/offers.js').Offers;
@@ -839,11 +840,115 @@ function eq(a, b, name) {
     eq(Office.eightNext(inSt), null, 'もう入っていれば出さない');
   }
 
-  /* --- 配合（強さ6：実績4）--- */
+  /* --- 配合（実力＝強さ6：実績4／順位＝実力6：人気4）--- */
   {
-    eq(Office.POWER_MIX.strength + Office.POWER_MIX.title, 1, '配合は合わせて1');
+    eq(Office.POWER_MIX.strength + Office.POWER_MIX.title, 1, '実力の配合は合わせて1');
     ok(Office.POWER_MIX.strength > Office.POWER_MIX.title, '強さのほうが重い');
+    eq(Office.FAME_MIX.might + Office.FAME_MIX.fame, 1, '二軸の指数は合わせて1');
+    ok(Office.FAME_MIX.might > Office.FAME_MIX.fame, '実力のほうが重い');
   }
+
+  /* --- **二軸。掛け合わせなので両方が要る**（§9.1） --- */
+  {
+    const st = blank();
+    const a = all.find((c) => c.rank === 'A');
+    /* 人気0の子は、実力を最大まで上げても入らない */
+    const noFame = Object.assign(blank(), {
+      contracted: [a.id], comp: { [a.id]: 100 },
+      popUp: { [a.id]: -(a.pop || 0) },              // 人気を0にする
+      records: { rookie: { best: '優勝' }, local: { best: '優勝' },
+                 open: { best: '優勝' }, title: { best: '優勝' } },
+    });
+    eq(Office.popOf(noFame, a), 0, '人気を0にできた');
+    eq(Office.powerOf(a, noFame, true), 0, '人気0なら順位の点も0');
+    ok(!Office.eightTable(noFame).some((r) => r.mine),
+       '**人気0の子は comp 100 でも八人に入らない**');
+    /* 逆に、人気だけ高くて実力が無い子も入らない */
+    const d = all.find((c) => c.rank === 'D');
+    const noMight = Object.assign(blank(), { contracted: [d.id], popUp: { [d.id]: 100 } });
+    ok(Office.popOf(noMight, d) > 100, '人気を上げた');
+    ok(!Office.eightTable(noMight).some((r) => r.mine),
+       '人気だけ高くても、実力が無ければ入らない');
+    /* 二軸が別々に出ている */
+    const row = Office.eightTable(st)[0];
+    ok(row.might > 0 && row.pop > 0, '表に実力と人気が別々に載る');
+    ok(row.power !== row.might, '順位の点は実力そのものではない');
+    /* **足し算にしていない**（掛け合わせの証拠）。片方を倍にすると
+       同じ倍率では効かない */
+    const base = Office.powerOf(a, Object.assign(blank(), { contracted: [a.id] }), true);
+    const twice = Office.powerOf(a, Object.assign(blank(), {
+      contracted: [a.id], popUp: { [a.id]: a.pop } }), true);
+    ok(twice / base < 2, '人気を倍にしても点は倍にならない（掛け合わせ）');
+    ok(twice > base, 'それでも人気は効く');
+  }
+
+  /* --- 子ごとの大会戦績（`st.wins`。A5 から記録を始めた） --- */
+  {
+    const a = all.find((c) => c.rank === 'A');
+    /* 無いセーブでも壊れない */
+    const noWins = Object.assign(blank(), { contracted: [a.id] });
+    delete noWins.wins;
+    ok(Office.powerOf(a, noWins, true) > 0, '`st.wins` が無いセーブを読んで壊れない');
+    ok(Office.eightTable(noWins).length === 8, '表も出る');
+
+    /* 記録があればそちらを優先する */
+    const w = Tournament.recordResult({}, a.id, 'title', 'win');
+    const withWins = Object.assign(blank(), { contracted: [a.id], wins: w });
+    ok(Office.charaTitle(withWins, a.id) > 0, '子ごとの実績が点になる');
+    /* 事務所の実績があっても、子ごとの記録が優先される */
+    const both = Object.assign({}, withWins, {
+      records: { rookie: { best: '優勝' }, local: { best: '優勝' },
+                 open: { best: '優勝' }, title: { best: '優勝' } } });
+    eq(Office.mightOf(a, both, true), Office.mightOf(a, withWins, true),
+       '子ごとの記録があれば事務所の実績は使わない');
+    /* 記録の無い子は事務所単位のまま */
+    const other = all.find((c) => c.rank === 'B');
+    const mix = Object.assign({}, both, { contracted: [a.id, other.id] });
+    ok(Office.mightOf(other, mix, true) > Office.mightOf(other, withWins, true),
+       '記録の無い子は事務所の実績に落ちる');
+  }
+}
+
+/* ============================================================
+   子ごとの大会戦績（tournament.js。office/spec.md §9.1）
+   ============================================================ */
+{
+  const T = Tournament;
+  eq(JSON.stringify(T.PLACE_KEYS), JSON.stringify(['win', 'second', 'final']),
+     '入賞は決勝卓まで');
+
+  let w = T.recordResult({}, 12, 'title', 'win');
+  eq(w[12].title.entries, 1, '出場が数えられる');
+  eq(w[12].title.win, 1, '優勝が数えられる');
+  eq(w[12].title.place, 1, '優勝は入賞でもある');
+
+  w = T.recordResult(w, 12, 'title', 'semi');
+  eq(w[12].title.entries, 2, '二度目の出場');
+  eq(w[12].title.win, 1, '準決勝では優勝は増えない');
+  eq(w[12].title.place, 1, '準決勝は入賞ではない');
+
+  w = T.recordResult(w, 12, 'title', 'second');
+  eq(w[12].title.place, 2, '準優勝は入賞');
+
+  w = T.recordResult(w, 12, 'open', 'win');
+  eq(w[12].open.win, 1, '大会ごとに分かれる');
+  eq(w[12].title.entries, 3, '別の大会は混ざらない（title は三回のまま）');
+
+  /* 純関数。元の表を書き換えない */
+  const before = T.recordResult({}, 5, 'rookie', 'win');
+  const snap = JSON.stringify(before);
+  T.recordResult(before, 5, 'rookie', 'win');
+  eq(JSON.stringify(before), snap, '元の表を書き換えない');
+
+  /* 壊れた入力で落ちない */
+  eq(JSON.stringify(T.recordResult(null, 1, 'rookie', 'win')),
+     JSON.stringify(T.recordResult({}, 1, 'rookie', 'win')), 'null を渡しても動く');
+  eq(Object.keys(T.recordResult({}, null, 'rookie', 'win')).length, 0, 'id が無ければ何もしない');
+  eq(Object.keys(T.recordResult({}, 1, null, 'win')).length, 0, '大会が無ければ何もしない');
+
+  ok(!T.hasRecord({}, 1), '記録が無い');
+  ok(!T.hasRecord(null, 1), 'null でも落ちない');
+  ok(T.hasRecord(w, 12), '記録がある');
 }
 
 /* ============================================================ */

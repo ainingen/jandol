@@ -160,6 +160,7 @@ body.inMatch #matchRoot{flex:1;min-height:0}
       offerFired: [],            // once の依頼で既に発火した id
       offerAccepted: [],         // 受けた依頼の id（RULES.event が見る）
       popUp: {},                 // { [charaId]: 人気の底上げ }。アイドル活動で貯まる
+      wins: {},                  // { [charaId]: { [tierId]: {entries,win,place} } } 大会戦績
       fatigue: {},               // { [charaId]: 0..100 }  第五段で数値を置く
       cond: {},                  // { [charaId]: -2..2 }   第五段で数値を置く
     };
@@ -206,6 +207,7 @@ body.inMatch #matchRoot{flex:1;min-height:0}
         offerFired: Array.isArray(s.offerFired) ? s.offerFired : [],
         offerAccepted: Array.isArray(s.offerAccepted) ? s.offerAccepted : [],
         popUp: s.popUp && typeof s.popUp === 'object' ? s.popUp : {},
+        wins: s.wins && typeof s.wins === 'object' ? s.wins : {},
         fatigue: s.fatigue && typeof s.fatigue === 'object' ? s.fatigue : {},
         cond: s.cond && typeof s.cond === 'object' ? s.cond : {},
       });

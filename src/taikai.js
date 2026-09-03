@@ -448,10 +448,14 @@ const Taikai = (() => {
       const comp = Object.assign({}, st.comp);
       const compMax = Object.assign({}, st.compMax || {});
       const grades = Object.assign({}, st.grades || {});
+      /* **子ごとの大会戦績**（office/spec.md §9.1）。雀エイト表がこれを読む。
+         プレイヤー（id 0）は `records` の側が持っているので入れない */
+      let wins = st.wins && typeof st.wins === 'object' ? st.wins : {};
       growth = [];
       team.filter((c) => c.id !== 0).forEach((c) => {
         const o = run.outcomeOf(c.id);
         if (!o) return;
+        wins = recordResult(wins, c.id, run.tierId, o.key);
         const target = Object.assign({}, c, {
           comp: comp[c.id] != null ? comp[c.id] : c.comp,
           compMax: compMax[c.id],
@@ -499,7 +503,7 @@ const Taikai = (() => {
 
       store.set({
         money: (st.money || 0) + prize.total,
-        comp, compMax, grades, playerRank, playerWins, records, beaten,
+        comp, compMax, grades, playerRank, playerWins, records, beaten, wins,
         recent: run.met.slice(0, 40),
       });
       lastPromotion = promotedRank;

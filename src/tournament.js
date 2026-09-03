@@ -96,6 +96,39 @@ function strengthOf(chara, STYLES) {
   return comp * 0.42 + judge * 0.45;
 }
 
+/* ---------- 子ごとの大会戦績（office/spec.md §9.1）----------
+   **記録は今から始める。**後から始めるほど過去が空白になる。
+   置き場所はセーブの最上位 `st.wins`（`comp` と同じ `{ [id]: ... }` の形）。
+
+     st.wins = { [charaId]: { [tierId]: { entries, win, place } } }
+
+   `place`（入賞）は優勝・準優勝・決勝卓まで。`PAYOUT` の上位三つ。
+   **ここは貯めるだけ。**点にするのは `office.js`（雀エイト表）の側で、
+   重みを二か所に書かないため。
+   ---------------------------------------------------------- */
+const PLACE_KEYS = ['win', 'second', 'final'];
+
+/* 一件ぶん積んだ新しい表を返す（純関数。元の表は書き換えない） */
+function recordResult(wins, charaId, tierId, outcomeKey) {
+  const out = Object.assign({}, wins || {});
+  if (charaId == null || !tierId) return out;
+  const forChara = Object.assign({}, out[charaId] || {});
+  const cur = forChara[tierId] || { entries: 0, win: 0, place: 0 };
+  forChara[tierId] = {
+    entries: cur.entries + 1,
+    win: cur.win + (outcomeKey === 'win' ? 1 : 0),
+    place: cur.place + (PLACE_KEYS.indexOf(outcomeKey) >= 0 ? 1 : 0),
+  };
+  out[charaId] = forChara;
+  return out;
+}
+
+/* その子に戦績があるか（無ければ読む側が事務所単位に落ちる） */
+function hasRecord(wins, charaId) {
+  const w = (wins || {})[charaId];
+  return !!(w && Object.keys(w).length);
+}
+
 /* ---------- 大会の格 ---------- */
 const TOURNAMENTS = {
   rookie: { name: '新人戦', size: 16, stage: 'practice', prize: 200000,
@@ -188,6 +221,7 @@ function roundName(remaining) {
 if (typeof module !== 'undefined') {
   module.exports = {
     gradeOf, compFromRank, addExp, paramsOf, strengthOf,
+    PLACE_KEYS, recordResult, hasRecord,
     TOURNAMENTS, buildField, makeTables, simulateTable, roundName, GROWTH_CURVE,
   };
 }

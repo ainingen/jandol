@@ -409,22 +409,62 @@ const Office = (() => {
     return Math.min(TITLE_CAP, p);
   }
 
-  /* 実績の点。所属（と自分）だけが事務所の実績を上乗せできる */
-  function titleScore(c, st, mine) {
-    return (RANK_TITLE[c.rank] || 12) + (mine ? agencyTitle(st) : 0);
+  /* その子自身の大会戦績（`st.wins`。`office/spec.md` §9.1）。
+     **記録があればこちらを優先する。**無ければ事務所単位に落ちる
+     ——記録は A5 から始めたので、それ以前のセーブには何も無い */
+  function charaTitle(st, id) {
+    const w = (st.wins || {})[id];
+    if (!w) return null;
+    let p = 0;
+    Object.keys(w).forEach((t) => {
+      const pt = TIER_POINT[t];
+      if (!pt) return;
+      if (w[t].win > 0) p += pt;
+      else if (w[t].place > 0) p += pt * 0.4;     // 入賞は優勝の四割
+    });
+    return Math.min(TITLE_CAP, p);
   }
 
-  /* 強さ。**`strengthOf`（comp と打ち筋）と実績の配合。**
+  /* 実績の点。所属（と自分）だけが上乗せを持てる。
+     **子ごとの記録があればそれを、無ければ事務所の実績を**（§9.1） */
+  function titleScore(c, st, mine) {
+    const base = RANK_TITLE[c.rank] || 12;
+    if (!mine) return base;
+    const own = (typeof Tournament !== 'undefined' && Tournament.hasRecord
+      && Tournament.hasRecord(st.wins, c.id)) ? charaTitle(st, c.id) : null;
+    return base + (own == null ? agencyTitle(st) : own);
+  }
+
+  /* 実力点。**`strengthOf`（comp と打ち筋）と実績の配合。**
      配合は 6:4。`strengthOf` だけで並べると A級が最初から
      S級を三人抜いてしまい、「S級＝雀エイト」（`RANK_INFO` の label）が
-     初日から崩れる。実績を四割乗せると、**始まりは八人の S級**になり、
-     そこへ割り込んでいく形になる */
+     初日から崩れる。実績を四割乗せると、**始まりは八人の S級**になる */
   const POWER_MIX = { strength: 0.6, title: 0.4 };
-  function powerOf(c, st, mine) {
+  function mightOf(c, st, mine) {
     const sOf = (typeof Tournament !== 'undefined' && Tournament.strengthOf)
       || (typeof strengthOf === 'function' ? strengthOf : null);
     const base = sOf ? sOf(compFor(c, st), typeof STYLES !== 'undefined' ? STYLES : {}) : 50;
     return base * POWER_MIX.strength + titleScore(c, st, mine) * POWER_MIX.title;
+  }
+
+  /* 雀エイトの順位。**強さと人気の二軸**（§9.1）。
+
+     **足し算にしない。**足すと「強いが無名」「有名だが弱い」がどちらも
+     入ってしまい、二軸である意味が消える。掛け合わせ（コブ＝ダグラス型）に
+     すると**両方が要る**——人気0なら実力100でも0になる。
+
+     指数は 6:4。実測で確かめた（`tools/test-office.js` が固定している）:
+       0.6 / 0.4 … 始まりは S級八人。九位は人気85のA級（嵐山ことね）が僅差
+       0.5 / 0.5 … **A級が二人入って S級八人が崩れる**
+       0.7 / 0.3 … S級八人は保つが、人気の効きが薄くなる
+
+     アイドル活動（`popUp`）がここに繋がる。**育てるだけでは八人に入れない。** */
+  const FAME_MIX = { might: 0.6, fame: 0.4 };
+  function powerOf(c, st, mine) {
+    const might = mightOf(c, st, mine);
+    const fame = popOf(st, c);
+    if (might <= 0 || fame <= 0) return 0;
+    return Math.pow(might, FAME_MIX.might) * Math.pow(fame, FAME_MIX.fame);
   }
 
   /* セーブの `comp` を被せた写し。**元データは書き換えない**
@@ -445,7 +485,9 @@ const Office = (() => {
       const withComp = compFor(c, st);
       return {
         id: c.id, name: c.name, rank: c.rank, region: c.region,
+        /* **二軸は別々に持つ。**表でも別の欄に出す（§9.1） */
         pop: popOf(st, c),
+        might: mightOf(c, st, mine),
         comp: withComp.comp == null ? compFromRank(c.rank) : withComp.comp,
         power: powerOf(c, st, mine),
         mine,
@@ -651,13 +693,14 @@ const Office = (() => {
               <span class="ofEightSub">${esc(r.agency)}</span>
             </span>
             <span class="ofEightNums">
-              <span>強さ <b>${Math.round(r.power)}</b></span>
+              <span>実力 <b>${Math.round(r.might)}</b></span>
               <span>人気 <b>${r.pop}</b></span>
             </span>
           </div>`).join('')}</div>
         <p class="ofNote">${next
           ? `いちばん近いのは <b>${esc(next.name)}</b>。八位まであと ${Math.ceil(next.gap)} 点。`
-              + '育てて、大会で勝つと上がる。'
+              + '<b>実力と人気の両方</b>が要る——育てて大会で勝ち、'
+              + 'アイドル活動で人気を上げること。'
           : eight.some((r) => r.mine)
             ? '<b>うちの子が入っている。</b>'
             : '所属が増えると、ここに割り込む相手が見えてくる。'}</p>`;
@@ -1549,8 +1592,8 @@ const Office = (() => {
            planTrip, deputyOf, tripOf, tripStart, regionOfPref,
            fireOffers, dismissOffer, acceptOffer, dropQuest, popOf, idolResult,
            ensureShop, callOn, negotiate, favorGain, addFavor, FAVOR_GAIN,
-           eightTable, eightNext, powerOf, rivalOf, RIVALS, RANK_TITLE,
-           TIER_POINT, POWER_MIX, agencyTitle, EIGHT_N };
+           eightTable, eightNext, powerOf, mightOf, charaTitle, rivalOf, RIVALS,
+           RANK_TITLE, TIER_POINT, POWER_MIX, FAME_MIX, agencyTitle, EIGHT_N };
 })();
 
 if (typeof module !== 'undefined' && module.exports) {
