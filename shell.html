@@ -49,6 +49,16 @@ body.inMatch #scroll{display:none}
 }
 #nav button:focus-visible{outline:2px solid var(--gold);outline-offset:1px}
 #nav button[disabled]{opacity:.35;cursor:default}
+/* タブが6つになったので、狭い幅では字を詰める。
+   **一行に収めること。**折り返すと下の段が押しにくくなり、
+   「スカウ／ト」のように割れて読めなくなる（実機で割れた） */
+@media (max-width:420px){
+  #nav{gap:0;padding-left:2px;padding-right:2px}
+  #nav button{padding:8px 1px;font-size:11.5px;letter-spacing:0}
+}
+@media (max-width:340px){
+  #nav button{font-size:10.5px}
+}
 
 .appTop{
   display:flex;align-items:center;gap:10px;

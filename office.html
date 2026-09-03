@@ -26,6 +26,7 @@
 <div class="dbg">
   <span>動作確認：</span>
   <button id="dbgNight">夜（日報）を見る</button>
+  <button id="dbgMoney">1000万円足す</button>
   <button id="dbgPref">本拠地を選び直す</button>
   <button id="dbgRoster">8人契約させる</button>
   <button id="dbgReset">セーブを消す</button>
@@ -33,6 +34,7 @@
 
 <script src="src/characters.js"></script>
 <script src="src/geo.js"></script>
+<script src="src/tournament.js"></script>
 <script src="src/office.js"></script>
 <script src="src/jansou-guests.js"></script>
 <script src="src/jansou-floor.js"></script>
@@ -42,7 +44,9 @@
    **`store.go` と `store.startDay` を入れていない。**入れられないのではなく、
    ここには行き先（他の画面）が無いから。office.js は無ければ入口の釦を
    disabled にするので、朝の見た目と夜の日報はこれで確かめられる。
-   **一日を実際に回すのは index.html 側**（雀荘の再生と実対局が要る）。 */
+   **店が無い日は、このページでも「今日を始める」で回せる**
+   （雀荘へ委譲しないので行き先が要らない）。
+   **店がある日を回すのは index.html 側**（雀荘の再生と実対局が要る）。 */
 const SAVE_KEY = 'jandol_save_v1';
 
 function blankState() {
@@ -94,6 +98,9 @@ Office.mount(host, store);
 /* ---------- 動作確認 ---------- */
 document.getElementById('dbgNight').addEventListener('click', () => {
   Office.mount(host, store, { phase: 'night' });
+});
+document.getElementById('dbgMoney').addEventListener('click', () => {
+  store.set({ money: (state.money || 0) + 10000000 }); location.reload();
 });
 document.getElementById('dbgPref').addEventListener('click', () => {
   store.set({ officePref: null }); location.reload();

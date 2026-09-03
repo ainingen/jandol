@@ -20,17 +20,21 @@
    一日の形（spec.md §6.1）
    ------------------------------------------------------------
      朝（事務所）  所属を見る → 「今日を始める」
-     昼（雀荘）    フロアで一日が流れる（既存の再生。一行も動かしていない）
+     昼（店があれば）雀荘のフロアで一日が流れる（既存の再生。一行も動かしていない）
+       （店が無ければ）雀荘へ委譲しない。事務所の中で一行出して夜へ
      夜（事務所）  日報 → 「明日へ」→ 朝
 
-   **`parlor.day` を進めるのは昼の終わり＝`Jansou` の `settle()` の中。**
+   **`parlor.day` を進めるのは `Jansou` の `settle()` の中。**
    ここは純関数で、「スキップしても再生しても完全一致」（jansou/spec.md §16）が
    乗っている場所なので触らない。だから
    **「明日へ」は日を進めない。夜を畳んで朝へ戻すだけ。**
 
-   店がまだ開いていないあいだ（開店資金50万を貯めている期間）は
-   `parlor.day` は 0 のまま動かない。朝の釦は「雀荘を開く」に変わり、
-   日は消費しない。§1.2 の「店は毎日営業する」は開店後の話。
+   **日は店の有無に関係なく進む**（office/spec.md §1.2）。
+   開店資金50万を貯めているあいだも「今日を始める」で一日が過ぎ、
+   所属の日当は出ていく。**弱小事務所なので最初は店を持てない**が、
+   「まず店を持つ」が序盤の最初の節目になる。
+   店が無い日は `Jansou.runClosedDay()` が卓0で同じ締めを通す——
+   客0・売上0・家賃0で、日当だけが引かれる。
 
    ------------------------------------------------------------
    セーブ（spec.md §10）
@@ -106,6 +110,9 @@ const Office = (() => {
        **`officePref` を持たない既存セーブだけ**。一度きり */
     let screen = prefOf(store.get()) ? (opts.phase === 'night' ? 'night' : 'morning') : 'pick';
     let pick = null;          // 本拠地の選択中の県 key
+    /* 夜に出す、その日ぶんの控え。店が無い日だけ使う（日当の額）。
+       `parlor.log` は {day, guests, sales, profit} しか持たないため */
+    let night = null;
 
     const canGo = typeof store.go === 'function';
     const canRun = typeof store.startDay === 'function';
@@ -163,33 +170,39 @@ const Office = (() => {
         </div>`).join('')
         : '<p class="ofEmpty">まだ誰も所属していません。チーム編成から始めてください。</p>';
 
-      /* 昼の釦。店が開いていなければ日は進まない（上の見出しコメント） */
+      /* 昼の釦。**店が無くても日は進む**（office/spec.md §1.2）。
+         店があれば雀荘へ降り、無ければ事務所の中で夜へ抜ける */
+      const open = !!(parlor && parlor.open);
+      const wages = list.reduce((a, c) => a + Jansou.wageOf(c), 0);
       let action;
-      if (!parlor || !parlor.open) {
-        action = `<button type="button" class="ofRunBtn ghost" data-go="jansou"
-            ${canGo ? '' : 'disabled'}>雀荘を開く</button>
-          <p class="ofNote">店を開くまで日は進みません。開店資金は ${yen(Jansou.OPEN_COST)}。</p>`;
-      } else if (!list.length) {
+      if (!list.length) {
         action = `<button type="button" class="ofRunBtn" disabled>今日を始める</button>
-          <p class="ofNote">出勤できる子がいません。</p>`;
-      } else {
+          <p class="ofNote">まだ誰も所属していません。チーム編成から始めてください。</p>`;
+      } else if (open) {
         action = `<button type="button" class="ofRunBtn" id="ofRun" ${canRun ? '' : 'disabled'}>
             今日を始める</button>
           <p class="ofNote">${day + 1}日目の営業に降ります。シフトは雀荘の画面から。</p>`;
+      } else {
+        action = `<button type="button" class="ofRunBtn" id="ofRun">今日を始める</button>
+          <p class="ofNote">まだ店がありません。今日は営業しない一日になりますが、
+            <b>日当 ${yen(wages)}</b> は出ていきます。<br>
+            開店資金 ${yen(Jansou.OPEN_COST)} を貯めて、まず店を持つこと。</p>
+          <button type="button" class="ofRunBtn ghost" data-go="jansou" ${canGo ? '' : 'disabled'}
+            style="margin-top:10px">雀荘を開く</button>`;
       }
 
       root.innerHTML = `
         <div class="ofHead">
           <h1 class="ofTitle">${esc(nameOf(st))}</h1>
-          <p class="ofSub">${pref ? esc(pref.name) : ''}　${parlor && parlor.open
-            ? `${day + 1}日目の朝` : '開業前'}</p>
+          <p class="ofSub">${pref ? esc(pref.name) : ''}　${day + 1}日目の朝</p>
         </div>
 
         <div class="ofBar">
           <span class="ofStat">所持金 <b>${yen(st.money || 0)}</b></span>
           <span class="ofStat">所属 <b>${list.length}</b>人</span>
           <span class="ofStat">段位 <b>${esc(st.playerRank || 'D')}</b></span>
-          ${parlor && parlor.open ? `<span class="ofStat">評判 <b>${parlor.rep}</b></span>` : ''}
+          ${open ? `<span class="ofStat">評判 <b>${parlor.rep}</b></span>`
+            : '<span class="ofStat">店 <b>まだ無い</b></span>'}
         </div>
 
         <div class="ofRun">${action}</div>
@@ -208,7 +221,15 @@ const Office = (() => {
         <p class="ofNote">スカウトと大会は、いまはまだ日を消費しません。</p>`;
 
       const run = root.querySelector('#ofRun');
-      if (run) run.addEventListener('click', () => { if (canRun) store.startDay(); });
+      if (run) run.addEventListener('click', () => {
+        if (open) { if (canRun) store.startDay(); return; }
+        /* **店が無い日の昼は、雀荘へ委譲しない。**ここで締めを通して夜へ。
+           日を進めるのは `settle`（`runClosedDay` の中）一箇所のまま */
+        night = { closed: true, wages };
+        Jansou.runClosedDay(store, list);
+        screen = 'night';
+        render();
+      });
       bindDoors(root);
     }
 
@@ -232,10 +253,18 @@ const Office = (() => {
       const st = store.get();
       const parlor = parlorOf(st);
       const last = parlor && parlor.log.length ? parlor.log[parlor.log.length - 1] : null;
+      /* 店が無い日は、この画面が唯一の日報。日当の支出だけを載せる。
+         店がある日の細かい日報は雀荘のポップアップが出しきっているので、
+         ここは締めの枠として収支だけを置く */
+      const closed = !!(night && night.closed);
 
       const body = last ? `
-        <div class="ofRepRow"><span>客</span><b>${last.guests}人</b></div>
-        <div class="ofRepRow"><span>場代</span><b>${yen(last.sales)}</b></div>
+        ${closed
+          ? `<div class="ofRepRow"><span>営業</span><b>していない</b></div>
+             <div class="ofRepRow"><span>日当（${rosterOf(st).length}人）</span>
+               <b>−${yen(night.wages)}</b></div>`
+          : `<div class="ofRepRow"><span>客</span><b>${last.guests}人</b></div>
+             <div class="ofRepRow"><span>場代</span><b>${yen(last.sales)}</b></div>`}
         <div class="ofRepRow${last.profit >= 0 ? '' : ' minus'}">
           <span>収支</span><b>${last.profit >= 0 ? '+' : '−'}${yen(Math.abs(last.profit))}</b></div>
         <div class="ofRepRow"><span>所持金</span><b>${yen(st.money || 0)}</b></div>`
@@ -244,7 +273,7 @@ const Office = (() => {
       root.innerHTML = `
         <div class="ofHead">
           <h1 class="ofTitle">${last ? `${last.day}日目の夜` : '夜'}</h1>
-          <p class="ofSub">${esc(nameOf(st))}</p>
+          <p class="ofSub">${esc(nameOf(st))}${closed ? '　まだ店は無い' : ''}</p>
         </div>
         <div class="ofRep">${body}</div>
         <div class="ofRun">
@@ -253,6 +282,7 @@ const Office = (() => {
         </div>`;
 
       root.querySelector('#ofNext').addEventListener('click', () => {
+        night = null;
         screen = 'morning';
         render();
       });

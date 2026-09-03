@@ -219,6 +219,93 @@ function eq(a, b, name) {
 }
 
 /* ============================================================
+   店が無い日も日は進む（spec.md §1.2）
+   「店が無いセーブで『今日を始める』→ parlor.day が 1 進み、
+     日当ぶん money が減る」
+   ============================================================ */
+{
+  global.STYLES = global.STYLES || {};
+  global.PLAYER = global.PLAYER || {};
+  const { Jansou } = require('../src/jansou.js');
+
+  /* 卓が無い日は客も場代もゼロ。**ここが `Math.max(1, ...)` に落ちると
+     卓0でも4席ぶんの客が湧く**（早期返しでそれを止めてある） */
+  const zero = Jansou.computeDay({ tables: 0, interior: 1, auto: 1, sign: 1, rep: 10 }, () => 0.5);
+  eq(zero.guests, 0, '卓0なら客は0');
+  eq(zero.sales, 0, '卓0なら場代は0');
+  eq(zero.slots.length, 3, '帯の形は営業日と同じ（3本）');
+  ok(zero.slots.every((sl) => sl.guests === 0 && sl.sales === 0 && !sl.full),
+    '帯もすべて0で、満卓は立たない');
+
+  /* 既存の呼び出しは通らないこと（normalize が tables を最低2に丸める） */
+  eq(Jansou.normalize({ tables: 0 }).tables, 2, 'normalize は tables を最低2にする');
+  ok(Jansou.computeDay({ tables: 2, interior: 1, auto: 1, sign: 1, rep: 10 }, () => 0.5).guests > 0,
+    '卓が有れば客は出る（早期返しが営業日を巻き込んでいない）');
+
+  /* 店が無いセーブで一日を回す */
+  const a = JANDOLS[0], b = JANDOLS[1];
+  const list = [a, b];
+  const wages = list.reduce((x, c) => x + Jansou.wageOf(c), 0);
+  ok(wages > 0, '日当は0円ではない');
+
+  let st = {
+    money: 1000000, contracted: [a.id, b.id], team: [],
+    comp: {}, compMax: {}, grades: {}, favor: {},
+    parlor: { day: 0 },                      // **open が無い＝まだ店を持っていない**
+    somethingFuture: 'あとから足したキー',
+  };
+  const store = { get: () => st, set: (patch) => { st = Object.assign({}, st, patch); } };
+
+  eq(Jansou.normalize(st.parlor).open, false, '店はまだ無い');
+
+  const out = Jansou.runClosedDay(store, list);
+  eq(st.parlor.day, 1, '「今日を始める」で parlor.day が 1 進む');
+  eq(st.money, 1000000 - wages, '日当ぶん money が減る');
+  eq(out.profit, -wages, '収支は日当ぶんの赤字だけ');
+  eq(st.parlor.log[st.parlor.log.length - 1].guests, 0, '日誌の客は0');
+  eq(st.parlor.log[st.parlor.log.length - 1].sales, 0, '日誌の場代は0');
+  eq(st.somethingFuture, 'あとから足したキー', '知らないキーが残る');
+
+  /* **家賃は掛からない。**店が無いのだから */
+  ok(Jansou.utilOf(2) > 0, '営業日には家賃が掛かる（前提の確認）');
+  eq(out.profit + wages, 0, '家賃はゼロ（収支は日当だけ）');
+
+  /* 成長も出勤も付かない。**誰も出勤していない日なので** */
+  eq(out.growth.length, 0, '成長は付かない');
+  eq(Object.keys(st.parlor.month.work).length, 0, '月報の出勤も付かない');
+  eq(JSON.stringify(st.compMax), '{}', 'compMax を書き換えない（伸びしろの天井の罠）');
+  eq(JSON.stringify(st.grades), '{}', 'grades を書き換えない');
+
+  /* 評判は動かない（黒字ボーナスも満卓ボーナスも付かない） */
+  eq(st.parlor.rep, Jansou.normalize({}).rep, '評判は動かない');
+
+  /* 何日でも続く。月の集計も（売上0で）積まれる */
+  for (let i = 0; i < 4; i++) Jansou.runClosedDay(store, list);
+  eq(st.parlor.day, 5, '5日ぶん進む');
+  eq(st.money, 1000000 - wages * 5, '5日ぶんの日当が引かれている');
+  eq(st.parlor.month.days, 5, '月の日数も5日ぶん積まれる');
+  eq(st.parlor.month.wages, wages * 5, '月の人件費も積まれる');
+  eq(st.parlor.month.slots.reduce((x, sl) => x + sl.sales, 0), 0, '月の場代は0のまま');
+
+  /* 所属が0人なら日当も0。日は進む */
+  let st2 = { money: 100, contracted: [], team: [], comp: {}, parlor: { day: 7 } };
+  const store2 = { get: () => st2, set: (patch) => { st2 = Object.assign({}, st2, patch); } };
+  Jansou.runClosedDay(store2, []);
+  eq(st2.parlor.day, 8, '所属0人でも日は進む');
+  eq(st2.money, 100, '所属0人なら日当も0');
+
+  /* 締めは settle 一箇所。plan と results から組むだけの純関数であること */
+  const plan = Jansou.closedDayPlan(st, list);
+  const r1 = Jansou.settle(plan, Jansou.closedDayResults(), st);
+  const r2 = Jansou.settle(plan, Jansou.closedDayResults(), st);
+  eq(JSON.stringify(r1.patch), JSON.stringify(r2.patch),
+    '同じ plan と results なら同じ書き込み（settle は純関数）');
+  eq(plan.util, 0, '店が無い日の家賃は0');
+  eq(plan.dayWorkers.length, 0, '店が無い日は誰も出勤していない');
+  eq(plan.wages, wages, '日当は出勤ではなく所属の全員ぶん');
+}
+
+/* ============================================================
    雀荘のシフト（spec.md §6.3。第二段でUIを事務所へ移す下ごしらえ）
    **保存の形は変えない。**既定を知っているのは Jansou.shiftOf だけ
    ============================================================ */

@@ -461,6 +461,19 @@ const Jansou = (() => {
      rng は 0〜1 を返す関数（テストで固定できるように注入する） */
   function computeDay(cfg, rng) {
     rng = rng || Math.random;
+    /* **卓が無い日（＝まだ店を持っていない日）は、客も場代もゼロ。**
+       下の `Math.max(1, ...)` は「閉鎖した卓が全部を食っても一卓は残す」ための
+       クランプなので、そこへ落とすと卓0でも4席ぶんの客が湧いてしまう。
+       ここで先に返す。**既存の呼び出しは通らない**——`normalize()` が
+       `tables` を最低2に丸めるので、卓が0になるのは
+       店を持っていない日（`runClosedDay`）だけ（office/spec.md §1.2） */
+    if ((cfg.tables | 0) <= 0) {
+      return {
+        slots: SLOTS.map((sl) => ({ key: sl.key, name: sl.name, guests: 0, capacity: 0,
+                                    sales: 0, full: false })),
+        guests: 0, sales: 0,
+      };
+    }
     const interior = INTERIOR[cfg.interior - 1];
     const auto = AUTO[cfg.auto - 1];
     const sign = SIGN[cfg.sign - 1];
@@ -551,6 +564,281 @@ const Jansou = (() => {
   /* ============================================================
      画面
      ============================================================ */
+  /* ---------- 店が無い日（純関数の plan を組むだけ） ----------
+     開店資金50万を貯めているあいだも、日は進む（office/spec.md §1.2）。
+     **弱小事務所なので最初は店を持てない**が、所属の日当は毎日出ていく。
+     「まず店を持つ」が序盤の最初の目標になる。
+
+     やっているのは「営業しない日」を組んで、**既存の締めをそのまま通す**こと。
+     卓0で `computeDay` を回すので客0・売上0。日が進み、日当が引かれ、
+     月次の決算も（売上0で）出る。**日を進める場所を `settle` 以外に増やさない。**
+
+       dayWorkers: []   … 誰も出勤していない。だから成長も月報の出勤も付かない
+       wages           … **所属の全員**ぶん。出勤ではなく契約に対して払う
+       util: 0         … 家賃は店のもの。店が無い日は掛からない
+
+     roster は呼ぶ側が渡す（`mount` の閉包と同じ形を外から作らないため） */
+  function closedDayPlan(st, list) {
+    const parlor = normalize(st.parlor);
+    return {
+      st0: st, parlor, list, closed: true,
+      slotWorkers: [[], [], []], dayWorkers: [],
+      day: computeDay({ tables: 0, interior: parlor.interior, auto: parlor.auto,
+                        sign: parlor.sign, rep: parlor.rep }),
+      ev: null, rolls: {}, fillers: [], challenge: null, arashiTier: 0,
+      closedTables: 0, myTable: -1, tableIdx: [],
+      timeline: [], summary: null, faces: [], names: {}, tips: 0, combo: null,
+      wages: list.reduce((a, c) => a + wageOf(c), 0),
+      util: 0,
+    };
+  }
+
+  /* 店が無い日の結果。割り込みも実対局も無いので、空の results でよい
+     （形は `playDay` が作るものと同じ。増やしたら両方に足すこと） */
+  function closedDayResults() {
+    return { extraMoney: 0, repDelta: 0, lines: ['まだ店がない。今日は営業していない。'],
+             favor: {}, buffsAdd: [], extraPlace: {}, myLine: null, bottleMoney: 0,
+             treated: false, arashiFought: false, arashiWin: false,
+             bottleFought: false, bottleWon: false, bottles: [0, 0, 0, 0, 0, 0] };
+  }
+
+  /* 店が無い一日を回してセーブに書く。事務所の昼から呼ばれる。
+     戻り値は `settle` のものと同じなので、夜の日報が同じ形で読める */
+  function runClosedDay(store, list) {
+    const st = store.get();
+    const plan = closedDayPlan(st, list || []);
+    const out = settle(plan, closedDayResults(), st);
+    store.set(out.patch);
+    return out;
+  }
+
+  /* ---------- 一日の締め（純関数） ----------
+     plan と results だけから、セーブへの書き込みを組み立てる。
+     **`parlor.day` が進むのはここ一箇所だけ。**乱数も Date も引かない。
+     こうしておくと「スキップしても再生しても完全一致」（spec.md §16）が
+     構造として守られる。playDay に置くと壊れる。
+
+     **閉包の外に置いてある。**mount の中にあったが、
+     店が無い日の締め（`runClosedDay`）と node のテストが同じ関数を
+     通れるように、モジュール層へ出した。閉包から借りていたのは
+     `parlorOf` だけで、それは `normalize(st.parlor)` そのものだった。 */
+  function settle(plan, results, stNow) {
+    const { parlor, day, ev, dayWorkers, wages, util } = plan;
+    let extraMoney = results.extraMoney, repDelta = results.repDelta;
+    const lines = results.lines.slice();
+    const buffs0 = parlor.buffs.concat(results.buffsAdd);
+
+    /* くつろぎ席のチップ（placement.md §5.4）。**場代には触れていない。**
+       タイムラインの bonus と同額で、スキップでも再生でも同じ値になる */
+    if (plan.tips) {
+      extraMoney += plan.tips;
+      lines.push(`くつろぎ席でチップをもらった（${signedYen(plan.tips)}）`);
+    }
+
+    /* 選択の要らないイベントの効き目はここで */
+    if (ev && ev.kind === 'shugi') {
+      const bonus = day.guests * 500;
+      extraMoney += bonus;
+      lines.push(`常連たちが祝儀をはずんだ（${signedYen(bonus)}）`);
+    } else if (ev && ev.kind === 'oshinobi') {
+      const bonus = Math.round(day.slots[2].sales * 0.2);
+      extraMoney += bonus; repDelta += 4;
+      lines.push(`有名人がお忍びで来店（${signedYen(bonus)}・評判 +4）`);
+    } else if (ev && ev.kind === 'shuzai') {
+      repDelta += 8;
+      buffs0.push({ kind: 'pull', val: 0.15, days: 3 });
+      lines.push('雑誌の取材が入った（評判 +8・三日間 客足が伸びる）');
+    }
+
+    /* 成長。着順は plan で振ってある */
+    const comp = Object.assign({}, stNow.comp);
+    const compMax = Object.assign({}, stNow.compMax || {});
+    const grades = Object.assign({}, stNow.grades || {});
+    const growth = [];
+    dayWorkers.forEach((c) => {
+      const target = Object.assign({}, c, {
+        comp: comp[c.id] != null ? comp[c.id] : c.comp,
+        compMax: compMax[c.id],
+        rank: grades[c.id] || c.rank,
+      });
+      const before = target.comp;
+      let promoted = null;
+      (plan.rolls[c.id] || []).forEach((place) => {
+        const res = addExp(target, place, 'practice');
+        if (res.promoted) promoted = res.promoted;
+      });
+      if (results.extraPlace[c.id]) {
+        const res = addExp(target, results.extraPlace[c.id], 'practice');
+        if (res.promoted) promoted = res.promoted;
+      }
+      comp[c.id] = target.comp;
+      compMax[c.id] = target.compMax;
+      grades[c.id] = target.rank;
+      if (target.comp - before >= 0.05 || promoted) {
+        growth.push({ id: c.id, name: c.name, gain: target.comp - before, promoted });
+      }
+    });
+
+    const profit = day.sales + extraMoney - wages - util;
+    let rep = parlor.rep + repDelta;
+    if (profit > 0) rep += 1;
+    if (day.slots.some((s) => s.full)) rep += 1;
+    rep = Math.min(100, Math.max(0, rep));
+
+    const buffs = buffs0
+      .map((b) => Object.assign({}, b, { days: b.days - 1 }))
+      .filter((b) => b.days > 0);
+    const log = parlor.log.concat({
+      day: parlor.day + 1, guests: day.guests, sales: day.sales, profit,
+    }).slice(-7);
+
+    /* 常連。今日来た顔を数え、3回目に達した顔だけ名前つきで登録する（§7）。
+       「この客を覚える」で日中に登録されたぶんは stNow.parlor に入っている */
+    const pNow = normalize(stNow.parlor);
+    const meta = {};
+    (plan.faces || []).forEach((f) => { meta[f.id] = { typeKey: f.typeKey, favTalent: f.favTalent }; });
+    const reg = typeof JansouGuests !== 'undefined'
+      ? JansouGuests.bumpRegulars(pNow.regulars, pNow.seen, (plan.faces || []).map((f) => f.id), plan.names || {}, meta)
+      : { regulars: pNow.regulars, seen: pNow.seen, promoted: [] };
+    reg.promoted.slice(0, 3).forEach((p) => {
+      const nm = JansouGuests.displayName(p.guest);
+      lines.push(p.stage === 1 ? `${nm} が顔なじみになった`
+        : p.stage === 2 ? `${nm} が常連になった` : `${nm} がこの店の主になった`);
+    });
+    /* くつろぎ席に座った客は、その日のぶんが一つ多く進む（placement.md §5.2）。
+       3回で顔なじみ、10回で常連。座り心地のいい席は覚えられやすい */
+    (plan.faces || []).forEach((f) => {
+      if (!f.combo || f.combo.indexOf('kutsurogi') < 0) return;
+      if (reg.regulars[f.id]) {
+        reg.regulars[f.id] = Object.assign({}, reg.regulars[f.id],
+          { visits: (reg.regulars[f.id].visits || 0) + 1 });
+      }
+    });
+    /* 主に勝つと忠誠が上がる（来店回数が進む）。§9.1 */
+    Object.keys(results.visitsBonus || {}).forEach((id) => {
+      if (reg.regulars[id]) reg.regulars[id] = Object.assign({}, reg.regulars[id],
+        { visits: (reg.regulars[id].visits || 0) + results.visitsBonus[id] });
+    });
+    /* 常連の主は客を呼ぶ（§6.1）。既存の buffs（取材と同じ経路）で翌日の客足に +4%ずつ、三人まで */
+    if (typeof JansouGuests !== 'undefined') {
+      const nushis = (plan.faces || []).filter((f) => {
+        const r = reg.regulars[f.id]; return r && JansouGuests.stageOf(r.visits || 0) >= 3;
+      }).length;
+      if (nushis) {
+        buffs0.push({ kind: 'pull', val: 0.04 * Math.min(3, nushis), days: 1 });
+        lines.push(`主が客を呼んでいる（明日の客足 +${4 * Math.min(3, nushis)}%）`);
+      }
+      /* 推しが辞めていたら乗り換える。今日の推し（出勤者から選ばれた子）に */
+      const rosterIds = new Set((plan.list || []).map((c) => c.id));
+      (plan.faces || []).forEach((f) => {
+        const r = reg.regulars[f.id];
+        if (!r || r.typeKey !== 'oshifan' || r.favTalent == null || rosterIds.has(r.favTalent)) return;
+        if (f.favTalent != null && rosterIds.has(f.favTalent)) {
+          reg.regulars[f.id] = Object.assign({}, r, { favTalent: f.favTalent });
+          const nm = (plan.list.find((c) => c.id === f.favTalent) || {}).name || '';
+          lines.push(`${JansouGuests.displayName(r)} の推しが ${nm} に変わった`);
+        }
+      });
+    }
+    /* ボトル在庫 */
+    const bottles = pNow.bottles.map((n, i) => Math.max(0, (n | 0) + ((results.bottles || [])[i] | 0)));
+
+    /* ---------- 月の集計（monthly.md §5） ----------
+       **ここは settle の中＝純関数の中。**乱数も Date も引かない。
+       こうしておくと「スキップしても再生しても完全一致」（spec.md §16）が
+       自動的に守られる。playDay に置くと壊れる。
+       積むのは day と results が**確定させた整数だけ**。平均も割合も入れない */
+    const evKind = ev ? ev.kind : null;
+    const dayEvents = {
+      guest: evKind === 'guest' ? 1 : 0,
+      treat: results.treated ? 1 : 0,
+      arashi: evKind === 'arashi' ? 1 : 0,
+      arashiWin: results.arashiWin ? 1 : 0,
+      shuzai: evKind === 'shuzai' ? 1 : 0,
+      kosho: evKind === 'kosho' ? 1 : 0,
+      shugi: evKind === 'shugi' ? 1 : 0,
+      oshinobi: evKind === 'oshinobi' ? 1 : 0,
+      bottle: results.bottleFought ? 1 : 0,
+      bottleWin: results.bottleWon ? 1 : 0,
+    };
+    const dayWork = {};
+    dayWorkers.forEach((c) => { dayWork[c.id] = shiftOf(parlor, c.id).filter(Boolean).length; });
+    const dayNominate = {};
+    (plan.timeline || []).forEach((e) => {
+      if (e.kind === 'nominate' && e.charaId != null) {
+        dayNominate[e.charaId] = (dayNominate[e.charaId] || 0) + 1;
+      }
+    });
+    const dayGrow = {};
+    growth.forEach((g) => { if (g.id != null) dayGrow[g.id] = g.gain; });
+    const dayPromo = { stage1: 0, stage2: 0, stage3: 0 };
+    reg.promoted.forEach((pr) => {
+      if (pr.stage >= 1 && pr.stage <= 3) dayPromo['stage' + pr.stage] += 1;
+    });
+    /* 臨時収入の内訳。**Σ が extraMoney に必ず一致する**ように other を引き算で出す
+       （bottleMoney と tips は extraMoney の一部。二重に足さない） */
+    const extraTip = plan.tips | 0;
+    const extraBottle = results.bottleMoney | 0;
+    const month = accrue(normalize(stNow.parlor).month, {
+      slots: day.slots.map((s) => ({ guests: s.guests, sales: s.sales })),
+      wages, util,
+      extraBottle, extraTip, extraOther: extraMoney - extraBottle - extraTip,
+      full: day.slots.some((s) => s.full),
+      profit,
+      events: dayEvents, work: dayWork, nominate: dayNominate, grow: dayGrow, promo: dayPromo,
+    });
+
+    /* 締め。**from からの経過で見る。**day % 30 にすると、途中から始めた
+       既存セーブの初回が13日ぶんで「一ヶ月」を名乗る（monthly.md §10） */
+    const newDay = parlor.day + 1;
+    const months = pNow.months.slice();
+    let report = null;
+    if (newDay - month.from >= MONTH_DAYS) {
+      const names = {};
+      (plan.list || []).forEach((c) => { names[c.id] = { name: c.name, pop: c.pop || 0 }; });
+      const promotedNames = {};
+      growth.forEach((g) => { if (g.id != null && g.promoted) promotedNames[g.id] = g.promoted; });
+      const counts = { s1: 0, s2: 0, s3: 0 };
+      if (typeof JansouGuests !== 'undefined') {
+        Object.keys(reg.regulars).forEach((id) => {
+          const st = JansouGuests.stageOf(reg.regulars[id].visits || 0);
+          if (st >= 3) counts.s3++; else if (st === 2) counts.s2++; else if (st === 1) counts.s1++;
+        });
+      }
+      /* **期の番号は months.length から出さない。**months は直近12期で
+         打ち切られるので、13期目以降ずっと「第13期」になってしまう。
+         直前の月報の番号から進める（monthly.md §10） */
+      const prev = months.length ? months[months.length - 1] : null;
+      report = closeMonth(month, prev, {
+        no: prev ? prev.no + 1 : 1, toDay: newDay, rep, bottles,
+        regulars: counts, names, promotedNames,
+      });
+      months.push(report);
+      if (months.length > MONTHS_KEPT) months.splice(0, months.length - MONTHS_KEPT);
+    }
+
+    const favor = Object.assign({}, stNow.favor || {}, results.favor);
+    const patch = {
+      money: (stNow.money || 0) + profit,
+      comp, compMax, grades, favor,
+      parlor: Object.assign(pNow, {
+        day: parlor.day + 1, rep, buffs, log, challengedToday: false,
+        regulars: reg.regulars, seen: reg.seen, bottles,
+        /* 締めた月は空の入れ物に置き換える。**空にするのはここだけ。**
+           評判・buffs・在庫・常連・配置は持ち越す（monthly.md §6） */
+        month: report ? blankMonth(parlor.day + 1, rep, bottles) : month,
+        months,
+        total: {
+          days: parlor.total.days + 1,
+          sales: parlor.total.sales + day.sales,
+          profit: parlor.total.profit + profit,
+          guests: parlor.total.guests + day.guests,
+        },
+      }),
+    };
+    return { patch, profit, extraMoney, growth, lines, report };
+  }
+
   function ensureSilVar() {
     if (document.documentElement.style.getPropertyValue('--sil-img')) return;
     const svg = encodeURIComponent(
@@ -1385,222 +1673,11 @@ const Jansou = (() => {
 
     /* ---------- 締め（純関数。store には触らない） ----------
        compMax は必ず保存する（引き継ぎ書 §5 の罠）。 */
-    function settle(plan, results, stNow) {
-      const { parlor, day, ev, dayWorkers, wages, util } = plan;
-      let extraMoney = results.extraMoney, repDelta = results.repDelta;
-      const lines = results.lines.slice();
-      const buffs0 = parlor.buffs.concat(results.buffsAdd);
-
-      /* くつろぎ席のチップ（placement.md §5.4）。**場代には触れていない。**
-         タイムラインの bonus と同額で、スキップでも再生でも同じ値になる */
-      if (plan.tips) {
-        extraMoney += plan.tips;
-        lines.push(`くつろぎ席でチップをもらった（${signedYen(plan.tips)}）`);
-      }
-
-      /* 選択の要らないイベントの効き目はここで */
-      if (ev && ev.kind === 'shugi') {
-        const bonus = day.guests * 500;
-        extraMoney += bonus;
-        lines.push(`常連たちが祝儀をはずんだ（${signedYen(bonus)}）`);
-      } else if (ev && ev.kind === 'oshinobi') {
-        const bonus = Math.round(day.slots[2].sales * 0.2);
-        extraMoney += bonus; repDelta += 4;
-        lines.push(`有名人がお忍びで来店（${signedYen(bonus)}・評判 +4）`);
-      } else if (ev && ev.kind === 'shuzai') {
-        repDelta += 8;
-        buffs0.push({ kind: 'pull', val: 0.15, days: 3 });
-        lines.push('雑誌の取材が入った（評判 +8・三日間 客足が伸びる）');
-      }
-
-      /* 成長。着順は plan で振ってある */
-      const comp = Object.assign({}, stNow.comp);
-      const compMax = Object.assign({}, stNow.compMax || {});
-      const grades = Object.assign({}, stNow.grades || {});
-      const growth = [];
-      dayWorkers.forEach((c) => {
-        const target = Object.assign({}, c, {
-          comp: comp[c.id] != null ? comp[c.id] : c.comp,
-          compMax: compMax[c.id],
-          rank: grades[c.id] || c.rank,
-        });
-        const before = target.comp;
-        let promoted = null;
-        (plan.rolls[c.id] || []).forEach((place) => {
-          const res = addExp(target, place, 'practice');
-          if (res.promoted) promoted = res.promoted;
-        });
-        if (results.extraPlace[c.id]) {
-          const res = addExp(target, results.extraPlace[c.id], 'practice');
-          if (res.promoted) promoted = res.promoted;
-        }
-        comp[c.id] = target.comp;
-        compMax[c.id] = target.compMax;
-        grades[c.id] = target.rank;
-        if (target.comp - before >= 0.05 || promoted) {
-          growth.push({ id: c.id, name: c.name, gain: target.comp - before, promoted });
-        }
-      });
-
-      const profit = day.sales + extraMoney - wages - util;
-      let rep = parlor.rep + repDelta;
-      if (profit > 0) rep += 1;
-      if (day.slots.some((s) => s.full)) rep += 1;
-      rep = Math.min(100, Math.max(0, rep));
-
-      const buffs = buffs0
-        .map((b) => Object.assign({}, b, { days: b.days - 1 }))
-        .filter((b) => b.days > 0);
-      const log = parlor.log.concat({
-        day: parlor.day + 1, guests: day.guests, sales: day.sales, profit,
-      }).slice(-7);
-
-      /* 常連。今日来た顔を数え、3回目に達した顔だけ名前つきで登録する（§7）。
-         「この客を覚える」で日中に登録されたぶんは stNow.parlor に入っている */
-      const pNow = parlorOf(stNow);
-      const meta = {};
-      (plan.faces || []).forEach((f) => { meta[f.id] = { typeKey: f.typeKey, favTalent: f.favTalent }; });
-      const reg = typeof JansouGuests !== 'undefined'
-        ? JansouGuests.bumpRegulars(pNow.regulars, pNow.seen, (plan.faces || []).map((f) => f.id), plan.names || {}, meta)
-        : { regulars: pNow.regulars, seen: pNow.seen, promoted: [] };
-      reg.promoted.slice(0, 3).forEach((p) => {
-        const nm = JansouGuests.displayName(p.guest);
-        lines.push(p.stage === 1 ? `${nm} が顔なじみになった`
-          : p.stage === 2 ? `${nm} が常連になった` : `${nm} がこの店の主になった`);
-      });
-      /* くつろぎ席に座った客は、その日のぶんが一つ多く進む（placement.md §5.2）。
-         3回で顔なじみ、10回で常連。座り心地のいい席は覚えられやすい */
-      (plan.faces || []).forEach((f) => {
-        if (!f.combo || f.combo.indexOf('kutsurogi') < 0) return;
-        if (reg.regulars[f.id]) {
-          reg.regulars[f.id] = Object.assign({}, reg.regulars[f.id],
-            { visits: (reg.regulars[f.id].visits || 0) + 1 });
-        }
-      });
-      /* 主に勝つと忠誠が上がる（来店回数が進む）。§9.1 */
-      Object.keys(results.visitsBonus || {}).forEach((id) => {
-        if (reg.regulars[id]) reg.regulars[id] = Object.assign({}, reg.regulars[id],
-          { visits: (reg.regulars[id].visits || 0) + results.visitsBonus[id] });
-      });
-      /* 常連の主は客を呼ぶ（§6.1）。既存の buffs（取材と同じ経路）で翌日の客足に +4%ずつ、三人まで */
-      if (typeof JansouGuests !== 'undefined') {
-        const nushis = (plan.faces || []).filter((f) => {
-          const r = reg.regulars[f.id]; return r && JansouGuests.stageOf(r.visits || 0) >= 3;
-        }).length;
-        if (nushis) {
-          buffs0.push({ kind: 'pull', val: 0.04 * Math.min(3, nushis), days: 1 });
-          lines.push(`主が客を呼んでいる（明日の客足 +${4 * Math.min(3, nushis)}%）`);
-        }
-        /* 推しが辞めていたら乗り換える。今日の推し（出勤者から選ばれた子）に */
-        const rosterIds = new Set((plan.list || []).map((c) => c.id));
-        (plan.faces || []).forEach((f) => {
-          const r = reg.regulars[f.id];
-          if (!r || r.typeKey !== 'oshifan' || r.favTalent == null || rosterIds.has(r.favTalent)) return;
-          if (f.favTalent != null && rosterIds.has(f.favTalent)) {
-            reg.regulars[f.id] = Object.assign({}, r, { favTalent: f.favTalent });
-            const nm = (plan.list.find((c) => c.id === f.favTalent) || {}).name || '';
-            lines.push(`${JansouGuests.displayName(r)} の推しが ${nm} に変わった`);
-          }
-        });
-      }
-      /* ボトル在庫 */
-      const bottles = pNow.bottles.map((n, i) => Math.max(0, (n | 0) + ((results.bottles || [])[i] | 0)));
-
-      /* ---------- 月の集計（monthly.md §5） ----------
-         **ここは settle の中＝純関数の中。**乱数も Date も引かない。
-         こうしておくと「スキップしても再生しても完全一致」（spec.md §16）が
-         自動的に守られる。playDay に置くと壊れる。
-         積むのは day と results が**確定させた整数だけ**。平均も割合も入れない */
-      const evKind = ev ? ev.kind : null;
-      const dayEvents = {
-        guest: evKind === 'guest' ? 1 : 0,
-        treat: results.treated ? 1 : 0,
-        arashi: evKind === 'arashi' ? 1 : 0,
-        arashiWin: results.arashiWin ? 1 : 0,
-        shuzai: evKind === 'shuzai' ? 1 : 0,
-        kosho: evKind === 'kosho' ? 1 : 0,
-        shugi: evKind === 'shugi' ? 1 : 0,
-        oshinobi: evKind === 'oshinobi' ? 1 : 0,
-        bottle: results.bottleFought ? 1 : 0,
-        bottleWin: results.bottleWon ? 1 : 0,
-      };
-      const dayWork = {};
-      dayWorkers.forEach((c) => { dayWork[c.id] = shiftOf(parlor, c.id).filter(Boolean).length; });
-      const dayNominate = {};
-      (plan.timeline || []).forEach((e) => {
-        if (e.kind === 'nominate' && e.charaId != null) {
-          dayNominate[e.charaId] = (dayNominate[e.charaId] || 0) + 1;
-        }
-      });
-      const dayGrow = {};
-      growth.forEach((g) => { if (g.id != null) dayGrow[g.id] = g.gain; });
-      const dayPromo = { stage1: 0, stage2: 0, stage3: 0 };
-      reg.promoted.forEach((pr) => {
-        if (pr.stage >= 1 && pr.stage <= 3) dayPromo['stage' + pr.stage] += 1;
-      });
-      /* 臨時収入の内訳。**Σ が extraMoney に必ず一致する**ように other を引き算で出す
-         （bottleMoney と tips は extraMoney の一部。二重に足さない） */
-      const extraTip = plan.tips | 0;
-      const extraBottle = results.bottleMoney | 0;
-      const month = accrue(parlorOf(stNow).month, {
-        slots: day.slots.map((s) => ({ guests: s.guests, sales: s.sales })),
-        wages, util,
-        extraBottle, extraTip, extraOther: extraMoney - extraBottle - extraTip,
-        full: day.slots.some((s) => s.full),
-        profit,
-        events: dayEvents, work: dayWork, nominate: dayNominate, grow: dayGrow, promo: dayPromo,
-      });
-
-      /* 締め。**from からの経過で見る。**day % 30 にすると、途中から始めた
-         既存セーブの初回が13日ぶんで「一ヶ月」を名乗る（monthly.md §10） */
-      const newDay = parlor.day + 1;
-      const months = pNow.months.slice();
-      let report = null;
-      if (newDay - month.from >= MONTH_DAYS) {
-        const names = {};
-        (plan.list || []).forEach((c) => { names[c.id] = { name: c.name, pop: c.pop || 0 }; });
-        const promotedNames = {};
-        growth.forEach((g) => { if (g.id != null && g.promoted) promotedNames[g.id] = g.promoted; });
-        const counts = { s1: 0, s2: 0, s3: 0 };
-        if (typeof JansouGuests !== 'undefined') {
-          Object.keys(reg.regulars).forEach((id) => {
-            const st = JansouGuests.stageOf(reg.regulars[id].visits || 0);
-            if (st >= 3) counts.s3++; else if (st === 2) counts.s2++; else if (st === 1) counts.s1++;
-          });
-        }
-        /* **期の番号は months.length から出さない。**months は直近12期で
-           打ち切られるので、13期目以降ずっと「第13期」になってしまう。
-           直前の月報の番号から進める（monthly.md §10） */
-        const prev = months.length ? months[months.length - 1] : null;
-        report = closeMonth(month, prev, {
-          no: prev ? prev.no + 1 : 1, toDay: newDay, rep, bottles,
-          regulars: counts, names, promotedNames,
-        });
-        months.push(report);
-        if (months.length > MONTHS_KEPT) months.splice(0, months.length - MONTHS_KEPT);
-      }
-
-      const favor = Object.assign({}, stNow.favor || {}, results.favor);
-      const patch = {
-        money: (stNow.money || 0) + profit,
-        comp, compMax, grades, favor,
-        parlor: Object.assign(pNow, {
-          day: parlor.day + 1, rep, buffs, log, challengedToday: false,
-          regulars: reg.regulars, seen: reg.seen, bottles,
-          /* 締めた月は空の入れ物に置き換える。**空にするのはここだけ。**
-             評判・buffs・在庫・常連・配置は持ち越す（monthly.md §6） */
-          month: report ? blankMonth(parlor.day + 1, rep, bottles) : month,
-          months,
-          total: {
-            days: parlor.total.days + 1,
-            sales: parlor.total.sales + day.sales,
-            profit: parlor.total.profit + profit,
-            guests: parlor.total.guests + day.guests,
-          },
-        }),
-      };
-      return { patch, profit, extraMoney, growth, lines, report };
-    }
+    /* settle は**モジュール層に出してある**（下の「一日の締め」）。
+       純関数なので閉包に置く必要が無く、外に出したことで
+         ・`Jansou.settle` として node のテストから直に呼べる
+         ・**店が無い日の締め**（`runClosedDay`）が同じ関数を通れる
+       ようになった。**日を進める場所はここ一つだけ。** */
 
     /* ---------- 客カード（§8。customer-card.png が仕様） ----------
        タップで再生が止まり、閉じると再開する（止める・再開は floor 側）。
@@ -1703,6 +1780,7 @@ const Jansou = (() => {
   }
 
   return { mount, shiftOf, computeDay, normalize, pickEvent, wageOf, utilOf,
+           settle, closedDayPlan, closedDayResults, runClosedDay,
            blankMonth, normalizeMonth, accrue, closeMonth, renderMonth, showMonthReport, nextMonthNo,
            OPEN_COST, SLOTS, TABLE_COST, INTERIOR, AUTO, SIGN, MONTH_DAYS, MONTHS_KEPT };
 })();
