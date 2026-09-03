@@ -128,6 +128,28 @@
 .ofRepEv{font-size:11.5px;line-height:1.7;color:var(--gold);padding:3px 0;text-align:left}
 .ofRepEv.quiet{color:var(--muted)}
 .ofSecNote{font-size:10.5px;letter-spacing:0;color:var(--muted);margin-left:8px;font-weight:400}
+
+/* ---------- 届いている話（spec.md §8） ---------- */
+.ofOffers{display:flex;flex-direction:column;gap:6px}
+.ofOffer{
+  padding:9px 10px;border-radius:5px;
+  border:1px solid var(--gold-dim);background:rgba(255,255,255,.03);
+}
+/* 契約イベントは一度きりで重い話なので、枠で分かるようにする */
+.ofOffer.k-contract{border-color:var(--gold);background:rgba(201,162,74,.09)}
+.ofOfferHead{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
+.ofOfferT{font-family:var(--maru);font-size:14px;color:var(--gold);letter-spacing:.06em}
+.ofOfferMeta{font-size:10.5px;color:var(--muted);margin-left:auto}
+.ofOfferText{margin:5px 0 8px;font-size:11.5px;line-height:1.8;color:var(--ivory-2)}
+.ofOfferBtns{display:flex;gap:6px}
+.ofTake,.ofPass{
+  flex:1;padding:7px 8px;border-radius:4px;cursor:pointer;
+  font-family:var(--maru);font-size:13px;letter-spacing:.08em;
+}
+.ofTake{border:1px solid var(--gold);color:#1b140a;background-image:var(--kin)}
+.ofPass{border:1px solid var(--gold-dim);background:transparent;color:var(--muted)}
+.ofTake[disabled]{opacity:.35;cursor:default}
+.ofTake:focus-visible,.ofPass:focus-visible{outline:2px solid var(--gold);outline-offset:1px}
 /* 行き先の札に添える遠さ／段位 */
 .ofPref i{font-style:normal;font-size:9.5px;opacity:.7;margin-left:4px}
 /* 同行者の札 */

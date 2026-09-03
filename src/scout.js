@@ -134,8 +134,21 @@ const Scout = (() => {
         : { ok: false, detail: `未着手の地域があと${missing.length}（${missing[0]}ほか）。` };
     },
 
-    /* イベントはまだ作っていない。条件が来ていないことをそのまま出す */
-    event: () => ({ ok: false, detail: 'この雀ドルには専用の話があります。まだ用意できていません。' }),
+    /* **依頼を受けたかどうかだけを見る**（office/spec.md §8.2）。
+       条件そのもの（好感度＋事務所ランク＋大会実績）は `offers.js` の
+       依頼テーブルに書いてある。ここに条件を直書きすると二重になる。
+       事務所に話が届き、受けて、遠征で会いに行って勝つ——そこまでで開く。
+       `offers.js` が読めない単体ページでは、いままでどおり閉じたまま */
+    event: (c, st) => {
+      if (typeof Offers === 'undefined') {
+        return { ok: false, detail: 'この雀ドルには専用の話があります。' };
+      }
+      const o = Offers.TABLE.find((x) => x.kind === 'contract' && x.payload.charaId === c.id);
+      if (o && Offers.accepted(st, o.id)) {
+        return { ok: true, detail: '事務所に届いた話を受けています' };
+      }
+      return { ok: false, detail: '事務所に話が届くのを待ってください（好感度・事務所ランク・大会実績）。' };
+    },
   };
 
   /* ---------- 探索の抽選 ---------- */

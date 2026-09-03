@@ -653,10 +653,15 @@ const Jansou = (() => {
        卓の故障    払えるなら修理。払えなければ明日一卓閉める
        荒らし      留守番の子が打つ。任せる子がいなければ警察を呼ぶ
        祝儀・お忍び・取材  選択が要らないので settle がそのまま処理する */
-  function awayDayPlan(st, list, rng) {
+  function awayDayPlan(st, list, rng, busyIds) {
     rng = rng || Math.random;
     const parlor = normalize(st.parlor);
-    const onDuty = parlorRoster(st, list);
+    /* `busyIds` は「今日その仕事に出ている子」（大会・アイドル案件の同行）。
+       **出勤からは外すが、日当の母数からは外さない**——日当は契約基準なので
+       （office/spec.md §6.3）。遠征の同行者が `assign` で外れるのと同じ扱いを、
+       依頼のあいだだけ引数で行う。**セーブに書かないので古びない** */
+    const busy = new Set(busyIds || []);
+    const onDuty = parlorRoster(st, list).filter((c) => !busy.has(c.id));
     const slotWorkers = [[], [], []];
     onDuty.forEach((c) => {
       shiftOf(parlor, c.id).forEach((on, i) => { if (on) slotWorkers[i].push(c); });
@@ -759,9 +764,9 @@ const Jansou = (() => {
   }
 
   /* 留守の一日を回してセーブに書く。戻り値は営業日と同じ形 */
-  function runAwayDay(store, list, deputy) {
+  function runAwayDay(store, list, deputy, busyIds) {
     const st = store.get();
-    const plan = awayDayPlan(st, list);
+    const plan = awayDayPlan(st, list, null, busyIds);
     const out = settle(plan, resolveAway(plan, deputy), st);
     store.set(out.patch);
     return { out, plan };
@@ -1031,6 +1036,9 @@ const Jansou = (() => {
           comp: (st.comp || {})[id] != null ? st.comp[id] : base.comp,
           compMax: (st.compMax || {})[id],
           rank: (st.grades || {})[id] || base.rank,
+          /* **人気は元データ + セーブの底上げ**（アイドル活動。office/spec.md §8.2）。
+             ここが客足（`slotPop`）に効くので、事務所の読みかたと必ず揃えること */
+          pop: (base.pop || 0) + (((st.popUp || {})[id]) | 0),
         });
       }).filter(Boolean);
     }

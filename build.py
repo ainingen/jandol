@@ -54,7 +54,8 @@ CSS = ['style.css', 'theme.css', 'maru.css', 'title.css', 'meikan.css',
 # office.js は Jansou.normalize を「呼ぶとき」にだけ参照するので、
 # jansou.js より前でも構わない（読み込み時には触らない）
 JS = ['engine.js', 'ai.js', 'game.js', 'ui.js', 'match.js',
-      'characters.js', 'geo.js', 'tournament.js', 'office.js', 'title.js', 'meikan.js',
+      'characters.js', 'geo.js', 'tournament.js', 'offers.js', 'office.js',
+      'title.js', 'meikan.js',
       'team.js', 'taikai.js', 'scout.js',
       'jansou-guests.js', 'jansou-floor.js', 'jansou.js', 'serifu.js']
 

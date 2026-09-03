@@ -106,6 +106,9 @@ const Office = (() => {
         comp: (st.comp || {})[id] != null ? st.comp[id] : base.comp,
         rank: (st.grades || {})[id] || base.rank,
         favor: (st.favor || {})[id] || 0,
+        /* **人気は元データ + セーブの底上げ。**元データは書き換えない
+           （アイドル活動で貯まる。§8.2） */
+        pop: (base.pop || 0) + (((st.popUp || {})[id]) | 0),
       });
     }).filter(Boolean);
   }
@@ -233,6 +236,68 @@ const Office = (() => {
   }
 
   /* ------------------------------------------------------------
+     届く依頼（spec.md §8）— 純関数の側
+  ------------------------------------------------------------ */
+  /* 朝に一度だけ発火させて `st.offers` に積む。**日付では発火しない**（§1.3）。
+     `once` のものは `offerFired` に控えて二度と出さない。
+     **戻り値は「積んだ件数」**。呼ぶ側は st を読み直すこと */
+  function fireOffers(store, rng) {
+    if (typeof Offers === 'undefined') return 0;
+    const st = store.get();
+    const add = Offers.fire(st, rosterOf(st), rng);
+    if (!add.length) return 0;
+    const fired = (st.offerFired || []).slice();
+    add.forEach((o) => {
+      const def = Offers.byId(o.id);
+      if (def && def.once && fired.indexOf(o.id) < 0) fired.push(o.id);
+    });
+    store.set({ offers: (st.offers || []).concat(add), offerFired: fired });
+    return add.length;
+  }
+
+  /* 見送る。**`once` でないものは、また条件を満たせば来る**（§8.1） */
+  function dismissOffer(store, id) {
+    const st = store.get();
+    store.set({ offers: (st.offers || []).filter((o) => o.id !== id) });
+  }
+
+  /* 受ける。契約イベントは `offerAccepted` に入れるだけで、
+     あとは遠征の「口説く」で会いに行く（§8.2）。
+     大会とアイドル案件は、そのまま昼の仕事になる */
+  function acceptOffer(store, id) {
+    const st = store.get();
+    const acc = (st.offerAccepted || []).slice();
+    if (acc.indexOf(id) < 0) acc.push(id);
+    store.set({ offerAccepted: acc, offers: (st.offers || []).filter((o) => o.id !== id) });
+  }
+
+  /* 人気の底上げ（アイドル活動で貯まる）。**元データは書き換えない。**
+     `characters.js` の `pop` に、セーブの `popUp` を足して読む */
+  function popOf(st, c) {
+    return (c.pop || 0) + (((st.popUp || {})[c.id]) | 0);
+  }
+
+  /* アイドル案件の効き目（純関数・§8.2）。
+     `chara`（性格19種）で向き不向き。向いていれば伸びが大きい。
+     `match` の案件は、呼ぶ側が着順を渡す（`simulateTable` で確定させる） */
+  function idolResult(def, members, places) {
+    const p = def.payload;
+    const out = { pay: p.pay, pop: {}, favor: {}, lines: [], won: false };
+    members.forEach((c) => {
+      const fits = p.fit.indexOf(c.chara) >= 0;
+      let gain = fits ? p.pop : Math.max(1, Math.round(p.pop * 0.5));
+      if (places && places[c.id] === 1) { gain += p.pop; out.won = true; }
+      out.pop[c.id] = gain;
+      out.favor[c.id] = p.favor;
+      out.lines.push(`${c.name} … 人気 +${gain}${fits ? '（向いていた）' : ''}`
+        + (places ? `・${places[c.id]}着` : ''));
+    });
+    /* 人数で割らない。**送った人数ぶん素直に伸びる**——
+       少人数で回すか手広く出すかを、プレイヤーが選べるように */
+    return out;
+  }
+
+  /* ------------------------------------------------------------
      疲労と調子（spec.md §9）— **第五段で数値を置く。いまは器だけ。**
      フィールドを先に切っておくのは、セーブの前方互換を保つため
      （あとから足しても、既存セーブは既定値の0で読める）
@@ -265,6 +330,8 @@ const Office = (() => {
     /* 夜に出す、その日ぶんの控え。店が無い日だけ使う（日当の額）。
        `parlor.log` は {day, guests, sales, profit} しか持たないため */
     let night = null;
+    /* 依頼を発火させた日の印（同じ朝を描き直しても増やさないため） */
+    let firedFor = null;
 
     const canGo = typeof store.go === 'function';
     const canRun = typeof store.startDay === 'function';
@@ -294,6 +361,13 @@ const Office = (() => {
 
     /* ---------- 朝 ---------- */
     function renderMorning() {
+      /* **朝の依頼発火（§8.1）。**日が変わったときに一度だけ引く。
+         `parlor.day` を印にしているので、同じ朝を描き直しても増えない。
+         **日付で発火条件を書いているわけではない**（§1.3）——
+         「いつ引くか」の印であって、「何が届くか」は `when` が状態だけで決める */
+      const p0 = parlorOf(store.get());
+      const mark = (p0 ? p0.day : 0);
+      if (firedFor !== mark) { firedFor = mark; fireOffers(store); }
       const st = store.get();
       const pref = prefOf(st);
       const parlor = parlorOf(st);
@@ -313,6 +387,32 @@ const Office = (() => {
          書くのは `Jansou.setShift`。**データは移していない。** */
       const assign = assignOf(st);
       const trip = tripOf(st);
+
+      /* 届いている依頼（§8）。遠征中は受けられない（代表が留守なので、
+         大会も相談も動かせない）。見送るのはいつでもできる */
+      const offers = (st.offers || []);
+      const offersHtml = offers.length ? `
+        <h2 class="ofSecT">届いている話<span class="ofSecNote">${offers.length}件</span></h2>
+        <div class="ofOffers">${offers.map((o) => {
+          const def = Offers.byId(o.id);
+          if (!def) return '';
+          const need = def.members.max
+            ? `${def.members.min === def.members.max ? def.members.min
+                : def.members.min + '〜' + def.members.max}人` : '人手は要らない';
+          return `<div class="ofOffer k-${def.kind}">
+            <div class="ofOfferHead">
+              <span class="ofOfferT">${esc(Offers.titleOf(o))}</span>
+              <span class="ofOfferMeta">${def.days ? def.days + '日' : '日は使わない'}・${need}</span>
+            </div>
+            <p class="ofOfferText">${esc(Offers.textOf(o, st))}</p>
+            <div class="ofOfferBtns">
+              <button type="button" class="ofTake" data-take="${o.id}"
+                ${trip ? 'disabled' : ''}>受ける</button>
+              <button type="button" class="ofPass" data-pass="${o.id}">見送る</button>
+            </div>
+            ${trip ? '<p class="ofNote" style="margin:4px 0 0">遠征から帰るまで受けられません。</p>' : ''}
+          </div>`;
+        }).join('')}</div>` : '';
       const mates = list.length ? list.map((c) => {
         const kind = assign[c.id];
         const at = kind === 'parlor';
@@ -401,6 +501,8 @@ const Office = (() => {
           ${open ? `いま店に立つのは ${onDuty.length} 人。` : ''}</p>` : ''}
         <div class="ofMates">${mates}</div>
 
+        ${offersHtml}
+
         <h2 class="ofSecT">出かける</h2>
         ${trip ? '' : `<button type="button" class="ofRunBtn ghost" id="ofTrip"
           ${list.length ? '' : 'disabled'} style="margin-bottom:8px">遠征に出る</button>
@@ -434,6 +536,16 @@ const Office = (() => {
         });
       });
 
+      /* 依頼を受ける／見送る（§8.1） */
+      root.querySelectorAll('[data-pass]').forEach((b) => b.addEventListener('click', () => {
+        dismissOffer(store, b.dataset.pass);
+        render();
+      }));
+      root.querySelectorAll('[data-take]').forEach((b) => b.addEventListener('click', () => {
+        if (b.disabled) return;
+        takeOffer(b.dataset.take);
+      }));
+
       const goTrip = root.querySelector('#ofTrip');
       if (goTrip) goTrip.addEventListener('click', () => {
         draft = { pref: null, purpose: 'find', members: [], target: null };
@@ -466,6 +578,138 @@ const Office = (() => {
       host.querySelectorAll('[data-go]').forEach((b) => {
         b.addEventListener('click', () => { if (canGo) store.go(b.dataset.go); });
       });
+    }
+
+    /* ---------- 依頼を受ける（spec.md §8.2） ----------
+       kind ごとに行き先が違う。
+
+         contract  … `offerAccepted` に入れるだけ。**日は消費しない。**
+                     あとは遠征の「口説く」で会いに行く（§7.3）
+         tournament… 大会の画面へ降りる。終わったら日数ぶんを消化して夜へ
+         idol      … 演出は作らない（§8.2）。裏で確定させて日報一行だけ
+
+       **大会もアイドルも、そのあいだ代表は店に降りられない。**
+       日数ぶんの店は `runAwayDay`（留守の日）で回す */
+    async function takeOffer(id) {
+      const def = Offers.byId(id);
+      if (!def) return;
+      const st0 = store.get();
+
+      if (def.kind === 'contract') {
+        acceptOffer(store, id);
+        const c = JANDOLS.concat(FREE_AGENTS).find((x) => x.id === def.payload.charaId);
+        night = { offer: { title: Offers.titleOf({ id }),
+          lines: [c ? `${c.name}に会いに行けるようになった。` : '話を受けた。',
+                  c ? `${c.region}へ遠征して「口説く」を選ぶこと。` : ''],
+          noDay: true } };
+        screen = 'night';
+        render();
+        return;
+      }
+
+      if (def.kind === 'tournament') {
+        acceptOffer(store, id);
+        /* 大会の画面へ降りる。終わったら `onDone` で戻ってくる */
+        if (typeof store.goTaikai === 'function') {
+          /* **結果は opts で受け取る。**画面を替えるとここは組み直されるので、
+             閉包に控えた関数は宙に浮く（`shell.html` の goTaikai を見ること） */
+          store.goTaikai(def.payload.tierId, id);
+        } else {
+          /* 単体ページには行き先が無いので、日数ぶんだけ消化する */
+          afterTournament(def, null);
+        }
+        return;
+      }
+
+      /* --- アイドル案件（§8.2） --- */
+      acceptOffer(store, id);
+      const list = rosterOf(st0);
+      /* 送るのは**向いている子から**。プレイヤーに選ばせる画面は作らない
+         （演出を作らないのと同じ理由で、ここは軽く済ませる） */
+      const p = def.payload;
+      const cand = parlorRoster(st0, list).slice().sort((a, b) => {
+        const fa = p.fit.indexOf(a.chara) >= 0 ? 1 : 0;
+        const fb = p.fit.indexOf(b.chara) >= 0 ? 1 : 0;
+        return fb - fa || (b.comp || 0) - (a.comp || 0);
+      });
+      const members = cand.slice(0, Math.max(def.members.min, Math.min(def.members.max, cand.length)));
+      if (members.length < def.members.min) {
+        night = { offer: { title: Offers.titleOf({ id }),
+          lines: ['送れる子がいなかった。'], noDay: true } };
+        screen = 'night';
+        render();
+        return;
+      }
+
+      /* 対局付きの案件は `simulateTable` で確定させる（§8.2） */
+      let places = null;
+      if (p.match) {
+        const table = members.slice(0, 1);
+        for (let i = table.length; i < 4; i++) {
+          table.push({ id: 9600 + i, name: 'ファン', guest: true, comp: 30 + i * 6,
+                       style: members[0].style, pop: 0, salary: 0, rank: 'D' });
+        }
+        places = {};
+        simulateTable(table, STYLES).forEach((r) => { places[r.chara.id] = r.place; });
+      }
+
+      const res = idolResult(def, members, places);
+      const st = store.get();
+      const popUp = Object.assign({}, st.popUp || {});
+      const favor = Object.assign({}, st.favor || {});
+      Object.keys(res.pop).forEach((k) => { popUp[k] = (popUp[k] | 0) + res.pop[k]; });
+      Object.keys(res.favor).forEach((k) => {
+        favor[k] = Math.min(100, (favor[k] || 0) + res.favor[k]);
+      });
+      store.set({ money: (st.money || 0) + res.pay, popUp, favor });
+
+      /* セリフを一言だけ（§8.2「日報一行とセリフだけ」） */
+      const say = typeof LINES !== 'undefined'
+        ? (LINES[members[0].chara] || {}) : {};
+      const line = (say.idle || say.start || [])[0] || null;
+
+      await runJobDays(def, res.lines.concat(
+        [`報酬 ${yen(res.pay)}`, res.won ? '勝って話題になった' : null,
+         line ? `${members[0].name}「${line}」` : null].filter(Boolean)),
+        Offers.titleOf({ id }), members.map((c) => c.id));
+    }
+
+    /* 大会から帰ってきたところ。日数ぶんを消化して夜へ */
+    function afterTournament(def, res) {
+      const lines = res
+        ? [`${res.tierName}：${res.best}`, `賞金 ${yen(res.prize)}`,
+           res.promoted ? `${res.promoted}級に昇段した` : null].filter(Boolean)
+        : ['大会に出た'];
+      /* 大会に出るのは既存のチーム編成（§8.2）。そのあいだ店には立てない */
+      runJobDays(def, lines, Offers.titleOf({ id: def.id }), (store.get().team || []).slice());
+    }
+
+    /* 依頼の拘束日数ぶん、店を回して日を進める。
+       **代表は依頼に出ているので、留守の日として回す**（§7.4 と同じ扱い）。
+       日ごとの再生はしない。夜にまとめて出す */
+    async function runJobDays(def, lines, title, busyIds) {
+      const acc = { days: 0, guests: 0, sales: 0, profit: 0 };
+      const busy = busyIds || [];
+      for (let i = 0; i < (def.days || 0); i++) {
+        const st = store.get();
+        const list = rosterOf(st);
+        const parlor = parlorOf(st);
+        if (parlor.open) {
+          /* 仕事に出ている子は留守番にも選ばない */
+          const dep = deputyOf(st, busy);
+          const r = Jansou.runAwayDay(store, list, dep || null, busy);
+          acc.days += 1;
+          acc.guests += r.plan.day.guests;
+          acc.sales += r.plan.day.sales;
+          acc.profit += r.out.profit;
+        } else {
+          Jansou.runClosedDay(store, list);
+          acc.days += 1;
+        }
+      }
+      night = { offer: { title, lines, store: def.days ? acc : null, noDay: !def.days } };
+      screen = 'night';
+      render();
     }
 
     /* ---------- 遠征に出る（spec.md §7.1） ---------- */
@@ -732,8 +976,22 @@ const Office = (() => {
       const closed = !!(night && night.closed);
       const away = night && night.trip;
       const back = night && night.back;
+      const job = night && night.offer;
 
-      const body = last ? `
+      /* 日を使わない依頼（契約イベント）は、店の収支を出さない */
+      const jobBody = job ? `
+        <div class="ofRep">
+          <div class="ofRepRow"><span>${esc(job.title)}</span>
+            <b>${job.store ? job.store.days + '日' : '受けた'}</b></div>
+          ${job.lines.map((l) => `<div class="ofRepEv">${esc(l)}</div>`).join('')}
+          ${job.store ? `
+            <div class="ofRepRow" style="margin-top:6px"><span>そのあいだの店</span>
+              <b>客 ${job.store.guests}人</b></div>
+            <div class="ofRepRow${job.store.profit >= 0 ? '' : ' minus'}"><span>収支</span>
+              <b>${job.store.profit >= 0 ? '+' : '−'}${yen(Math.abs(job.store.profit))}</b></div>` : ''}
+        </div>` : '';
+
+      const body = (job && job.noDay) ? '' : last ? `
         ${closed
           ? `<div class="ofRepRow"><span>営業</span><b>していない</b></div>
              <div class="ofRepRow"><span>日当（${rosterOf(st).length}人）</span>
@@ -770,12 +1028,14 @@ const Office = (() => {
 
       root.innerHTML = `
         <div class="ofHead">
-          <h1 class="ofTitle">${back ? '帰ってきた' : last ? `${last.day}日目の夜` : '夜'}</h1>
+          <h1 class="ofTitle">${back ? '帰ってきた'
+            : (job && job.noDay) ? '話を受けた'
+            : last ? `${last.day}日目の夜` : '夜'}</h1>
           <p class="ofSub">${esc(nameOf(st))}${closed ? '　まだ店は無い'
             : away ? '　遠征中' : ''}</p>
         </div>
-        ${backBody}${tripBody}
-        <div class="ofRep">${body}</div>
+        ${backBody}${tripBody}${jobBody}
+        ${body ? `<div class="ofRep">${body}</div>` : ''}
         <div class="ofRun">
           <button type="button" class="ofRunBtn" id="ofNext">明日へ</button>
           <p class="ofNote">日はもう進んでいます。畳んで朝に戻るだけの釦です。</p>
@@ -796,7 +1056,13 @@ const Office = (() => {
       root.scrollTop = 0;
     }
 
-    render();
+    /* 大会から帰ってきたところ（`shell.html` が opts で渡す）。
+       **組み直されたあとのこの mount で日数を消化する** */
+    if (opts.taikai && Offers.byId(opts.taikai.offerId)) {
+      afterTournament(Offers.byId(opts.taikai.offerId), opts.taikai.res);
+    } else {
+      render();
+    }
     return { refresh: render };
   }
 
@@ -839,7 +1105,8 @@ const Office = (() => {
 
   return { mount, defaultName, nameOf, prefOf, rosterOf, prefPickerHtml, bindPicker, NAME_MAX,
            ASSIGN_KINDS, assignFor, assignOf, parlorRoster, setAssign, fatigueOf, condOf,
-           planTrip, deputyOf, tripOf, tripStart, regionOfPref };
+           planTrip, deputyOf, tripOf, tripStart, regionOfPref,
+           fireOffers, dismissOffer, acceptOffer, popOf, idolResult };
 })();
 
 if (typeof module !== 'undefined' && module.exports) {

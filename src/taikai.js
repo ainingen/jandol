@@ -193,13 +193,25 @@ const Taikai = (() => {
   /* ------------------------------------------------------------
      画面
   ------------------------------------------------------------ */
-  function mount(root, store) {
+  /* opts（`shell.html` が渡す。単体ページ taikai.html には無い）
+       tierId  … 大会選択の画面を出さず、その大会に直行する
+                 （第四段で、大会は「事務所に届く依頼」から入るようになった。
+                  office/spec.md §8.2）
+       onDone  … 大会が終わったら呼ぶ（事務所の夜へ返す）
+
+     **大会選択の画面は、事務所がいるときだけ外す。**入口を一本にするため。
+     単体ページの store は `startDay` を持たないので、いままでどおり出る */
+  function mount(root, store, opts) {
+    opts = opts || {};
+    const hub = typeof store.startDay === 'function';
     ensureSilVar();
     root.innerHTML = '';
     root.classList.add('tkRoot');
 
     let screen = 'select';
     let run = null, prize = null, growth = null, lastPromotion = null;
+    /* 依頼から入ったとき、事務所へ返す結果（§8.2） */
+    let lastRun = null;
 
     const ALL = () => JANDOLS.concat(FREE_AGENTS);
 
@@ -264,7 +276,7 @@ const Taikai = (() => {
 
       root.innerHTML = `
         <div class="tkHead">
-          <h1 class="tkTitle">大会に出る</h1>
+          <h1 class="tkTitle">${hub ? '大会' : '大会に出る'}</h1>
           <div class="tkStatus">
             <span class="tkStat money">所持金 <b>${yen(st.money || 0)}</b></span>
             <span class="tkStat">${esc(st.playerName || 'あなた')}の段位 <b>${rank}</b></span>
@@ -397,7 +409,8 @@ const Taikai = (() => {
         ${rows}
         <div class="tkPrizeTotal">合計 <b>${yen(prize.total)}</b>　／　所持金 ${yen(st.money || 0)}</div>
         ${gr}
-        <button type="button" class="tkGo" data-act="back">大会を選ぶ</button>`;
+        <button type="button" class="tkGo" data-act="back">${
+          opts.onDone ? '事務所へ戻る' : '大会を選ぶ'}</button>`;
     }
 
     /* ---------- 進行の実処理 ---------- */
@@ -490,6 +503,9 @@ const Taikai = (() => {
         recent: run.met.slice(0, 40),
       });
       lastPromotion = promotedRank;
+      /* 依頼から入ったときは、結果を事務所へ持ち帰る（§8.2） */
+      lastRun = { tierId: run.tierId, tierName: run.tier.name,
+                  best: rec.best, prize: prize.total, promoted: promotedRank || null };
       screen = 'result';
       renderResult();
     }
@@ -511,10 +527,16 @@ const Taikai = (() => {
       if (!act) return;
       if (act.dataset.act === 'start') { playRounds(); }
       else if (act.dataset.act === 'result') finish();
-      else if (act.dataset.act === 'back') { screen = 'select'; renderSelect(); }
+      else if (act.dataset.act === 'back') {
+        /* 依頼から入ったときは、戻る先が事務所（大会選択の画面は無い） */
+        if (opts.onDone) { opts.onDone(lastRun); return; }
+        screen = 'select'; renderSelect();
+      }
     });
 
-    renderSelect();
+    /* 依頼から直行するときは、大会を選ぶ画面を出さない（§8.2） */
+    if (opts.tierId && TOURNAMENTS[opts.tierId]) start(opts.tierId);
+    else renderSelect();
     return { refresh: () => { if (screen === 'select') renderSelect(); } };
   }
 
