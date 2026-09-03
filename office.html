@@ -35,6 +35,7 @@
 <script src="src/characters.js"></script>
 <script src="src/geo.js"></script>
 <script src="src/tournament.js"></script>
+<script src="src/scout.js"></script>
 <script src="src/office.js"></script>
 <script src="src/jansou-guests.js"></script>
 <script src="src/jansou-floor.js"></script>
@@ -57,7 +58,7 @@ function blankState() {
     money: 0, playerRank: 'D', playerWins: 0, records: {}, recent: [],
     agency: 1, beaten: [],
     officeName: '', officePref: null,
-    assign: {}, fatigue: {}, cond: {},
+    assign: {}, fatigue: {}, cond: {}, trip: null,
   };
 }
 function loadState() {
@@ -80,6 +81,7 @@ function loadState() {
       officeName: typeof s.officeName === 'string' ? s.officeName : '',
       officePref: typeof s.officePref === 'string' ? s.officePref : null,
       assign: s.assign && typeof s.assign === 'object' ? s.assign : {},
+      trip: s.trip && typeof s.trip === 'object' ? s.trip : null,
       fatigue: s.fatigue && typeof s.fatigue === 'object' ? s.fatigue : {},
       cond: s.cond && typeof s.cond === 'object' ? s.cond : {},
     });

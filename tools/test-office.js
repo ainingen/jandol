@@ -18,7 +18,8 @@
 'use strict';
 
 const { Geo } = require('../src/geo.js');
-const { REGIONS, JANDOLS, FREE_AGENTS } = require('../src/characters.js');
+const chars = require('../src/characters.js');
+const { REGIONS, JANDOLS, FREE_AGENTS } = chars;
 
 /* office.js は Geo / REGIONS / JANDOLS / FREE_AGENTS をグローバルから読む
    （ブラウザでは <script> が並ぶだけなので、これがそのままの姿） */
@@ -26,6 +27,13 @@ global.Geo = Geo;
 global.REGIONS = REGIONS;
 global.JANDOLS = JANDOLS;
 global.FREE_AGENTS = FREE_AGENTS;
+global.STYLES = chars.STYLES;
+global.PLAYER = chars.PLAYER;
+global.RANK_INFO = chars.RANK_INFO;
+global.CONTRACTS = chars.CONTRACTS;
+Object.assign(global, require('../src/tournament.js'));
+global.Scout = require('../src/scout.js');
+global.Jansou = require('../src/jansou.js').Jansou;
 const { Office } = require('../src/office.js');
 
 let pass = 0;
@@ -244,10 +252,12 @@ function eq(a, b, name) {
   eq(Office.assignFor({ assign: { [a.id]: null } }, a.id), 'parlor', 'null でも店');
 
   /* §13：遠征中に `trip` を消したセーブで、`assign` の `trip` が `parlor` に戻る */
-  eq(Office.assignFor({ assign: { [a.id]: 'trip' }, trip: { pref: 'osaka' } }, a.id), 'trip',
-    'trip があるあいだは遠征中');
+  eq(Office.assignFor({ assign: { [a.id]: 'trip' },
+    trip: { pref: 'osaka', dayLeft: 2 } }, a.id), 'trip', '遠征が生きているあいだは遠征中');
   eq(Office.assignFor({ assign: { [a.id]: 'trip' } }, a.id), 'parlor',
     'trip が無いのに assign が trip なら店に戻す（§7.5）');
+  eq(Office.assignFor({ assign: { [a.id]: 'trip' }, trip: { pref: 'osaka', dayLeft: 0 } }, a.id),
+    'parlor', '**残り0日で置き去りになった trip も店に戻す**（永久に外れたままにしない）');
   eq(Office.assignFor({ assign: { [a.id]: 'trip' }, trip: null }, a.id), 'parlor',
     'trip が null でも店に戻す');
 
@@ -263,7 +273,8 @@ function eq(a, b, name) {
   eq(duty.length, 2, '休みの子は出勤可能者から外れる');
   ok(!duty.some((x) => x.id === b.id), '外れたのは休みにした子');
   eq(Office.parlorRoster(base).length, 3, '既定なら全員が出勤可能');
-  const st2 = Object.assign({}, base, { assign: { [a.id]: 'trip' }, trip: { pref: 'osaka' } });
+  const st2 = Object.assign({}, base,
+    { assign: { [a.id]: 'trip' }, trip: { pref: 'osaka', dayLeft: 2 } });
   eq(Office.parlorRoster(st2).length, 2, '遠征中の子も外れる');
 
   /* 書き込み。知らないキーを残す（§10） */
@@ -288,6 +299,106 @@ function eq(a, b, name) {
   eq(Office.condOf({ cond: { 1: -9 } }, 1), -2, '調子は−2が下限');
   eq(Office.fatigueOf({ fatigue: { 1: 'x' } }, 1), 0, '数値でなければ0');
   eq(Office.condOf({ cond: { 1: null } }, 1), 0, '数値でなければ0');
+}
+
+/* ============================================================
+   遠征（spec.md §7）— 第三段
+   ============================================================ */
+{
+  const st = { officePref: 'kyoto', contracted: [], comp: {} };
+
+  /* §13：京都→大阪・一人が SCOUT_COST・2日 */
+  const a = Office.planTrip(st, 'osaka', 'find', []);
+  eq(a.far, 0, '京都→大阪は far 0');
+  eq(a.days, 2, '京都→大阪は2日');
+  eq(a.cost, Scout.SCOUT_COST, '京都→大阪・代表ひとりは SCOUT_COST ちょうど');
+
+  /* §7.2 が明示している、もう一つの目安 */
+  const b = Office.planTrip(st, 'okinawa', 'find', [1, 2, 3]);
+  eq(b.days, 7, '京都→那覇は7日');
+  eq(b.cost, 720000, '京都→那覇・同行3人は72万円');
+
+  /* days = 2 + far / cost = SCOUT_COST × (1 + far) × (1 + 同行者数) */
+  for (let far = 0; far <= 5; far++) {
+    const pref = ['osaka', 'aichi', 'tokyo', 'fukuoka', 'hokkaido', 'okinawa'][far];
+    const p = Office.planTrip(st, pref, 'find', []);
+    eq(p.days, 2 + far, 'far ' + far + ' の日数は 2+far');
+    eq(p.cost, Scout.SCOUT_COST * (1 + far), 'far ' + far + ' の費用は 3万×(1+far)');
+  }
+  /* 同行者は費用にだけ効く。日数は変わらない（日数は「滞在」なので・§4.3） */
+  const solo = Office.planTrip(st, 'tokyo', 'find', []);
+  const three = Office.planTrip(st, 'tokyo', 'find', [1, 2, 3]);
+  eq(three.days, solo.days, '同行者を増やしても日数は変わらない');
+  eq(three.cost, solo.cost * 4, '同行者3人で費用は4倍');
+
+  /* 本拠地が無ければ far 0 として組む（落ちない） */
+  eq(Office.planTrip({}, 'okinawa', 'find', []).days, 2, '本拠地が無くても落ちない');
+  eq(Office.planTrip(st, null, 'find', []).far, 0, '行き先が無ければ far 0');
+}
+
+/* ---------- 留守番（§7.4・§13） ---------- */
+{
+  const a = JANDOLS[0], b = JANDOLS[1], c = JANDOLS[2];
+  const base = { officePref: 'kyoto', contracted: [a.id, b.id, c.id], comp: {} };
+
+  /* **既定は出勤者で comp 最大** */
+  const st = Object.assign({}, base, { comp: { [a.id]: 20, [b.id]: 90, [c.id]: 50 } });
+  eq(Office.deputyOf(st).id, b.id, '出勤者で完成度がいちばん高い子');
+
+  /* **休みの子は選ばない** */
+  const st2 = Object.assign({}, st, { assign: { [b.id]: 'rest' } });
+  eq(Office.deputyOf(st2).id, c.id, '休みの子は選ばない');
+
+  /* **遠征中の子は選ばない** */
+  const st3 = Object.assign({}, st, { assign: { [b.id]: 'trip' }, trip: { pref: 'osaka', dayLeft: 2 } });
+  eq(Office.deputyOf(st3).id, c.id, '遠征中の子は選ばない');
+
+  /* これから連れて行く子も外して数える（出発の画面で先に見せるため） */
+  eq(Office.deputyOf(st, [b.id]).id, c.id, '同行者に選んだ子は留守番から外れる');
+  eq(Office.deputyOf(st, [a.id, b.id, c.id]), null, '全員連れて行けば留守番はいない');
+
+  /* **出勤者が一人もいなければ null** */
+  eq(Office.deputyOf({ contracted: [], comp: {} }), null, '所属がいなければ null');
+  eq(Office.deputyOf(Object.assign({}, base,
+    { assign: { [a.id]: 'rest', [b.id]: 'rest', [c.id]: 'rest' } })), null,
+    '全員が休みなら null');
+}
+
+/* ---------- 遠征の状態（§7.5） ---------- */
+{
+  eq(Office.tripOf({}), null, '遠征していなければ null');
+  eq(Office.tripOf({ trip: null }), null, 'null もそのまま');
+  eq(Office.tripOf({ trip: {} }), null, '行き先の無い trip は無効');
+  eq(Office.tripOf({ trip: { pref: 'nowhere', dayLeft: 3 } }), null, '知らない県は無効');
+  eq(Office.tripOf({ trip: { pref: 'osaka', dayLeft: 0 } }), null, '残り0日は無効');
+  eq(Office.tripOf({ trip: { pref: 'osaka', dayLeft: 3 } }).pref, 'osaka', '生きている遠征は返る');
+
+  /* §13：trip を消したセーブで assign の trip が parlor に戻る（配置の節で固定済み） */
+  eq(Office.assignFor({ assign: { 1: 'trip' }, trip: { pref: 'osaka', dayLeft: 0 } }, 1), 'parlor',
+    '終わった遠征なら assign も店に戻す');
+
+  /* 出発の組み立て */
+  const a = JANDOLS[0], b = JANDOLS[1];
+  const st = { officePref: 'kyoto', contracted: [a.id, b.id], comp: { [a.id]: 90, [b.id]: 10 },
+               money: 1000000 };
+  const t = Office.tripStart(st, 'tokyo', 'woo', [b.id], a.id);
+  eq(t.dayLeft, t.days, '出発した日は残り日数＝総日数');
+  eq(t.days, 4, '京都→東京は far 2 なので4日');
+  eq(t.cost, Scout.SCOUT_COST * 3 * 2, '費用は 3万×(1+2)×(1+1)');
+  eq(t.deputy, a.id, '同行者を外した残りから留守番を決める');
+  eq(t.target, a.id, '口説く相手を持つ');
+  eq(t.store.days, 0, '留守中の店の合計は0から');
+  eq(t.log.length, 0, '出来事はまだ無い');
+}
+
+/* ---------- 発見の抽選は当面その県の地方から（§4.4） ---------- */
+{
+  eq(Office.regionOfPref('osaka'), '関西', '大阪は関西');
+  eq(Office.regionOfPref('hokkaido'), '北海道・東北', '北海道は北海道・東北');
+  eq(Office.regionOfPref('nowhere'), null, '知らない県は null');
+  /* 47県すべてが、REGIONS のいずれかに引ける（引けないと抽選が全国になる） */
+  ok(Geo.PREFS.every((p) => REGIONS.indexOf(Office.regionOfPref(p.key)) >= 0),
+    '47県すべてから地方が引ける');
 }
 
 /* ============================================================
@@ -317,6 +428,7 @@ function eq(a, b, name) {
   /* 店が無いセーブで一日を回す */
   const a = JANDOLS[0], b = JANDOLS[1];
   const list = [a, b];
+  const plan0Wages = (l) => Jansou.closedDayPlan({ parlor: {} }, l).wages;
   const wages = list.reduce((x, c) => x + Jansou.wageOf(c), 0);
   ok(wages > 0, '日当は0円ではない');
 
@@ -337,6 +449,10 @@ function eq(a, b, name) {
   eq(st.parlor.log[st.parlor.log.length - 1].guests, 0, '日誌の客は0');
   eq(st.parlor.log[st.parlor.log.length - 1].sales, 0, '日誌の場代は0');
   eq(st.somethingFuture, 'あとから足したキー', '知らないキーが残る');
+
+  /* **日当は契約基準**（spec.md §6.3・§7.2）。出勤の有無に関係なく
+     所属の全員に払う。営業日も店が無い日も同じ式 */
+  eq(plan0Wages(list), wages, '日当は所属の全員ぶん');
 
   /* **家賃は掛からない。**店が無いのだから */
   ok(Jansou.utilOf(2) > 0, '営業日には家賃が掛かる（前提の確認）');

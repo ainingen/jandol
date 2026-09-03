@@ -155,6 +155,7 @@ body.inMatch #matchRoot{flex:1;min-height:0}
       officeName: '',
       officePref: null,
       assign: {},                // { [charaId]: 'parlor'|'trip'|'rest'|'job:<id>' }
+      trip: null,                // 遠征中なら { pref, purpose, target, members, deputy, dayLeft, log }
       fatigue: {},               // { [charaId]: 0..100 }  第五段で数値を置く
       cond: {},                  // { [charaId]: -2..2 }   第五段で数値を置く
     };
@@ -194,6 +195,9 @@ body.inMatch #matchRoot{flex:1;min-height:0}
            （配置は parlor、疲労0、調子0）は Office.assignFor / fatigueOf /
            condOf が返す。二か所に既定を書かない */
         assign: s.assign && typeof s.assign === 'object' ? s.assign : {},
+        /* **遠征はリロードされたら続きから**（§7.5）。壊れていたら
+           Office.tripOf が null に落とし、assign の trip も店に戻る */
+        trip: s.trip && typeof s.trip === 'object' ? s.trip : null,
         fatigue: s.fatigue && typeof s.fatigue === 'object' ? s.fatigue : {},
         cond: s.cond && typeof s.cond === 'object' ? s.cond : {},
       });

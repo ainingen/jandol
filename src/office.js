@@ -131,7 +131,9 @@ const Office = (() => {
       /* 受けていない依頼の途中で止まっていたら戻す（第四段で offers が入る） */
       return (st.offerAccepted || []).indexOf(v.slice(4)) >= 0 ? v : 'parlor';
     }
-    if (v === 'trip') return st.trip ? 'trip' : 'parlor';
+    /* **生きている遠征かどうかで見る。**`st.trip` の有無だけで見ると、
+       残り0日で置き去りになった trip が同行者を永久に出勤から外す */
+    if (v === 'trip') return tripOf(st) ? 'trip' : 'parlor';
     return ASSIGN_KINDS.indexOf(v) >= 0 ? v : 'parlor';
   }
 
@@ -154,6 +156,80 @@ const Office = (() => {
   function setAssign(store, id, kind) {
     const st = store.get();
     store.set({ assign: Object.assign({}, st.assign || {}, { [id]: kind }) });
+  }
+
+  /* ------------------------------------------------------------
+     遠征（spec.md §7）— 純関数。テストの本体はここ
+  ------------------------------------------------------------ */
+  /* 日数と費用。**km ではなく遠さの段階（far）から出す**（§7.2）。
+     数字を触るときはこの式一つで済む。第三段の終わりに再測して動かす。
+
+       days = 2 + far                          2〜7日
+       cost = SCOUT_COST × (1 + far) × (1 + 同行者数)
+
+     京都から大阪へ代表ひとりなら SCOUT_COST（3万）・2日で、
+     いままでの「一回3万」と桁が揃う。那覇へ同行3人なら 72万円・7日。
+
+     **日数は移動ではなく滞在**（§4.3）。現実の移動時間に忠実にすると
+     日本はどこでも1日で着いて距離の意味が消えるので、
+     「その土地の雀荘をまわるのにかかる日数」と考える。
+
+     **日当は別に足さない。**所属には毎日払っているので（契約基準・§6.3）、
+     遠征が長引けばそのぶん自動でかかる。これが日数の本当のコスト（§7.2） */
+  function planTrip(st, pref, purpose, members) {
+    const home = st.officePref || null;
+    const far = home && pref ? Geo.farBetween(home, pref) : 0;
+    const n = (members || []).length;
+    return {
+      pref, purpose: purpose || 'find', far,
+      days: 2 + far,
+      /* **一回の費用の正は `Scout.SCOUT_COST` 一つだけ。**ここで数を書かない
+         （README の対応表もそこを指している） */
+      cost: Scout.SCOUT_COST * (1 + far) * (1 + n),
+      members: (members || []).slice(),
+    };
+  }
+
+  /* 留守を任せる子。**遠征中の子・休みの子は選ばない。**
+     既定は「出勤者で comp 最大」（§7.4）。出勤者が一人もいなければ null。
+
+     `exclude` は、これから遠征に連れて行く子（まだ assign に入っていない）。
+     出発の画面で「同行者を選ぶ → 留守番が減る」を先に見せるために要る */
+  function deputyOf(st, exclude) {
+    const skip = new Set(exclude || []);
+    const cand = parlorRoster(st).filter((c) => !skip.has(c.id));
+    if (!cand.length) return null;
+    return cand.slice().sort((a, b) => (b.comp || 0) - (a.comp || 0)
+      || (b.pop || 0) - (a.pop || 0) || a.id - b.id)[0];
+  }
+
+  /* 遠征の状態。壊れていたら null（読む側が毎回これを通す） */
+  function tripOf(st) {
+    const t = st.trip;
+    if (!t || typeof t !== 'object' || !t.pref || !Geo.prefOf(t.pref)) return null;
+    if (!((t.dayLeft | 0) > 0)) return null;
+    return t;
+  }
+
+  /* 遠征を組み立てる（まだセーブには書かない）。出発の釦が押せるかの判定つき */
+  function tripStart(st, pref, purpose, members, target) {
+    const p = planTrip(st, pref, purpose, members);
+    const dep = deputyOf(st, members);
+    return Object.assign(p, {
+      target: target != null ? target : null,
+      deputy: dep ? dep.id : null,
+      dayLeft: p.days,
+      log: [], found: [], signed: [],
+      /* 留守中の店の合計。帰った日の夜にまとめて出す（§7.5） */
+      store: { days: 0, guests: 0, sales: 0, profit: 0 },
+    });
+  }
+
+  /* 発見の抽選。**雀ドルはまだ県を持たない**ので、当面その県の地方から引く
+     （§4.4。200人に増員するときに県を振り、そこで絞る分岐を足す） */
+  function regionOfPref(pref) {
+    const p = Geo.prefOf(pref);
+    return p ? p.region : null;
   }
 
   /* ------------------------------------------------------------
@@ -184,6 +260,8 @@ const Office = (() => {
        **`officePref` を持たない既存セーブだけ**。一度きり */
     let screen = prefOf(store.get()) ? (opts.phase === 'night' ? 'night' : 'morning') : 'pick';
     let pick = null;          // 本拠地の選択中の県 key
+    /* 遠征の下書き（出発するまでセーブに書かない） */
+    let draft = null;
     /* 夜に出す、その日ぶんの控え。店が無い日だけ使う（日当の額）。
        `parlor.log` は {day, guests, sales, profit} しか持たないため */
     let night = null;
@@ -234,6 +312,7 @@ const Office = (() => {
          （spec.md §6.3）。シフトの保存先は `parlor.shifts` のままで、
          書くのは `Jansou.setShift`。**データは移していない。** */
       const assign = assignOf(st);
+      const trip = tripOf(st);
       const mates = list.length ? list.map((c) => {
         const kind = assign[c.id];
         const at = kind === 'parlor';
@@ -274,7 +353,16 @@ const Office = (() => {
       const open = !!(parlor && parlor.open);
       const wages = list.reduce((a, c) => a + Jansou.wageOf(c), 0);
       let action;
-      if (!list.length) {
+      if (trip) {
+        const p = Geo.prefOf(trip.pref);
+        const dep = trip.deputy != null ? list.find((c) => c.id === trip.deputy) : null;
+        action = `<button type="button" class="ofRunBtn" id="ofRun">今日を始める</button>
+          <p class="ofNote"><b>${esc(p.name)}に遠征中。</b>あと ${trip.dayLeft} 日。
+            ${trip.purpose === 'woo' ? '口説きに来ています。' : '雀荘をまわっています。'}<br>
+            ${open ? (dep ? `留守は ${esc(dep.name)} に任せています。` : '留守を任せた子がいません。')
+              : '店はまだありません。'}
+            ${open ? '<br>代表がいないので、夜に自分の卓は出せません。' : ''}</p>`;
+      } else if (!list.length) {
         action = `<button type="button" class="ofRunBtn" disabled>今日を始める</button>
           <p class="ofNote">まだ誰も所属していません。チーム編成から始めてください。</p>`;
       } else if (open) {
@@ -314,6 +402,10 @@ const Office = (() => {
         <div class="ofMates">${mates}</div>
 
         <h2 class="ofSecT">出かける</h2>
+        ${trip ? '' : `<button type="button" class="ofRunBtn ghost" id="ofTrip"
+          ${list.length ? '' : 'disabled'} style="margin-bottom:8px">遠征に出る</button>
+          <p class="ofNote" style="margin:0 0 10px">全国の雀荘を歩いて見つけ、その場で口説く。
+            出ているあいだ代表は店に降りられません。</p>`}
         <div class="ofDoors">
           ${door('jansou', '雀荘', '営業と設備、シフト')}
           ${door('scout', 'スカウト', '雀荘をまわって発掘する')}
@@ -342,8 +434,18 @@ const Office = (() => {
         });
       });
 
+      const goTrip = root.querySelector('#ofTrip');
+      if (goTrip) goTrip.addEventListener('click', () => {
+        draft = { pref: null, purpose: 'find', members: [], target: null };
+        screen = 'trip';
+        render();
+      });
+
       const run = root.querySelector('#ofRun');
       if (run) run.addEventListener('click', () => {
+        /* 遠征中は昼を雀荘へ委譲しない。**日ごとの再生はしない**（§7.5）。
+           留守の店を裏で回し、遠征の出来事を一つ進めて夜へ */
+        if (trip) { runTripDay(); return; }
         if (open) { if (canRun) store.startDay(); return; }
         /* **店が無い日の昼は、雀荘へ委譲しない。**ここで締めを通して夜へ。
            日を進めるのは `settle`（`runClosedDay` の中）一箇所のまま */
@@ -366,6 +468,255 @@ const Office = (() => {
       });
     }
 
+    /* ---------- 遠征に出る（spec.md §7.1） ---------- */
+    function renderTrip() {
+      const st = store.get();
+      const list = rosterOf(st);
+      const home = Geo.prefOf(st.officePref);
+      const p = draft.pref ? planTrip(st, draft.pref, draft.purpose, draft.members) : null;
+      const dep = deputyOf(st, draft.members);
+      const money = st.money || 0;
+
+      /* 口説く相手。**発見済みで未契約の子**だけ。当面はその県の地方から
+         （雀ドルはまだ県を持たない。§4.4） */
+      const region = draft.pref ? regionOfPref(draft.pref) : null;
+      const all = JANDOLS.concat(FREE_AGENTS);
+      const targets = (st.discovered || [])
+        .filter((id) => !(st.contracted || []).includes(id))
+        .map((id) => all.find((c) => c.id === id))
+        .filter((c) => c && (!region || c.region === region));
+
+      const chips = REGIONS.map((r) => `<div class="ofPrefGroup">
+        <span class="ofPrefRegion">${esc(r)}</span>
+        <div class="ofPrefChips">${Geo.prefsOf(r).map((q) => {
+          const f = Geo.farBetween(st.officePref, q.key);
+          return `<button type="button" class="ofPref${draft.pref === q.key ? ' on' : ''}"
+            data-dest="${q.key}">${esc(q.name)}<i>${f}</i></button>`;
+        }).join('')}</div></div>`).join('');
+
+      const mates = list.filter((c) => assignFor(st, c.id) !== 'trip').map((c) => {
+        const on = draft.members.indexOf(c.id) >= 0;
+        const full = !on && draft.members.length >= 3;
+        return `<button type="button" class="ofMateChip${on ? ' on' : ''}"
+          data-mate="${c.id}" ${full ? 'disabled' : ''}>${esc(c.name)}</button>`;
+      }).join('');
+
+      root.innerHTML = `
+        <div class="ofHead">
+          <h1 class="ofTitle">遠征に出る</h1>
+          <p class="ofSub">${esc(home ? home.name : '')} を出て、その土地の雀荘をまわる</p>
+        </div>
+
+        <h2 class="ofSecT">行き先</h2>
+        <p class="ofNote" style="margin:0 0 8px">数字は本拠地からの遠さ（0〜5）。
+          <b>遠いほど滞在が長く、費用も上がります。</b>
+          長いぶん多く引けるのが遠くの利点です。</p>
+        <div class="ofPrefs">${chips}</div>
+
+        <h2 class="ofSecT">目的</h2>
+        <div class="ofPrefChips">
+          <button type="button" class="ofPref${draft.purpose === 'find' ? ' on' : ''}"
+            data-purpose="find">探す</button>
+          <button type="button" class="ofPref${draft.purpose === 'woo' ? ' on' : ''}"
+            data-purpose="woo" ${targets.length ? '' : 'disabled'}>口説く</button>
+        </div>
+        ${draft.purpose === 'find'
+          ? '<p class="ofNote">一日ひとりずつ、その地方の雀ドルを探します。</p>'
+          : `<p class="ofNote">着いた日に現地で一局打ちます。
+              <b>相手より上の着順で終われば勝ち。</b>勝てば契約の話に進み、
+              負けても好感度は少し上がります。何度でも挑めます。</p>
+            <div class="ofPrefChips">${targets.length ? targets.map((c) =>
+              `<button type="button" class="ofPref${draft.target === c.id ? ' on' : ''}"
+                data-target="${c.id}">${esc(c.name)}<i>${esc(c.rank)}</i></button>`).join('')
+              : '<span class="ofNote">この地方に、声をかけられる雀ドルはいません。</span>'}</div>`}
+
+        <h2 class="ofSecT">同行者<span class="ofSecNote">0〜3人。遠征中はシフトから外れます</span></h2>
+        <div class="ofPrefChips">${mates || '<span class="ofNote">連れて行ける子がいません。</span>'}</div>
+
+        <h2 class="ofSecT">留守番</h2>
+        <p class="ofNote" style="margin:0">${dep
+          ? `<b>${esc(dep.name)}</b> に任せます（出勤者で完成度がいちばん高い子）。
+             代表戦は自動で処理され、夜に自分の卓は出せません。`
+          : '任せられる子がいません。代表戦は警察を呼んで収めます。'}</p>
+
+        <hr class="kinsen">
+        <div class="ofRep">
+          <div class="ofRepRow"><span>行き先</span><b>${p ? esc(Geo.prefOf(p.pref).name) : '—'}</b></div>
+          <div class="ofRepRow"><span>日数</span><b>${p ? p.days + '日' : '—'}</b></div>
+          <div class="ofRepRow${p && p.cost > money ? ' minus' : ''}">
+            <span>費用</span><b>${p ? yen(p.cost) : '—'}</b></div>
+          <div class="ofRepRow"><span>ほかに毎日</span><b>日当 ${yen(list.reduce((a, c) => a + Jansou.wageOf(c), 0))}</b></div>
+        </div>
+        <button type="button" class="ofBtn" id="ofGo" style="margin-top:12px"
+          ${p && p.cost <= money && (draft.purpose === 'find' || draft.target != null) ? '' : 'disabled'}>
+          出発する</button>
+        <button type="button" class="ofRunBtn ghost" id="ofBack" style="margin-top:8px">やめる</button>`;
+
+      root.querySelectorAll('[data-dest]').forEach((b) => b.addEventListener('click', () => {
+        draft.pref = b.dataset.dest; draft.target = null; renderTrip();
+      }));
+      root.querySelectorAll('[data-purpose]').forEach((b) => b.addEventListener('click', () => {
+        if (b.disabled) return;
+        draft.purpose = b.dataset.purpose; renderTrip();
+      }));
+      root.querySelectorAll('[data-target]').forEach((b) => b.addEventListener('click', () => {
+        draft.target = +b.dataset.target; renderTrip();
+      }));
+      root.querySelectorAll('[data-mate]').forEach((b) => b.addEventListener('click', () => {
+        if (b.disabled) return;
+        const id = +b.dataset.mate;
+        const i = draft.members.indexOf(id);
+        if (i >= 0) draft.members.splice(i, 1); else draft.members.push(id);
+        renderTrip();
+      }));
+      root.querySelector('#ofBack').addEventListener('click', () => {
+        draft = null; screen = 'morning'; render();
+      });
+      const go = root.querySelector('#ofGo');
+      if (go) go.addEventListener('click', () => {
+        if (go.disabled) return;
+        const s0 = store.get();
+        const t = tripStart(s0, draft.pref, draft.purpose, draft.members, draft.target);
+        if (t.cost > (s0.money || 0)) return;
+        /* 同行者は遠征中シフトから外れる（§6.3）。`assign` に印を付ける */
+        const assign = Object.assign({}, s0.assign || {});
+        draft.members.forEach((id) => { assign[id] = 'trip'; });
+        store.set({ money: (s0.money || 0) - t.cost, trip: t, assign });
+        draft = null; screen = 'morning'; render();
+      });
+    }
+
+    /* ---------- 遠征中の一日（§7.3・§7.4） ----------
+       留守の店を裏で回して合計に積み、遠征の出来事を一つ進める。
+       **フロアの再生はしない**（§7.5）。帰った日の夜にまとめて出す */
+    async function runTripDay() {
+      const st0 = store.get();
+      const trip = tripOf(st0);
+      if (!trip) { screen = 'morning'; render(); return; }
+      const list = rosterOf(st0);
+      const parlor = parlorOf(st0);
+      const arrived = trip.dayLeft === trip.days;      // 着いた日
+
+      /* --- 留守の店（開いていれば） --- */
+      let dayLine = null;
+      const acc = Object.assign({ days: 0, guests: 0, sales: 0, profit: 0 }, trip.store);
+      if (parlor.open) {
+        const dep = trip.deputy != null ? list.find((c) => c.id === trip.deputy) : null;
+        const r = Jansou.runAwayDay(store, list, dep || null);
+        acc.days += 1;
+        acc.guests += r.plan.day.guests;
+        acc.sales += r.plan.day.sales;
+        acc.profit += r.out.profit;
+        dayLine = r.out.lines[0] || null;
+      } else {
+        Jansou.runClosedDay(store, list);
+        acc.days += 1;
+      }
+
+      /* --- 遠征の出来事 --- */
+      const log = trip.log.slice();
+      const found = trip.found.slice();
+      const signed = trip.signed.slice();
+      const region = regionOfPref(trip.pref);
+      const prefName = Geo.prefOf(trip.pref).name;
+      let st = store.get();
+
+      if (trip.purpose === 'find') {
+        /* **一日一回 `drawOne`（既存）。**滞在日数ぶん引ける（§7.3）。
+           雀ドルはまだ県を持たないので、その県の地方から引く（§4.4） */
+        const hit = Scout.drawOne(region, st);
+        if (hit) {
+          store.set({ discovered: (st.discovered || []).concat(hit.id) });
+          found.push(hit.id);
+          log.push(`${prefName}の雀荘で ${hit.name}（${hit.rank}級）を見つけた`);
+        } else {
+          log.push(`${prefName}をまわったが、めぼしい雀ドルはいなかった`);
+        }
+      } else if (arrived && trip.target != null) {
+        /* **着いた日に現地で対局**（§7.3）。勝てば evaluate、負けても favor */
+        const all = JANDOLS.concat(FREE_AGENTS);
+        const c = all.find((x) => x.id === trip.target);
+        if (c) {
+          const mates = list.filter((x) => (trip.members || []).indexOf(x.id) >= 0);
+          const table = [playerCard(st), c].concat(mates.slice(0, 2));
+          /* 卓が埋まらないぶんは相手と同格のCPUで埋める */
+          for (let i = table.length; i < 4; i++) {
+            table.push(Object.assign({}, c, { id: 9500 + i, name: '地元の常連', guest: true }));
+          }
+          const rank = await playOrSimulate(table, `${prefName}・${c.name}との一局`);
+          const mine = rank.find((r) => r.chara.id === 0);
+          const his = rank.find((r) => r.chara.id === c.id);
+          const won = !!(mine && his && mine.place < his.place);
+          st = store.get();
+          const base = (st.favor || {})[c.id] || 0;
+          const gain = won ? 12 : 5;
+          const favor = Object.assign({}, st.favor || {}, { [c.id]: Math.min(100, base + gain) });
+          store.set({ favor });
+          log.push(won ? `${c.name}に勝った（好感度 +${gain}）` : `${c.name}に負けた（好感度 +${gain}）`);
+
+          if (won) {
+            st = store.get();
+            const v = Scout.evaluate(c, st, rosterOf(st));
+            if (v.ok && (st.money || 0) >= (v.cost || 0)) {
+              const comp = Object.assign({}, st.comp);
+              if (comp[c.id] == null) comp[c.id] = compFromRank(c.rank);
+              store.set({
+                money: (st.money || 0) - (v.cost || 0),
+                contracted: (st.contracted || []).concat(c.id),
+                discovered: (st.discovered || []).includes(c.id)
+                  ? st.discovered : (st.discovered || []).concat(c.id),
+                comp,
+              });
+              signed.push(c.id);
+              log.push(`${c.name}と契約した（${v.cost ? yen(v.cost) : '契約金なし'}）`);
+            } else {
+              log.push(`${c.name}「${v.detail || 'まだ話は聞けない'}」`);
+            }
+          }
+        }
+      }
+
+      /* --- 日を減らす。0になったら帰還 --- */
+      st = store.get();
+      const left = trip.dayLeft - 1;
+      if (left > 0) {
+        store.set({ trip: Object.assign({}, trip, { dayLeft: left, log, found, signed, store: acc }) });
+        night = { trip: { pref: trip.pref, left, line: log[log.length - 1], dayLine } };
+      } else {
+        /* 帰還。同行者をシフトに戻す（§7.5） */
+        const assign = Object.assign({}, st.assign || {});
+        (trip.members || []).forEach((id) => { if (assign[id] === 'trip') assign[id] = 'parlor'; });
+        store.set({ trip: null, assign });
+        night = { back: { pref: trip.pref, days: trip.days, log, found, signed, store: acc } };
+      }
+      screen = 'night';
+      render();
+    }
+
+    /* 実対局の卓に座る代表。`jansou.js` の playerCard と同じ形 */
+    function playerCard(st) {
+      const strengths = (typeof Taikai !== 'undefined' && Taikai.PLAYER_STRENGTH) ||
+        { D: 46, C: 54, B: 62, A: 70, S: 78 };
+      return Object.assign({}, PLAYER, {
+        name: st.playerName || PLAYER.name,
+        face: (typeof Title !== 'undefined' && Title.normalizeFace)
+          ? Title.normalizeFace(st.playerFace) : 'p01',
+        isPlayer: true,
+        rank: st.playerRank || 'D',
+        playerStrength: strengths[st.playerRank || 'D'] || 50,
+      });
+    }
+
+    /* 現地の対局。**`index.html` では実対局、単体ページでは `simulateTable`**
+       （`jansou.js` の playOrSimulate と同じ作法。§7.3） */
+    async function playOrSimulate(table, title) {
+      if (typeof store.playRealMatch === 'function') {
+        const r = await store.playRealMatch(table, { tier: { name: '遠征' }, name: title });
+        if (r) return r;
+      }
+      return simulateTable(table, STYLES);
+    }
+
     /* ---------- 夜 ---------- */
     /* 詳しい日報は雀荘のポップアップ（`showResult`）が出しきっている。
        ここは一日を締める枠で、収支だけを一行で置いて朝へ返す。
@@ -379,6 +730,8 @@ const Office = (() => {
          店がある日の細かい日報は雀荘のポップアップが出しきっているので、
          ここは締めの枠として収支だけを置く */
       const closed = !!(night && night.closed);
+      const away = night && night.trip;
+      const back = night && night.back;
 
       const body = last ? `
         ${closed
@@ -392,11 +745,36 @@ const Office = (() => {
         <div class="ofRepRow"><span>所持金</span><b>${yen(st.money || 0)}</b></div>`
         : '<p class="ofEmpty">今日の記録がありません。</p>';
 
+      /* 遠征中の夜。**店の細かい話はしない**（帰った日にまとめて出す・§7.5） */
+      const tripBody = away ? `
+        <div class="ofRep">
+          <div class="ofRepRow"><span>${esc(Geo.prefOf(away.pref).name)}にて</span>
+            <b>あと ${away.left} 日</b></div>
+          ${away.line ? `<div class="ofRepEv">${esc(away.line)}</div>` : ''}
+          ${away.dayLine ? `<div class="ofRepEv quiet">留守の店：${esc(away.dayLine)}</div>` : ''}
+        </div>` : '';
+
+      /* 帰還の日報（§7.5）。留守中の日数ぶんの店の結果をまとめて出す */
+      const backBody = back ? `
+        <div class="ofRep">
+          <div class="ofRepRow"><span>${esc(Geo.prefOf(back.pref).name)}から帰った</span>
+            <b>${back.days}日</b></div>
+          ${back.log.map((l) => `<div class="ofRepEv">${esc(l)}</div>`).join('')}
+          <div class="ofRepRow" style="margin-top:6px"><span>留守中の店（${back.store.days}日）</span>
+            <b>客 ${back.store.guests}人</b></div>
+          <div class="ofRepRow"><span>場代の合計</span><b>${yen(back.store.sales)}</b></div>
+          <div class="ofRepRow${back.store.profit >= 0 ? '' : ' minus'}">
+            <span>留守中の収支</span>
+            <b>${back.store.profit >= 0 ? '+' : '−'}${yen(Math.abs(back.store.profit))}</b></div>
+        </div>` : '';
+
       root.innerHTML = `
         <div class="ofHead">
-          <h1 class="ofTitle">${last ? `${last.day}日目の夜` : '夜'}</h1>
-          <p class="ofSub">${esc(nameOf(st))}${closed ? '　まだ店は無い' : ''}</p>
+          <h1 class="ofTitle">${back ? '帰ってきた' : last ? `${last.day}日目の夜` : '夜'}</h1>
+          <p class="ofSub">${esc(nameOf(st))}${closed ? '　まだ店は無い'
+            : away ? '　遠征中' : ''}</p>
         </div>
+        ${backBody}${tripBody}
         <div class="ofRep">${body}</div>
         <div class="ofRun">
           <button type="button" class="ofRunBtn" id="ofNext">明日へ</button>
@@ -412,6 +790,7 @@ const Office = (() => {
 
     function render() {
       if (screen === 'pick') renderPick();
+      else if (screen === 'trip') renderTrip();
       else if (screen === 'night') renderNight();
       else renderMorning();
       root.scrollTop = 0;
@@ -459,7 +838,8 @@ const Office = (() => {
   }
 
   return { mount, defaultName, nameOf, prefOf, rosterOf, prefPickerHtml, bindPicker, NAME_MAX,
-           ASSIGN_KINDS, assignFor, assignOf, parlorRoster, setAssign, fatigueOf, condOf };
+           ASSIGN_KINDS, assignFor, assignOf, parlorRoster, setAssign, fatigueOf, condOf,
+           planTrip, deputyOf, tripOf, tripStart, regionOfPref };
 })();
 
 if (typeof module !== 'undefined' && module.exports) {
