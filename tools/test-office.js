@@ -34,6 +34,7 @@ global.CONTRACTS = chars.CONTRACTS;
 Object.assign(global, require('../src/tournament.js'));
 global.Scout = require('../src/scout.js');
 global.Jansou = require('../src/jansou.js').Jansou;
+global.Offers = require('../src/offers.js').Offers;
 const { Office } = require('../src/office.js');
 
 let pass = 0;
@@ -299,6 +300,186 @@ function eq(a, b, name) {
   eq(Office.condOf({ cond: { 1: -9 } }, 1), -2, '調子は−2が下限');
   eq(Office.fatigueOf({ fatigue: { 1: 'x' } }, 1), 0, '数値でなければ0');
   eq(Office.condOf({ cond: { 1: null } }, 1), 0, '数値でなければ0');
+}
+
+/* ============================================================
+   届く依頼（spec.md §8）— 第四段
+   ============================================================ */
+{
+  const Offers = global.Offers;
+  eq(Offers.TABLE.length, 15, '大会5・契約6・アイドル4の15件');
+  const kinds = Offers.TABLE.reduce((a, o) => { a[o.kind] = (a[o.kind] || 0) + 1; return a; }, {});
+  eq(kinds.tournament, 5, '大会は既存の5つ');
+  eq(kinds.contract, 6, "契約イベントは contract === 'event' の6人ぶん");
+  eq(kinds.idol, 4, 'アイドル案件は4種');
+
+  eq(new Set(Offers.TABLE.map((o) => o.id)).size, 15, 'id が重複していない');
+  ok(Offers.TABLE.every((o) => typeof o.when === 'function'), '全件に when がある');
+  ok(Offers.TABLE.every((o) => o.prio >= 1 && o.prio <= 9), 'prio は1〜9');
+  ok(Offers.TABLE.every((o) => o.members && o.members.max >= o.members.min),
+    'members の min ≤ max');
+
+  /* **発火条件に日付を書かない**（§1.3・§8.1）。
+     when の中身を文字列にして、日付を見ていないことを機械的に確かめる */
+  const bad = Offers.TABLE.filter((o) => /parlor|\bday\b|Date/.test(String(o.when)));
+  eq(bad.length, 0, 'when が日付（parlor.day / Date）を見ていない',
+    bad.map((o) => o.id).join(','));
+
+  /* 契約イベントは JANDOLS の event 6人と一対一 */
+  const evIds = JANDOLS.concat(FREE_AGENTS).filter((c) => c.contract === 'event')
+    .map((c) => c.id).sort((a, b) => a - b);
+  const offIds = Offers.TABLE.filter((o) => o.kind === 'contract')
+    .map((o) => o.payload.charaId).sort((a, b) => a - b);
+  eq(offIds.join(','), evIds.join(','),
+    "contract === 'event' の6人すべてに依頼がある（天城リオ No.001 を含む）");
+  ok(offIds.indexOf(1) >= 0, '天城リオ No.001 の依頼がある');
+  ok(Offers.TABLE.filter((o) => o.kind === 'contract').every((o) => o.once),
+    '契約イベントは一度きり');
+  ok(Offers.TABLE.filter((o) => o.kind === 'contract').every((o) => o.days === 0),
+    '契約イベントは受けるだけなら日を消費しない（会いに行くのは遠征）');
+
+  /* アイドル案件の fit は、実在する chara（性格19種）だけ */
+  const charas = new Set(JANDOLS.concat(FREE_AGENTS).map((c) => c.chara));
+  const badFit = [];
+  Offers.TABLE.filter((o) => o.kind === 'idol').forEach((o) => {
+    o.payload.fit.forEach((f) => { if (!charas.has(f)) badFit.push(o.id + ':' + f); });
+  });
+  eq(badFit.length, 0, 'アイドル案件の向き不向きは実在する性格だけ', badFit.join(','));
+}
+
+/* ---------- 発火（§8.1・§8.3） ---------- */
+{
+  const Offers = global.Offers;
+  const seeded = (n) => { let s = n >>> 0;
+    return () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296; }; };
+  /* **契約イベントの6人（id 1・8・16・18・42・54）と重ならない子を使う。**
+     契約済みの相手には話が来ないので、重ねると when が偽になる */
+  const a = JANDOLS[2], b = JANDOLS[3], c = JANDOLS[4];
+  const roster = [a, b, c];
+
+  /* 何も満たしていないセーブ … 大会は D級でも新人戦が来る（band[0] が D） */
+  const st0 = { playerRank: 'D', team: [a.id, b.id, c.id], contracted: [a.id, b.id, c.id],
+                officePref: 'kyoto', offers: [], offerFired: [], offerAccepted: [] };
+  const got = Offers.fire(st0, roster, seeded(1));
+  ok(got.length > 0, '条件を満たすものは届く');
+  ok(got.every((o) => Offers.byId(o.id)), '返るのは表にある id だけ');
+
+  /* **同じものは二度届かない**（もう事務所に出ているあいだは） */
+  const st1 = Object.assign({}, st0, { offers: got });
+  const again = Offers.fire(st1, roster, seeded(1));
+  ok(again.every((o) => got.every((g) => g.id !== o.id)), 'すでに届いているものは重ねない');
+
+  /* **once は二度発火しない**（§8.1） */
+  const win = { eight: { entries: 1, best: '優勝' }, title: { entries: 1, best: '優勝' },
+                open: { entries: 1, best: '優勝' }, local: { entries: 1, best: '優勝' } };
+  const rich = Object.assign({}, st0, { playerRank: 'S', agency: 5, records: win,
+    favor: { 1: 100, 8: 100, 16: 100, 18: 100, 42: 100, 54: 100 } });
+  const ev1 = Offers.fire(rich, roster, seeded(2)).filter((o) => Offers.byId(o.id).once);
+  eq(ev1.length, 6, '条件が揃えば契約イベント6件が一度に届く（規模に依らない・§8.3）');
+  const ev2 = Offers.fire(Object.assign({}, rich,
+    { offerFired: ev1.map((o) => o.id) }), roster, seeded(2))
+    .filter((o) => Offers.byId(o.id).once);
+  eq(ev2.length, 0, 'once は二度発火しない');
+
+  /* **when が偽なら届かない** */
+  const poor = Object.assign({}, st0, { favor: {}, agency: 1, records: {} });
+  eq(Offers.fire(poor, roster, seeded(3)).filter((o) => Offers.byId(o.id).kind === 'contract').length,
+    0, '条件を満たしていない契約イベントは届かない');
+
+  /* 契約済みの相手には届かない（もう要らない） */
+  const signed = Object.assign({}, rich, { contracted: rich.contracted.concat(1) });
+  ok(!Offers.fire(signed, roster, seeded(4)).some((o) => o.id === 'event-001'),
+    '契約済みの相手の話は届かない');
+
+  /* 溜め込みすぎない */
+  const many = Object.assign({}, st0, { offers: new Array(Offers.MAX_OPEN).fill(0)
+    .map((_, i) => ({ id: 'x' + i, kind: 'idol' })) });
+  eq(Offers.fire(many, roster, seeded(5)).filter((o) => !Offers.byId(o.id).once).length, 0,
+    'MAX_OPEN まで溜まったら、once でないものは届かない');
+
+  /* 並び順は prio の大きいほうが先 */
+  const sorted = Offers.fire(rich, roster, seeded(6));
+  for (let i = 1; i < sorted.length; i++) {
+    ok(Offers.byId(sorted[i - 1].id).prio >= Offers.byId(sorted[i].id).prio,
+      'prio の大きいほうが先に並ぶ');
+  }
+
+  /* 同じ種なら同じ結果（朝に一度引くだけで、あとから変わらない） */
+  eq(JSON.stringify(Offers.fire(st0, roster, seeded(7))),
+     JSON.stringify(Offers.fire(st0, roster, seeded(7))), '同じ種なら同じものが届く');
+}
+
+/* ---------- RULES.event は「依頼を受けたか」だけを見る（§8.2） ---------- */
+{
+  const Offers = global.Offers;
+  const rio = JANDOLS.find((c) => c.id === 1);
+  eq(rio.contract, 'event', '天城リオの契約条件は event');
+
+  /* `evaluate` は事務所ランクと資金も見るので、そこは満たした状態で比べる */
+  const ready = { agency: 5, money: 99999999, offerAccepted: [] };
+
+  const before = Scout.evaluate(rio, ready, []);
+  eq(before.ok, false, '依頼を受けていなければ契約できない');
+  ok(/事務所に話が届く/.test(before.detail), '待てばよいと分かる文面になっている');
+
+  const after = Scout.evaluate(rio, Object.assign({}, ready,
+    { offerAccepted: ['event-001'] }), []);
+  eq(after.ok, true, '**依頼を受ければ契約できる（天城リオがここで解ける）**');
+
+  /* 6人すべてが同じ経路で開くこと */
+  const stuck = JANDOLS.concat(FREE_AGENTS).filter((c) => c.contract === 'event')
+    .filter((c) => {
+      const o = Offers.TABLE.find((x) => x.kind === 'contract' && x.payload.charaId === c.id);
+      return !o || !Scout.evaluate(c, Object.assign({}, ready,
+        { offerAccepted: [o.id] }), []).ok;
+    });
+  eq(stuck.length, 0, 'event の6人すべてが依頼で開く', stuck.map((c) => c.name).join(','));
+
+  /* **依頼を受けていない他の5人は開かない**（一件受けたら全部開く、にならないこと） */
+  const leak = JANDOLS.concat(FREE_AGENTS).filter((c) => c.contract === 'event' && c.id !== 1)
+    .filter((c) => Scout.evaluate(c, Object.assign({}, ready,
+      { offerAccepted: ['event-001'] }), []).ok);
+  eq(leak.length, 0, '受けた一件ぶんだけが開く', leak.map((c) => c.name).join(','));
+}
+
+/* ---------- アイドル案件の効き目（§8.2） ---------- */
+{
+  const Offers = global.Offers;
+  const def = Offers.byId('idol-photo');
+  const fit = Object.assign({}, JANDOLS[0], { id: 901, name: '向いてる子', chara: def.payload.fit[0] });
+  const unfit = Object.assign({}, JANDOLS[0], { id: 902, name: '向いてない子', chara: '毒舌' });
+
+  const r1 = Office.idolResult(def, [fit], null);
+  const r2 = Office.idolResult(def, [unfit], null);
+  eq(r1.pop[901], def.payload.pop, '向いていれば満額');
+  ok(r2.pop[902] < r1.pop[901], '向いていなければ伸びが小さい');
+  ok(r2.pop[902] >= 1, '向いていなくても0にはしない');
+  eq(r1.pay, def.payload.pay, '報酬は案件のとおり');
+  eq(r1.favor[901], def.payload.favor, '好感度も上がる');
+
+  /* 対局付きは、勝てば跳ねる（§8.2） */
+  const win = Office.idolResult(def, [fit], { 901: 1 });
+  const lose = Office.idolResult(def, [fit], { 901: 4 });
+  ok(win.pop[901] > lose.pop[901], '勝てば人気が跳ねる');
+  ok(win.won, '勝ったことが分かる');
+  ok(!lose.won, '負けたら won は立たない');
+
+  /* 人数で割らない（送ったぶん素直に伸びる） */
+  const two = Office.idolResult(Offers.byId('idol-event'), [fit, unfit], null);
+  eq(Object.keys(two.pop).length, 2, '送った人数ぶん出る');
+}
+
+/* ---------- 人気の底上げは元データを書き換えない（§8.2） ---------- */
+{
+  const a = JANDOLS[0];
+  const basePop = a.pop;
+  eq(Office.popOf({}, a), basePop, '底上げが無ければ元の人気');
+  eq(Office.popOf({ popUp: { [a.id]: 7 } }, a), basePop + 7, '底上げぶんが足される');
+  eq(JANDOLS[0].pop, basePop, '**元データは書き換えない**');
+
+  /* rosterOf も同じ読みかたをすること（雀荘の客足に効くので、ずれると嘘になる） */
+  const st = { contracted: [a.id], comp: {}, popUp: { [a.id]: 5 } };
+  eq(Office.rosterOf(st)[0].pop, basePop + 5, 'rosterOf も底上げを反映する');
 }
 
 /* ============================================================

@@ -144,6 +144,7 @@ body.inMatch #matchRoot{flex:1;min-height:0}
 <script src="src/characters.js"></script>
 <script src="src/geo.js"></script>
 <script src="src/tournament.js"></script>
+<script src="src/offers.js"></script>
 <script src="src/office.js"></script>
 <script src="src/title.js"></script>
 <script src="src/meikan.js"></script>
@@ -184,6 +185,10 @@ body.inMatch #matchRoot{flex:1;min-height:0}
       officePref: null,
       assign: {},                // { [charaId]: 'parlor'|'trip'|'rest'|'job:<id>' }
       trip: null,                // 遠征中なら { pref, purpose, target, members, deputy, dayLeft, log }
+      offers: [],                // 届いている依頼（受ける前）
+      offerFired: [],            // once の依頼で既に発火した id
+      offerAccepted: [],         // 受けた依頼の id（RULES.event が見る）
+      popUp: {},                 // { [charaId]: 人気の底上げ }。アイドル活動で貯まる
       fatigue: {},               // { [charaId]: 0..100 }  第五段で数値を置く
       cond: {},                  // { [charaId]: -2..2 }   第五段で数値を置く
     };
@@ -226,6 +231,10 @@ body.inMatch #matchRoot{flex:1;min-height:0}
         /* **遠征はリロードされたら続きから**（§7.5）。壊れていたら
            Office.tripOf が null に落とし、assign の trip も店に戻る */
         trip: s.trip && typeof s.trip === 'object' ? s.trip : null,
+        offers: Array.isArray(s.offers) ? s.offers : [],
+        offerFired: Array.isArray(s.offerFired) ? s.offerFired : [],
+        offerAccepted: Array.isArray(s.offerAccepted) ? s.offerAccepted : [],
+        popUp: s.popUp && typeof s.popUp === 'object' ? s.popUp : {},
         fatigue: s.fatigue && typeof s.fatigue === 'object' ? s.fatigue : {},
         cond: s.cond && typeof s.cond === 'object' ? s.cond : {},
       });
@@ -256,6 +265,17 @@ body.inMatch #matchRoot{flex:1;min-height:0}
        もう進めている（office/spec.md §6.1） */
     startDay: function () {
       go('jansou', { autoRun: true, onDayEnd: function () { go('office', { phase: 'night' }); } });
+    },
+
+    /* 大会は「事務所に届く依頼」から入る（office/spec.md §8.2）。
+       大会の画面へ降りて、終わったら事務所へ結果を持ち帰る。
+       **大会選択の画面は通らない。**入口を一本にするため */
+    goTaikai: function (tierId, offerId) {
+      go('taikai', { tierId: tierId, onDone: function (res) {
+        /* **結果は opts で渡す。**画面を替えると Office は組み直されるので、
+           前の mount の閉包に控えた関数は宙に浮く（呼んでも何も出ない） */
+        go('office', { phase: 'night', taikai: { tierId: tierId, offerId: offerId, res: res } });
+      } });
     },
 
     /* チーム編成が終わったら事務所へ送る */
@@ -332,7 +352,7 @@ body.inMatch #matchRoot{flex:1;min-height:0}
     else if (name === 'office') Office.mount(root, store, opts);
     else if (name === 'meikan') Meikan.mount(root, store);
     else if (name === 'team') Team.mount(root, store);
-    else if (name === 'taikai') Taikai.mount(root, store);
+    else if (name === 'taikai') Taikai.mount(root, store, opts);
     else if (name === 'jansou') Jansou.mount(root, store, opts);
     else if (name === 'scout') Scout.mount(root, store);
     paintTop();
