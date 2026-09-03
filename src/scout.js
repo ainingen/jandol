@@ -364,7 +364,10 @@ const Scout = (() => {
     document.documentElement.style.setProperty('--sil-img', `url("data:image/svg+xml,${svg}")`);
   }
 
-  return { mount, evaluate, costOf, drawOne, AGENCY, agencyOf, SCOUT_COST, RULES };
+  /* 抽選の中身も公開する。**遠征先の店（scoutshop.js）が同じ重みで引くため。**
+     ここを別に持たせると「探す」と「店で見つける」で当たりかたが割れる */
+  return { mount, evaluate, costOf, drawOne, findCandidates, discoverWeights,
+           AGENCY, agencyOf, SCOUT_COST, RULES };
 })();
 
 if (typeof module !== 'undefined') module.exports = Scout;

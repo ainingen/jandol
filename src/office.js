@@ -298,6 +298,56 @@ const Office = (() => {
   }
 
   /* ------------------------------------------------------------
+     遠征先の店（docs/design/scout/spec.md）— A4.5-1
+  ------------------------------------------------------------ */
+  /* その日の店を用意する。**朝に一度だけ引く**（`scout/spec.md` §6.2）。
+     `shop.day !== parlor.day` を印にしているので、同じ朝を描き直しても
+     顔ぶれは変わらない（依頼の発火が `firedFor` でやっているのと同じ形）。
+     **滞在日ごとに引き直す**——同じ顔ぶれが5日続くと、一日目で見終わって
+     残りが空になる。
+
+     種は日と県から作る。**`ScoutShop.seeded` を通すこと**——
+     線形合同法は隣り合う種の一手目がほとんど同じで、
+     日をそのまま渡すと毎日同じ型の店が出る（実際に出た）。
+
+     戻り値は「引き直したか」。呼ぶ側は st を読み直すこと */
+  function ensureShop(store, trip, day) {
+    if (typeof ScoutShop === 'undefined') return false;
+    if (trip.shop && trip.shop.day === day) return false;
+    const st = store.get();
+    const prefIdx = Geo.PREFS.findIndex((p) => p.key === trip.pref);
+    const rng = ScoutShop.seeded(day * 7919 + (prefIdx + 1) * 613 + (trip.days | 0));
+    const shop = ScoutShop.buildShop(st, trip, rng);
+    shop.day = day;
+    store.set({ trip: Object.assign({}, trip, { shop }) });
+    return true;
+  }
+
+  /* 声をかける（`scout/spec.md` §4.2）。
+     **観察は無料、声をかけるのは一日3回まで。**
+     残りが無ければ何もしない。ただの客に声をかけても回数は減る
+     ——外したことが手応えとして返るように */
+  function callOn(store, seatIdx) {
+    const st = store.get();
+    const trip = tripOf(st);
+    const shop = trip && trip.shop;
+    if (!shop || shop.calls <= 0) return null;
+    const seat = shop.seats[seatIdx];
+    if (!seat || shop.met.indexOf(seatIdx) >= 0) return null;
+
+    const met = shop.met.concat(seatIdx);
+    const calls = shop.calls - 1;
+    let found = null;
+    if (seat.charaId != null && (st.discovered || []).indexOf(seat.charaId) < 0) {
+      found = JANDOLS.concat(FREE_AGENTS).find((c) => c.id === seat.charaId) || null;
+    }
+    const patch = { trip: Object.assign({}, trip, { shop: Object.assign({}, shop, { met, calls }) }) };
+    if (found) patch.discovered = (st.discovered || []).concat(found.id);
+    store.set(patch);
+    return { found, calls, seat };
+  }
+
+  /* ------------------------------------------------------------
      疲労と調子（spec.md §9）— **第五段で数値を置く。いまは器だけ。**
      フィールドを先に切っておくのは、セーブの前方互換を保つため
      （あとから足しても、既存セーブは既定値の0で読める）
@@ -332,6 +382,13 @@ const Office = (() => {
     let night = null;
     /* 依頼を発火させた日の印（同じ朝を描き直しても増やさないため） */
     let firedFor = null;
+    /* 遠征先の店。**画面を描き直すたびに作り直すので、前のを必ず止める**
+       （`idle()` は rAF を回しっぱなしにする） */
+    let shopCtl = null;
+    let shopNote = '';
+    /* 見つけた子。**シルエットが顔に変わるのはここ。**
+       床のスプライトはドット絵なので、写真は札で出す */
+    let shopFound = null;
 
     const canGo = typeof store.go === 'function';
     const canRun = typeof store.startDay === 'function';
@@ -368,6 +425,9 @@ const Office = (() => {
       const p0 = parlorOf(store.get());
       const mark = (p0 ? p0.day : 0);
       if (firedFor !== mark) { firedFor = mark; fireOffers(store); }
+      /* 遠征中なら、その日の店を用意する（scout/spec.md §6.2） */
+      const t0 = tripOf(store.get());
+      if (t0 && ensureShop(store, t0, mark)) { shopNote = ''; shopFound = null; }
       const st = store.get();
       const pref = prefOf(st);
       const parlor = parlorOf(st);
@@ -387,6 +447,29 @@ const Office = (() => {
          書くのは `Jansou.setShift`。**データは移していない。** */
       const assign = assignOf(st);
       const trip = tripOf(st);
+
+      /* 遠征先の店（scout/spec.md §3）。**静止した一枚。**
+         一日を再生しない。動くのは乱数を使わない常時アニメだけ */
+      const shop = trip && trip.shop;
+      const shopHtml = shop ? `
+        <h2 class="ofSecT">${esc(shop.name)}
+          <span class="ofSecNote">${esc((ScoutShop.TYPE_BY_KEY[shop.type] || {}).name || '')}</span></h2>
+        <p class="ofNote" style="margin:0 0 6px">
+          見るのはただ。<b>声をかけられるのは今日あと ${shop.calls} 回。</b>
+          客をタップすると声をかけます（外しても一回使います）。</p>
+        <div id="ofShopHost" class="ofShop"></div>
+        ${shopFound ? `
+          <div class="ofShopFound">
+            <span class="mkFace sil"><img src="img/${pad3(shopFound.id)}.webp" alt=""
+              onerror="this.remove()"></span>
+            <span class="ofShopFoundBody">
+              <span class="ofShopFoundName">${esc(shopFound.name)}
+                <i>${esc(shopFound.rank)}級</i></span>
+              <span class="ofShopFoundSub">${esc(STYLES[shopFound.style].name)}　${esc(shopFound.region)}</span>
+              <span class="ofShopFoundCopy">「${esc(shopFound.copy)}」</span>
+            </span>
+          </div>` : ''}
+        ${shopNote ? `<p class="ofNote ofShopNote">${esc(shopNote)}</p>` : ''}` : '';
 
       /* 届いている依頼（§8）。遠征中は受けられない（代表が留守なので、
          大会も相談も動かせない）。見送るのはいつでもできる */
@@ -459,6 +542,7 @@ const Office = (() => {
         action = `<button type="button" class="ofRunBtn" id="ofRun">今日を始める</button>
           <p class="ofNote"><b>${esc(p.name)}に遠征中。</b>あと ${trip.dayLeft} 日。
             ${trip.purpose === 'woo' ? '口説きに来ています。' : '雀荘をまわっています。'}<br>
+            下の店を見て、めぼしい客に声をかけること。<br>
             ${open ? (dep ? `留守は ${esc(dep.name)} に任せています。` : '留守を任せた子がいません。')
               : '店はまだありません。'}
             ${open ? '<br>代表がいないので、夜に自分の卓は出せません。' : ''}</p>`;
@@ -501,6 +585,7 @@ const Office = (() => {
           ${open ? `いま店に立つのは ${onDuty.length} 人。` : ''}</p>` : ''}
         <div class="ofMates">${mates}</div>
 
+        ${shopHtml}
         ${offersHtml}
 
         <h2 class="ofSecT">出かける</h2>
@@ -545,6 +630,8 @@ const Office = (() => {
         if (b.disabled) return;
         takeOffer(b.dataset.take);
       }));
+
+      mountShop(root, shop);
 
       const goTrip = root.querySelector('#ofTrip');
       if (goTrip) goTrip.addEventListener('click', () => {
@@ -712,6 +799,66 @@ const Office = (() => {
       render();
     }
 
+    /* ---------- 遠征先の店を差し込む（scout/spec.md §3） ----------
+       `JansouFloor` の描画をそのまま借りる。渡すのは
+
+         title  店の名前
+         bare   速度・スキップの帯を作らない（よその店に要らない）
+         pal    壁・床・卓の三色だけ差し替えたパレット（**浅いマージ**）
+
+       `render(state)` で一枚描き、`idle(hooks)` で時計だけ進める。
+       **タイムラインは持たない。一日を再生しない**（§3.1）。 */
+    function mountShop(host, shop) {
+      const el = host.querySelector('#ofShopHost');
+      if (!el || !shop || typeof JansouFloor === 'undefined') return;
+      shopCtl = JansouFloor.mount(el, {
+        title: shop.name, bare: true, pal: ScoutShop.palOf(shop.type),
+      });
+      shopCtl.render(ScoutShop.stateOf(shop, store.get()));
+      shopCtl.idle({ onGuestTap: (g) => onShopTap(g) });
+    }
+
+    /* 客をタップ＝声をかける（§4.2）。
+       **未発見の雀ドルなら発見**、ただの客なら何も起きない。
+       どちらでも一回は使う——外したことが手応えとして返るように */
+    function onShopTap(g) {
+      const st = store.get();
+      const trip = tripOf(st);
+      const shop = trip && trip.shop;
+      if (!shop) return;
+      const seat = ScoutShop.seatOfGuestId(shop, g.guestId);
+      if (!seat) return;
+      const idx = shop.seats.indexOf(seat);
+      if (shop.calls <= 0) {
+        shopNote = '今日はもう声をかけられない。明日また来よう。';
+        render();
+        return;
+      }
+      if (shop.met.indexOf(idx) >= 0) {
+        shopNote = 'その人にはもう声をかけた。';
+        render();
+        return;
+      }
+      const r = callOn(store, idx);
+      if (!r) return;
+      shopFound = r.found || null;
+      shopNote = r.found
+        ? `${r.found.name} を見つけた。名鑑に載った。　あと ${r.calls} 回`
+        : `ただの客だった。　あと ${r.calls} 回`;
+      /* 見つけたら遠征の記録にも残す（帰った日の夜にまとめて出る） */
+      if (r.found) {
+        const st2 = store.get();
+        const t2 = tripOf(st2);
+        if (t2) {
+          store.set({ trip: Object.assign({}, t2, {
+            log: t2.log.concat(`${Geo.prefOf(t2.pref).name}の${shop.name}で ${r.found.name}（${r.found.rank}級）に声をかけた`),
+            found: t2.found.concat(r.found.id),
+          }) });
+        }
+      }
+      render();
+    }
+
     /* ---------- 遠征に出る（spec.md §7.1） ---------- */
     function renderTrip() {
       const st = store.get();
@@ -861,20 +1008,19 @@ const Office = (() => {
       const log = trip.log.slice();
       const found = trip.found.slice();
       const signed = trip.signed.slice();
-      const region = regionOfPref(trip.pref);
       const prefName = Geo.prefOf(trip.pref).name;
       let st = store.get();
 
       if (trip.purpose === 'find') {
-        /* **一日一回 `drawOne`（既存）。**滞在日数ぶん引ける（§7.3）。
-           雀ドルはまだ県を持たないので、その県の地方から引く（§4.4） */
-        const hit = Scout.drawOne(region, st);
-        if (hit) {
-          store.set({ discovered: (st.discovered || []).concat(hit.id) });
-          found.push(hit.id);
-          log.push(`${prefName}の雀荘で ${hit.name}（${hit.rank}級）を見つけた`);
-        } else {
-          log.push(`${prefName}をまわったが、めぼしい雀ドルはいなかった`);
+        /* **一日一回の `drawOne` はやめた**（A4.5-1）。
+           発見は「店を見て、声をかける」に置き換わった（`scout/spec.md` §0）。
+           自動で引くと、毎日ただで一人見つかってしまい、
+           **一日3回の上限も、どこを押すかの判断も意味を失う。**
+           この日の出来事は `onShopTap` が `trip.log` に積んでいる。
+           何もしなかった日は、その一行を出す */
+        const shop = trip.shop;
+        if (shop && !shop.met.length) {
+          log.push(`${prefName}の${shop.name}を覗いたが、誰にも声をかけなかった`);
         }
       } else if (arrived && trip.target != null) {
         /* **着いた日に現地で対局**（§7.3）。勝てば evaluate、負けても favor */
@@ -1049,6 +1195,10 @@ const Office = (() => {
     }
 
     function render() {
+      /* **前の床を必ず止める。**`idle()` の rAF は自分では終わらない。
+         `wrap.isConnected` を見て自滅する保険も入れてあるが、
+         画面を替えた瞬間に止めるのはこちらの仕事 */
+      if (shopCtl) { shopCtl.destroy(); shopCtl = null; }
       if (screen === 'pick') renderPick();
       else if (screen === 'trip') renderTrip();
       else if (screen === 'night') renderNight();
@@ -1106,7 +1256,8 @@ const Office = (() => {
   return { mount, defaultName, nameOf, prefOf, rosterOf, prefPickerHtml, bindPicker, NAME_MAX,
            ASSIGN_KINDS, assignFor, assignOf, parlorRoster, setAssign, fatigueOf, condOf,
            planTrip, deputyOf, tripOf, tripStart, regionOfPref,
-           fireOffers, dismissOffer, acceptOffer, popOf, idolResult };
+           fireOffers, dismissOffer, acceptOffer, popOf, idolResult,
+           ensureShop, callOn };
 })();
 
 if (typeof module !== 'undefined' && module.exports) {

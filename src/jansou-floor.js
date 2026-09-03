@@ -37,7 +37,8 @@ const JansouFloor = (() => {
   const G = typeof JansouGuests !== 'undefined' ? JansouGuests : null;
 
   /* ---------- パレット（§4.3） ---------- */
-  const PAL = {
+  /* **正はこれ一つ。**遠征先の店だけが浅いマージで三色を差し替える */
+  const PAL0 = {
     carpetA: '#d4c6b2', carpetB: '#ccbda8', carpetPat: '#baa692', edge: '#a88e78',
     wall: '#301634', wallLow: '#241028',
     neonPink: '#ff56b2', neonCyan: '#60e8ff', neonYellow: '#ffe86e', neonGreen: '#96ffb4',
@@ -51,7 +52,20 @@ const JansouFloor = (() => {
     staffCloth: '#e84896', staffTrim: '#ffce50',
     shadow: '#b29e8c',
     closed: '#8c7a92', closedTop: '#a894ae',
+    /* 夜の灯り。**値はいままで drawLight に直書きしてあったもの。**
+       パレットに出したのは、遠征先の店で型ごとに差し替えるため
+       （`scout/spec.md` §3.3）。自分の店では同じ値なので絵は変わらない */
+    night: '#301634', lamp: '#ff56b2',
+    /* 灯っていないネオン（看板 lv1 のとき）。**値はいままでの直書きのまま。**
+       遠征先の店では壁と同じ色にして消す——古い雀荘が「GIRLS」の
+       看板を掲げていては、型を差し替えた意味がなくなる */
+    signOff: '#4a2a44', signOffLow: '#3a2036',
   };
+  /* 別名。**部屋（壁・床・卓・設備）以外はこちらを直に読む**——
+     客とスタッフのスプライト、模様替えの枠、指名のハートなど。
+     そこは店の型で差し替えない（`scout/spec.md` §3.3）。
+     差し替わるのは、上の4つの drawer に `pal` を渡した経路だけ */
+  const PAL = PAL0;
 
   /* ---------- フロアの寸法（§4.7 の実測） ---------- */
   const FLOOR_H = 164;
@@ -873,7 +887,14 @@ const JansouFloor = (() => {
      ============================================================ */
   /* 壁。**SIGN が看板、INTERIOR がパネルとミラーボール**（§10）。
      買い足すほど girls-ivory.png の完成形に近づく */
-  function drawWall(g, parlor) {
+  /* 部屋を描く4つは `pal` を受ける。**既定は PAL。**
+     遠征先の店は型ごとに壁・床・卓の三色だけ差し替える
+     （`scout/spec.md` §3.3）。**浅いマージにすること**——
+     ネオンや金まで差し替えると型の色が壊れる。
+     客とスタッフのスプライトは `<symbol>` に色が焼いてあるので、
+     ここを通らない（＝差し替わらない）。それでよい */
+  function drawWall(g, parlor, pal) {
+    const PAL = pal || PAL0;
     const sign = parlor.sign | 0, lv = parlor.interior | 0;
     g.appendChild(rect(0, 0, FLOOR_W, WALL_H, PAL.wall));
     g.appendChild(rect(0, WALL_H - 3, FLOOR_W, 3, PAL.wallLow));
@@ -893,7 +914,7 @@ const JansouFloor = (() => {
     if (sign >= 2) neon(g, 'GIRLS', 6, 3, PAL.neonPink, '#a01e64');
     else {
       /* 貼り紙。消えたネオン管の下に、手書きの紙が数枚 */
-      neon(g, 'GIRLS', 6, 3, '#4a2a44', '#3a2036');
+      neon(g, 'GIRLS', 6, 3, PAL.signOff, PAL.signOffLow);
       [[10, 16], [24, 18], [38, 15]].forEach(([x, y]) => {
         g.appendChild(rect(x, y, 9, 7, '#e8dcc8'));
         g.appendChild(rect(x + 1, y + 2, 7, 1, '#6a5a50'));
@@ -933,7 +954,8 @@ const JansouFloor = (() => {
   }
 
   /* 床。**内装1は板張り、2から §4.7 のカーペット**（§10） */
-  function drawCarpet(g, parlor) {
+  function drawCarpet(g, parlor, pal) {
+    const PAL = pal || PAL0;
     if ((parlor.interior | 0) < 2) {
       g.appendChild(rect(0, EDGE_Y, FLOOR_W, 2, '#6a5a4a'));
       g.appendChild(rect(0, CARPET_Y, FLOOR_W, FLOOR_H - CARPET_Y, PAL.plankA));
@@ -976,7 +998,8 @@ const JansouFloor = (() => {
        1 手積み … 木の縁。山が乱れていて、自動卓の穴が無い
        2 全自動卓 … 紫の縁と中央の穴
        3 点数表示付き … 縁に点数の小窓が4つ */
-  function drawTable(g, t, kind, auto) {
+  function drawTable(g, t, kind, auto, pal) {
+    const PAL = pal || PAL0;
     const x = t.x, y = t.y, lv = Math.max(1, auto | 0);
     if (kind === 'closed') {
       g.appendChild(rect(x, y, TABLE_W, TABLE_H, PAL.closed));
@@ -1017,7 +1040,8 @@ const JansouFloor = (() => {
      どれも足元のマスに収まる大きさで描き直してある（ソファ・カウンターは 24px 幅）。
      内装の段階との対応（spec.md §10）は normalize() が持つ：
        4 でソファ席、5 でドリンクカウンターが `floor.items` に入る */
-  function drawFixtures(g, floor, parlor) {
+  function drawFixtures(g, floor, parlor, pal) {
+    const PAL = pal || PAL0;
     const lv = parlor.interior | 0;
     /* 入口のマット。内装1は素の板張りなので敷かない */
     if (lv >= 2) g.appendChild(rect(cellX(DOOR.x), FLOOR_H - 6, 32, 4, '#c86ab0'));
@@ -1154,24 +1178,35 @@ const JansouFloor = (() => {
     return !st.playing || !!st.skipping || !!st.waiting || !!st.paused;
   }
 
+  /* opts
+       title  … 上の帯に出す店の名前（既定は自分の店）
+       bare   … 速度・スキップの帯を作らない（遠征先の店。scout/spec.md §2.3）
+       pal    … 壁・床・卓の色。**PAL への浅いマージ済みのもの**を渡す */
   function mount(host, opts) {
     opts = opts || {};
     const wrap = document.createElement('div');
-    wrap.className = 'jnFloor';
+    wrap.className = 'jnFloor' + (opts.bare ? ' bare' : '');
     wrap.innerHTML =
-      '<div class="jnFlTop"><span class="jnFlName">ガールズ雀荘 〜雀ドル亭〜</span>' +
+      '<div class="jnFlTop"><span class="jnFlName"></span>' +
       '<span class="jnFlDay"></span></div>' +
+      (opts.bare ? '' :
       '<div class="jnFlBar"><span class="jnFlSlot"></span>' +
       '<span class="jnFlTrack"><span class="jnFlFill"></span></span>' +
       '<span class="jnFlSales"></span><span class="jnFlSpeed">' +
       [1, 2, 4].map((v) => '<button type="button" class="jnFlSp" data-speed="' + v + '">×' + v + '</button>').join('') +
-      '<button type="button" class="jnFlSp skip" data-skip="1" hidden>スキップ</button></span></div>' +
+      '<button type="button" class="jnFlSp skip" data-skip="1" hidden>スキップ</button></span></div>') +
       '<div class="jnFlStage"><div class="jnFlUi"></div><div class="jnFlHits"></div>' +
       '<button type="button" class="jnFlPan left" data-pan="-1" aria-label="左を見る" hidden></button>' +
       '<button type="button" class="jnFlPan right" data-pan="1" aria-label="右を見る" hidden></button></div>' +
       '<div class="jnFlEdit" hidden></div>' +
       '<div class="jnFlTicker"></div>';
     host.appendChild(wrap);
+    /* **名前は textContent で入れる。**店の名前は生成物なので、
+       innerHTML に混ぜると生成の仕方を変えたときに壊れる */
+    wrap.querySelector('.jnFlName').textContent =
+      opts.title || 'ガールズ雀荘 〜雀ドル亭〜';
+    /* 部屋の色。差し替えないなら PAL のまま */
+    const pal = opts.pal || PAL0;
 
     const stage = wrap.querySelector('.jnFlStage');
     const ui = wrap.querySelector('.jnFlUi');
@@ -1219,7 +1254,11 @@ const JansouFloor = (() => {
     function measure() {
       /* **測るのは mount に渡された枠。** wrap は width:max-content なので、
          そこを測ると中身が決まる前の幅（ほぼ0）を拾ってしまう */
-      const availW = Math.max(160, (host.clientWidth || host.parentNode.clientWidth || 360) - 6);
+      /* **画面から外れていると host.parentNode が null になる。**
+         `shell.html` の `go()` は `#view` を空にするだけで後始末の口が無いので、
+         外れたあとにも resize が飛んでくる（実際にここで落ちた） */
+      const availW = Math.max(160,
+        (host.clientWidth || (host.parentNode && host.parentNode.clientWidth) || 360) - 6);
       const f = fit(availW);
       scale = f.scale; floorW = f.floorW;
       stage.style.width = (floorW * scale) + 'px';
@@ -1334,15 +1373,15 @@ const JansouFloor = (() => {
       if (!edit.on || !floor) {
         floor = reconcile(parlor.floor, { tables: parlor.tables || 2, interior: parlor.interior });
       }
-      drawWall(roomG, parlor);
-      drawCarpet(roomG, parlor);
-      drawFixtures(roomG, floor, parlor);
+      drawWall(roomG, parlor, pal);
+      drawCarpet(roomG, parlor, pal);
+      drawFixtures(roomG, floor, parlor, pal);
       tables = tablesOf(floor);
       const closed = live.closedTables || 0;
       tables.forEach((t, i) => {
         t.kind = !edit.on && i >= tables.length - closed ? 'closed'
           : (edit.on ? floor.mine === t.id : i === live.myTable) ? 'mine' : 'normal';
-        drawTable(roomG, t, t.kind, parlor.auto);
+        drawTable(roomG, t, t.kind, parlor.auto, pal);
       });
       /* スタッフの体は一つの <g> を使い回す */
       const gg = el('g', { id: 'jns-body' });
@@ -1373,16 +1412,18 @@ const JansouFloor = (() => {
     /* ---------- 照明（帯で変わる。§4.3「ピンクを差す」） ---------- */
     function drawLight() {
       while (lightG.firstChild) lightG.removeChild(lightG.firstChild);
+      /* **灯りの色も部屋のもの。**壁と卓を差し替えたのに灯りがピンクのままだと、
+         どの型の店も一目では同じに見える（実際そう見えた） */
       if (live.slot === 1) {
         lightG.appendChild(el('rect', { x: 0, y: CARPET_Y, width: FLOOR_W, height: FLOOR_H - CARPET_Y,
           fill: '#ffb478', opacity: 0.07 }));
       } else if (live.slot === 2) {
         lightG.appendChild(el('rect', { x: 0, y: CARPET_Y, width: FLOOR_W, height: FLOOR_H - CARPET_Y,
-          fill: '#301634', opacity: 0.16 }));
+          fill: pal.night, opacity: 0.16 }));
         tables.forEach((t) => {
           if (t.kind === 'closed') return;
           lightG.appendChild(el('rect', { x: t.x - 6, y: t.y - 6, width: TABLE_W + 12, height: TABLE_H + 12,
-            fill: '#ff56b2', opacity: 0.10 }));
+            fill: pal.lamp, opacity: 0.10 }));
         });
       }
       /* タップした客の枠（customer-card.png の黄色い枠） */
@@ -1461,19 +1502,23 @@ const JansouFloor = (() => {
     function drawUi() {
       wrap.querySelector('.jnFlDay').textContent = live.headNote ||
         ((live.dayNo || 0) + '日目・' + (live.slot >= 0 ? SLOT_NAMES[live.slot] + '営業中' : '準備中'));
-      const starts = slotStartTimes();
-      const slotLabel = live.slot >= 0
-        ? SLOT_NAMES[live.slot] + ' <i>' + SLOT_HOURS[live.slot] + '</i>' : '開店前';
-      wrap.querySelector('.jnFlSlot').innerHTML = slotLabel;
-      const prog = live.slot >= 0 ? Math.min(1, (live.clock - starts[live.slot]) / SLOT_SEC[live.slot]) : 0;
-      wrap.querySelector('.jnFlFill').style.width = Math.round(prog * 100) + '%';
-      wrap.querySelector('.jnFlSales').innerHTML =
-        '本日 <b>' + yen(live.sales) + '</b>' + (live.extra ? '<i>＋臨時 ' + yen(live.extra) + '</i>' : '');
-      /* **ボタンは作り直さない。** 毎フレーム innerHTML で作り直すと、
-         押した瞬間に要素が入れ替わって取りこぼす（実際に押せなかった） */
-      wrap.querySelectorAll('[data-speed]').forEach((b) => b.classList.toggle('on', +b.dataset.speed === live.speed));
-      wrap.querySelector('[data-skip]').hidden = skipHidden(
-        { playing: live.playing, skipping: live.skipping, waiting, paused: live.paused });
+      /* 速度・スキップの帯は `bare`（遠征先の店）では作っていない。
+         **無ければ触らない。**querySelector が null を返す */
+      if (!opts.bare) {
+        const starts = slotStartTimes();
+        const slotLabel = live.slot >= 0
+          ? SLOT_NAMES[live.slot] + ' <i>' + SLOT_HOURS[live.slot] + '</i>' : '開店前';
+        wrap.querySelector('.jnFlSlot').innerHTML = slotLabel;
+        const prog = live.slot >= 0 ? Math.min(1, (live.clock - starts[live.slot]) / SLOT_SEC[live.slot]) : 0;
+        wrap.querySelector('.jnFlFill').style.width = Math.round(prog * 100) + '%';
+        wrap.querySelector('.jnFlSales').innerHTML =
+          '本日 <b>' + yen(live.sales) + '</b>' + (live.extra ? '<i>＋臨時 ' + yen(live.extra) + '</i>' : '');
+        /* **ボタンは作り直さない。** 毎フレーム innerHTML で作り直すと、
+           押した瞬間に要素が入れ替わって取りこぼす（実際に押せなかった） */
+        wrap.querySelectorAll('[data-speed]').forEach((b) => b.classList.toggle('on', +b.dataset.speed === live.speed));
+        wrap.querySelector('[data-skip]').hidden = skipHidden(
+          { playing: live.playing, skipping: live.skipping, waiting, paused: live.paused });
+      }
       wrap.querySelector('.jnFlTicker').textContent = live.ticker || '';
 
       ui.innerHTML = '';
@@ -2223,23 +2268,73 @@ const JansouFloor = (() => {
     let tid = null;
     const onResize = () => {
       clearTimeout(tid);
-      tid = setTimeout(() => { buildRoom(); paint(); }, 120);
+      tid = setTimeout(() => {
+        /* **外れていたら自分で片づける。**画面を替えたときに
+           後始末の口が無いので、ここで気づいて listener を外す。
+           そうしないと、開くたびに resize の受け口が一つずつ増える */
+        if (!wrap.isConnected) { destroy(); return; }
+        buildRoom(); paint();
+      }, 120);
     };
     window.addEventListener('resize', onResize);
 
+    /* ---------- 止まったまま動き続ける（scout/spec.md §2.3・§3.1） ----------
+       **タイムラインを消化しない再生。**遠征先の店はこれで見せる。
+       時計を進めて `paint()` するだけなので、動くのは
+       **乱数を使わない常時アニメ**（打牌の手・ネオン・ミラーボール）だけ。
+       これらは `drawActors()` が `live.clock` からだけ位相を出しているので、
+       時計さえ進めば動く。**乱数は一切引かない。**
+
+       **`live.playing` を立てること。**客のタップ判定が
+       `!live.playing` で弾いているので、立てないと声をかけられない。
+
+       止めるのは `stop()`。**画面から外れたら自分で止まる**——
+       `shell.html` の `go()` は `#view` を空にするだけで後始末の口が無いので、
+       ここで見ていないと rAF が回りっぱなしになる */
+    function idle(hooks) {
+      /* **タップの受け口は `hooksRef`。**`play()` と同じ入れ物を使う
+         （タップの処理は一箇所しかない） */
+      if (hooks) hooksRef = hooks;
+      if (live.playing) return;
+      live.playing = true;
+      let prev = performance.now();
+      const step = (now) => {
+        if (!live.playing) return;
+        if (!wrap.isConnected) { live.playing = false; raf = null; return; }
+        const dt = Math.min(0.1, (now - prev) / 1000);
+        prev = now;
+        if (!live.paused) live.clock += dt;
+        advance(dt);
+        paint();
+        raf = requestAnimationFrame(step);
+      };
+      raf = requestAnimationFrame(step);
+    }
+
+    function stop() {
+      live.playing = false;
+      if (raf) cancelAnimationFrame(raf);
+      raf = null;
+    }
+
+    /* **名前付きにしてある。**`onResize` が「外れていたら自分で片づける」で
+       呼ぶので、返り値のメソッドとしてだけ持たせると届かない */
+    function destroy() {
+      live.playing = false;
+      stopEdgePan();
+      if (raf) cancelAnimationFrame(raf);
+      raf = null;
+      clearTimeout(tid);
+      window.removeEventListener('resize', onResize);
+      wrap.remove();
+    }
+
     return {
-      el: wrap, render, play, setSpeed, skip, pause, resume, setEdit,
-      floorToScreen, screenToFloor,
+      el: wrap, render, play, idle, stop, setSpeed, skip, pause, resume, setEdit,
+      floorToScreen, screenToFloor, destroy,
       get scale() { return scale; },
       get floorW() { return floorW; },
       get playing() { return live.playing; },
-      destroy() {
-        live.playing = false;
-        stopEdgePan();
-        if (raf) cancelAnimationFrame(raf);
-        window.removeEventListener('resize', onResize);
-        wrap.remove();
-      },
     };
   }
 
