@@ -152,7 +152,8 @@ const OfficeRoom = (() => {
       board: ctx.board || { slots: [0, 0, 0], rest: 0, away: 0 },
       unread,                       // パソコンの画面が光る＋件数
       tired: !!ctx.tired,           // 机に赤い付箋
-      mine8: !!ctx.mine8,           // 額が金になる
+      /* 雀エイトの八枠。**うちの子の枠に顔が入る**（額縁の色では言わない） */
+      eight: (ctx.eight || []).slice(0, 8),
     };
   }
 
@@ -171,25 +172,34 @@ const OfficeRoom = (() => {
     g.appendChild(rect(0, WALL_H - 6, W, 3, PAL.tableWood));
   }
 
-  /* 雀エイトの額（48×26）。八つの小さな写真の枠。
-     **額縁は普段は木。金になるのは「うちの子が入っている」ときだけ**（§5）——
-     いつも金だと、金であることが何も言っていない */
+  /* 雀エイトの額（48×26）。八枠。**額縁の色では言わない。中身で言う。**
+
+     金か木かは**比べないと分からない印**で、初見では機能しなかった（実機で見た）。
+     いまは **うちの子の枠に顔が入り、よその子の枠はシルエットのまま**——
+     名鑑と同じ言いかた（`.mkFace.sil`）なので、**何枠埋まっているかが一目で数えられる。**
+     顔は当たり層に置く（画素の層に写真は置けない） */
+  function eightSlot(i, it) {
+    return { x: it.x + 6 + (i % 4) * 10, y: it.y + 5 + Math.floor(i / 4) * 9, w: 8, h: 7 };
+  }
   function drawEight(g, it, view) {
-    const mine = !!view.mine8;
+    const rows = view.eight || [];
     g.appendChild(rect(it.x, it.y, it.w, it.h, PAL.ink));
-    g.appendChild(rect(it.x + 1, it.y + 1, it.w - 2, it.h - 2, mine ? PAL.goldHi : PAL.tableWood));
-    if (mine) g.appendChild(rect(it.x + 2, it.y + 2, it.w - 4, it.h - 4, PAL.gold));
+    g.appendChild(rect(it.x + 1, it.y + 1, it.w - 2, it.h - 2, PAL.tableWood));
     g.appendChild(rect(it.x + 3, it.y + 3, it.w - 6, it.h - 6, PAL.panel));
     for (let i = 0; i < 8; i++) {
-      const cx = it.x + 6 + (i % 4) * 10, cy = it.y + 5 + Math.floor(i / 4) * 9;
-      /* うちの子は一枠だけ金で縁取る（表の中の「金で縁取られる」と同じ言いかた） */
-      const own = mine && i === 0;
-      g.appendChild(rect(cx - (own ? 1 : 0), cy - (own ? 1 : 0),
-        8 + (own ? 2 : 0), 7 + (own ? 2 : 0), own ? PAL.goldHi : PAL.closedTop));
-      g.appendChild(rect(cx + 2, cy + 1, 4, 3, PAL.tileLow));
-      g.appendChild(rect(cx + 1, cy + 5, 6, 2, PAL.closed));
+      const s2 = eightSlot(i, it);
+      const mine = !!(rows[i] && rows[i].mine);
+      if (mine) {
+        /* 金の台座だけ描く。顔は当たり層が乗せる */
+        g.appendChild(rect(s2.x - 1, s2.y - 1, s2.w + 2, s2.h + 2, PAL.goldHi));
+        continue;
+      }
+      /* よその子＝シルエット。頭と肩だけ */
+      g.appendChild(rect(s2.x, s2.y, s2.w, s2.h, PAL.closedTop));
+      g.appendChild(rect(s2.x + 2, s2.y + 1, 4, 3, PAL.closed));
+      g.appendChild(rect(s2.x + 1, s2.y + 5, 6, 2, PAL.closed));
     }
-    g.appendChild(rect(it.x + 6, it.y + it.h - 3, it.w - 12, 1, mine ? PAL.goldHi : PAL.closed));
+    g.appendChild(rect(it.x + 6, it.y + it.h - 3, it.w - 12, 1, PAL.closed));
   }
 
   /* 段位の賞状（8×18）。押せない。朱の印が一つ */
@@ -234,40 +244,47 @@ const OfficeRoom = (() => {
 
      四行。上から**昼・夕・夜**（出勤している人数ぶんの印）と、
      **休み・出**（灰と金）。左端の色札が行の意味を持つ */
-  /* **癖の印と同じ三色**（シアン・黄・ピンク）。2ドットでも見分けられることが
-     四型の店で確かめてある色なので、3px の点でも効く。
-     黄と金は近すぎて並べると分からなかった（実機で見た） */
+  /* **行頭に絵を置く。**色（癖の印と同じシアン・黄・ピンク）だけだと、
+     どの行が何の帯なのかを覚えていないと読めなかった——「見れば分かる」であって
+     「一目で分かる」ではない、と自分で書いた弱さ。
+     **昼は陽、夕は沈む陽と地平、夜は月。**7×5 でもシルエットが崩れているので、
+     色を覚えていなくても読める（癖の印で学んだこと）。
+
+     **休みと出の行は落とした。**休みはソファの人が、出は扉の鞄が言っている——
+     部屋と板で二度言わない（名簿から配置を外したのと同じ原則） */
+  /* **行頭は字で書く。**陽・沈む陽・月の絵も試したが、380px（7×5px）では
+     月しか読めず、陽と夕陽はどちらも「小さな塊」だった。
+     **ホワイトボードなのだから字が書いてあるのが自然**でもある。
+     字は当たり層に置く（画素の層に文字は置かない——`jansou-floor.css` の決めごと）。
+     色は癖の印と同じ三色で、字と色の二つで言う */
   const BOARD_ROWS = [
-    { key: 0, col: 'neonCyan' }, { key: 1, col: 'neonYellow' }, { key: 2, col: 'neonPink' },
+    { key: 0, col: 'neonCyan', name: '昼' },
+    { key: 1, col: 'neonYellow', name: '夕' },
+    { key: 2, col: 'neonPink', name: '夜' },
   ];
+  /* 行の座標（板の左上からの差）。**当たり層の字と画素の棒が同じ式を読む** */
+  function boardRow(it, i) {
+    return { x: it.x + 4, y: it.y + 5 + i * 6, barX: it.x + 15, h: 5,
+             max: Math.floor((it.w - 19) / 3) };
+  }
   function drawBoard(g, it, view) {
     const b = view.board || { slots: [0, 0, 0], rest: 0, away: 0 };
     g.appendChild(rect(it.x, it.y, it.w, it.h, PAL.ink));
     g.appendChild(rect(it.x + 1, it.y + 1, it.w - 2, it.h - 2, PAL.tileLow));
     g.appendChild(rect(it.x + 2, it.y + 2, it.w - 4, it.h - 4, PAL.tile));
-    const x0 = it.x + 4, dx = it.x + 12, max = Math.floor((it.w - 16) / 3);
-    const dot = (n, y, col) => {
-      for (let i = 0; i < Math.min(n, max); i++) {
-        g.appendChild(rect(dx + i * 3, y, 2, 3, col));
-      }
-      /* 入りきらないぶんは末尾を切って、切れたことを一つの点で言う */
-      if (n > max) g.appendChild(rect(dx + max * 3, y, 1, 3, PAL.ink));
-    };
-    /* **行ごとに色を変える。**長さだけで分けると、どの行が何の帯なのかを
-       左端の5pxの札だけで見分けることになる（実機で並べたら分からなかった）。
-       色と長さの二つで言う——癖の印で覚えたことと同じ */
     BOARD_ROWS.forEach((r, i) => {
-      const y = it.y + 5 + i * 4;
-      g.appendChild(rect(x0, y, 5, 3, PAL[r.col]));
-      dot(b.slots[r.key] | 0, y, PAL[r.col]);
+      const w = boardRow(it, i);
+      const col = PAL[r.col];
+      /* 人数ぶんの棒。**3px から 5px に伸ばした**——三行になったぶん高さが取れる。
+         **暗い受け皿を敷く**——白い板に黄やシアンを直に置くと沈む
+         （癖の印で覚えた「明るい色は暗い縁で浮かせる」と同じ話） */
+      const n = b.slots[r.key] | 0;
+      const k2 = Math.min(n, w.max);
+      if (k2 > 0) g.appendChild(rect(w.barX - 1, w.y - 1, k2 * 3, w.h + 2, PAL.ink));
+      for (let k = 0; k < k2; k++) g.appendChild(rect(w.barX + k * 3, w.y, 2, w.h, col));
+      /* 入りきらないぶんは末尾を切って、切れたことを一つの点で言う */
+      if (n > w.max) g.appendChild(rect(w.barX + w.max * 3, w.y, 1, w.h, PAL.ink));
     });
-    /* 四行目は休み（灰）と出（金）。**同じ行に並べる**——どちらも「店にいない」 */
-    const y3 = it.y + 5 + 3 * 4;
-    g.appendChild(rect(x0, y3, 5, 3, PAL.closed));
-    dot(b.rest | 0, y3, PAL.closedTop);
-    for (let i = 0; i < Math.min(b.away | 0, 4); i++) {
-      g.appendChild(rect(dx + (Math.min(b.rest | 0, max) + i) * 3, y3, 2, 3, PAL.gold));
-    }
     /* ペン受け */
     g.appendChild(rect(it.x + 10, it.y + it.h - 2, it.w - 20, 2, PAL.closed));
     g.appendChild(rect(it.x + 14, it.y + it.h - 3, 6, 1, PAL.neonCyan));
@@ -577,6 +594,41 @@ const OfficeRoom = (() => {
           ui.appendChild(t);
         }
       });
+      /* 板の行頭の字（昼・夕・夜）。**ホワイトボードに書いてある字**という扱い。
+         倍率と一緒に大きくする——9.5px 決め打ちだと 760px で豆粒になる */
+      const board = layout().find((it) => it.key === 'board');
+      BOARD_ROWS.forEach((r, i) => {
+        const w = boardRow(board, i);
+        const q = floorToScreen(w.x, w.y);
+        const t = document.createElement('span');
+        t.className = 'ofBoardLabel';
+        t.textContent = r.name;
+        t.style.left = Math.round(q.x) + 'px';
+        t.style.top = Math.round(q.y) + 'px';
+        t.style.fontSize = (5 * scale) + 'px';
+        t.style.lineHeight = (w.h * scale) + 'px';
+        t.style.color = PAL[r.col];
+        ui.appendChild(t);
+      });
+
+      /* 額の中の顔（§5）。**うちの子の枠にだけ写真が入る。**
+         枠は 8×7 なので丸ではなく角。顔として読ませるのではなく、
+         **埋まっているかどうかと、何枠埋まっているか**を言うためのもの */
+      const frame = layout().find((it) => it.key === 'eight');
+      (view.eight || []).forEach((r, i) => {
+        if (!r || !r.mine) return;
+        const s2 = eightSlot(i, frame);
+        const q = floorToScreen(s2.x, s2.y);
+        const f = document.createElement('div');
+        f.className = 'ofFrameFace';
+        f.style.left = Math.round(q.x) + 'px';
+        f.style.top = Math.round(q.y) + 'px';
+        f.style.width = (s2.w * scale) + 'px';
+        f.style.height = (s2.h * scale) + 'px';
+        f.innerHTML = '<img src="img/' + String(r.id).padStart(3, '0') + '.webp" alt="" onerror="this.remove()">';
+        ui.appendChild(f);
+      });
+
       /* 人の頭（写真の丸）と当たり。**雀荘のフロアと同じ `.jnFlHead`**。
          顔が分かる必要はない——誰かがそこにいることが伝わればよく、
          誰かは押せば分かる（名簿のその行へ飛ぶ） */
@@ -654,7 +706,8 @@ const OfficeRoom = (() => {
     };
   }
 
-  return { mount, layout, hitOf, roomView, spotsFor, TAGS, SAFE, HIT_MIN, HIT_GAP,
+  return { mount, layout, hitOf, roomView, spotsFor, eightSlot, boardRow, BOARD_ROWS,
+           TAGS, SAFE, HIT_MIN, HIT_GAP,
            DUTY_SPOTS, REST_SPOTS, LATE_SPOT, MAX_DUTY, MAX_REST, W, H };
 })();
 

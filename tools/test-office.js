@@ -1346,7 +1346,21 @@ function eq(a, b, name) {
     eq(R.roomView({ offers: [{ id: 'a' }, { id: 'b' }], mailRead: ['a'] }, {}).unread, 1, '読んだぶんは減る');
     eq(R.roomView({ offers: [], mailRead: ['a'] }, {}).unread, 0, '届いていなければ0');
     ok(R.roomView({}, { tired: true }).tired, '疲れている印');
-    ok(R.roomView({}, { mine8: true }).mine8, '額が金になる印');
+    /* 額は中身で言う（額縁の色では言わない） */
+    eq(R.roomView({}, { eight: [{ id: 1, mine: true }, { id: 2, mine: false }] }).eight.length, 2,
+       '額に八枠ぶんが通る');
+    eq(R.roomView({}, { eight: new Array(12).fill({ id: 1, mine: true }) }).eight.length, 8,
+       '額は八枠で打ち切る');
+    eq(R.roomView({}, {}).eight.length, 0, '渡さなければ空の額');
+    /* 枠の位置。**八つとも額の中に収まる** */
+    const fr = items.find((it) => it.key === 'eight');
+    for (let i = 0; i < 8; i++) {
+      const sl = R.eightSlot(i, fr);
+      ok(sl.x >= fr.x && sl.x + sl.w <= fr.x + fr.w, '枠 ' + i + ' が額の横幅に収まる');
+      ok(sl.y >= fr.y && sl.y + sl.h <= fr.y + fr.h, '枠 ' + i + ' が額の高さに収まる');
+    }
+    eq(new Set([0, 1, 2, 3, 4, 5, 6, 7].map((i) => JSON.stringify(R.eightSlot(i, fr)))).size, 8,
+       '八枠が重なっていない');
     /* markMailRead：開いたら消える。**溜め続けない** */
     let saved = { offers: [{ id: 'a' }, { id: 'b' }], mailRead: ['z'] };
     const fake = { get: () => saved, set: (p2) => { saved = Object.assign({}, saved, p2); } };
@@ -1358,6 +1372,11 @@ function eq(a, b, name) {
     const stT = { contracted: [c0.id], fatigue: { [c0.id]: 0 } };
     ok(!Office.tiredOf(stT), '元気なら付箋は出ない');
     ok(Office.tiredOf({ contracted: [c0.id], fatigue: { [c0.id]: 80 } }), '疲れていれば付箋');
+    /* 額の中身。**八枠ぶん返り、うちの子だけ mine** */
+    const e8 = Office.eightSlotsOf({ contracted: [] });
+    eq(e8.length, 8, '額は八枠');
+    ok(e8.every((r) => r.id > 0), 'どの枠にも誰かがいる');
+    ok(e8.every((r) => !r.mine), '所属ゼロならうちの子はいない');
     /* 夜の残り（残業）。**出勤帯がいちばん多い子が一人だけ** */
     const stN = { contracted: JANDOLS.slice(0, 3).map((c) => c.id),
       parlor: { open: true, shifts: { [JANDOLS[0].id]: [false, false, true],
@@ -1402,9 +1421,21 @@ function eq(a, b, name) {
     eq(R.roomView({}, { board: bc }).board.rest, 1, 'roomView が板の数を通す');
     eq(JSON.stringify(R.roomView({}, {}).board.slots), JSON.stringify([0, 0, 0]),
        '渡さなければ空の板');
-    /* 行の色は癖の印と同じ三色（2ドットでも見分けられることが確かめてある） */
-    ok(JansouFloor.PAL.neonCyan && JansouFloor.PAL.neonYellow && JansouFloor.PAL.neonPink,
-       '板の三色が PAL にある');
+    /* 板は三行だけ。**休みと出は落とした**——ソファの人と扉の鞄が言っている */
+    eq(R.BOARD_ROWS.length, 3, '板は昼・夕・夜の三行');
+    eq(JSON.stringify(R.BOARD_ROWS.map((r) => r.key)), JSON.stringify([0, 1, 2]),
+       '行は帯の順');
+    ok(R.BOARD_ROWS.every((r) => JansouFloor.PAL[r.col]), '行の色が PAL にある');
+    ok(R.BOARD_ROWS.every((r) => r.name), '行頭に字がある（色だけに頼らない）');
+    eq(R.BOARD_ROWS.map((r) => r.name).join(''), '昼夕夜', '字は昼・夕・夜');
+    /* 行は板の中に収まり、14人ぶんの棒が入る */
+    const bd = items.find((it) => it.key === 'board');
+    R.BOARD_ROWS.forEach((r, i) => {
+      const w = R.boardRow(bd, i);
+      ok(w.y >= bd.y && w.y + w.h <= bd.y + bd.h, '行 ' + r.name + ' が板に収まる');
+      ok(w.barX + w.max * 3 <= bd.x + bd.w, '棒が板からはみ出さない');
+      ok(w.max >= 14, '14人ぶんの棒が入る（いまの定員）');
+    });
 
     /* **配置とシフトを動かせるのはボードだけ**（二か所で同じことをしない）。
        名簿は読むだけ。`office.js` の本文を機械的に見て固定する */

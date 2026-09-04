@@ -40,6 +40,26 @@
 .ofRoom.night .jnFlHead img{filter:brightness(.66) saturate(.85)}
 .ofRoom.night .jnFlHead{border-color:rgba(217,180,94,.55)}
 
+/* 板の行頭の字（昼・夕・夜）。**ホワイトボードに書いてある字**。
+   大きさは JS が倍率から入れる（決め打ちだと 760px で豆粒になる） */
+.ofBoardLabel{
+  position:absolute;pointer-events:none;
+  font-family:var(--maru);font-weight:800;letter-spacing:0;
+  /* **暗い縁で浮かせる。**白い板に黄やシアンを直に置くと読めない
+     （癖の印と同じ話）。1px の四方影で縁取る */
+  text-shadow:1px 0 0 var(--urushi-3),-1px 0 0 var(--urushi-3),
+              0 1px 0 var(--urushi-3),0 -1px 0 var(--urushi-3);
+}
+
+/* 額の中の顔。**丸ではなく角**（枠が 8×7 なので）。
+   金の台座の上に乗るので、埋まっている枠が数えられる */
+.ofFrameFace{
+  position:absolute;overflow:hidden;pointer-events:none;
+  background:var(--sil);
+}
+.ofFrameFace img{width:100%;height:100%;object-fit:cover;object-position:center top;display:block}
+.ofRoom.night .ofFrameFace img{filter:brightness(.66) saturate(.85)}
+
 /* 人の当たり。頭から足元まで。**押したら名簿のその行へ飛ぶ** */
 .ofRoomMate{border-radius:50% 50% 4px 4px}
 /* 部屋から飛んできた行。**一度だけ光る**（開き直したら消える） */

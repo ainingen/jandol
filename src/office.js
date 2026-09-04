@@ -200,9 +200,10 @@ const Office = (() => {
     });
   }
 
-  /* うちの子が雀エイトに入っているか（額が金になる） */
-  function mine8Of(st) {
-    return eightTable(st).some((r) => r.mine);
+  /* 雀エイトの八枠（額の中身）。**うちの子の枠にだけ顔が入る**（`room.md` §5）。
+     額縁の色では言わない——金か木かは比べないと分からず、初見で機能しなかった */
+  function eightSlotsOf(st) {
+    return eightTable(st).map((r) => ({ id: r.id, mine: !!r.mine }));
   }
 
   /* 夜に残っている子（`room.md` §6）。**夜は帰ったあとなので部屋は空。**
@@ -1334,7 +1335,7 @@ const Office = (() => {
         people: nightView ? overtimeOf(st) : roomPeopleOf(st),
         away: anyAwayOf(st),
         tired: tiredOf(st),
-        mine8: mine8Of(st),
+        eight: eightSlotsOf(st),
         board: boardCountsOf(st),
       };
     }
@@ -2128,7 +2129,7 @@ const Office = (() => {
 
   return { mount, defaultName, nameOf, prefOf, rosterOf, prefPickerHtml, bindPicker, NAME_MAX,
            ASSIGN_KINDS, assignFor, assignOf, parlorRoster, setAssign, fatigueOf, condOf,
-           roomPeopleOf, anyAwayOf, markMailRead, tiredOf, mine8Of, overtimeOf, boardCountsOf,
+           roomPeopleOf, anyAwayOf, markMailRead, tiredOf, eightSlotsOf, overtimeOf, boardCountsOf,
            planTrip, deputyOf, tripOf, tripStart, regionOfPref,
            fireOffers, dismissOffer, acceptOffer, dropQuest, popOf, idolResult,
            ensureShop, callOn, negotiate, favorGain, addFavor, FAVOR_GAIN,
