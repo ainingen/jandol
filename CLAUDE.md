@@ -685,7 +685,8 @@ A3 でできたが、中身は `drawOne` 一回の二値のままだった。こ
 `docs/design/match/spec.md`。到達点：
 
 - **起家がランダム**（`Game` が振る。`opts.startDealer` で固定できる）。自分の自風が出る
-- **効果音9本**（`src/sound.js`・`audio/`）。いまの音は `tools/make-sfx.py` の合成。同じ名前で差し替えられる
+- **効果音**（`src/sound.js`・`audio/`）。論理名9つで、**打牌だけ四本から毎回ちがう一本を選ぶ**
+  （直前と同じものは続けない）。いまの音は `tools/make-sfx.py` の仮。同じ名前で差し替えられる
 - **牌が動く。**手牌と河は keyed（`Map<id,node>`）。自分の打牌は FLIP、他家は飛ばし込み
 - **四人卓**（横持ち・回転表示）と**列レイアウト**（縦）。卓はターコイズ、黒い輪郭と網点
 - 牌の厚み（3D の面）、セリフのカットイン、縦持ちの回転表示（トグル）、一度押しで切る
@@ -696,6 +697,10 @@ A3 でできたが、中身は `drawOne` 一回の二値のままだった。こ
   speed 0 は無音、200未満は打牌とツモを間引く
 - **`AudioContext` は一つ。**初期化はユーザー操作の中（大会の「卓に着く」）。
   他の入口のために最初のタップで `resume` する保険が `sound.js` にある
+- **一つの論理名が複数の音源を持てる**（`sound.js` の `FILES`）。**`NAMES` は論理名9つのまま**
+  ——`tools/drive-match.js` がそちらを数えている。ファイル名を混ぜると計測が壊れる。
+  読めなかった音源は黙って抜け、一本も読めなければ同名の一本（`discard.wav`）に落ちる。
+  **音源を差し替えたら `audio/LICENSE.txt` の出典欄を書き換え、`node tools/check-sound.js`**
 - **keyed なのは手牌と四つの河だけ。**プレート・コンパス・吹き出しは innerHTML のまま
 - **`render()` は className を丸ごと書かない**（`setTileClass`）。`.moving` が消えると
   牌が立ち絵の裏に隠れる。**`transitionend` は `translate`/`scale` だけを見る**
@@ -711,6 +716,9 @@ A3 でできたが、中身は `drawOne` 一回の二値のままだった。こ
   （`shell.html` の `blankState` / `loadState`）
 
 ### テスト
+
+`node tools/check-sound.js` … 打牌の鳴らし分け（四本すべて出るか・同じものが続かないか・
+一本欠けても鳴るか・`discard.wav` だけでも鳴るか）。**音源を差し替えたら回す。**
 
 `node tools/drive-match.js` … `match.html` を Playwright で一戦回す。
 `--shots DIR`（配牌・鳴き・河3段・終局）、`--video DIR`、`--width 392 --height 780`（縦）、

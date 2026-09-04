@@ -98,7 +98,8 @@ index.html          ビルド結果。これを配布する（500KB以下に保�
 shell.html          外枠。表紙・タブ・セーブ。ビルド時にCSS/JSが差し込まれる
 build.py            index.html を組み立てる（約13KB。CSS/JSは src/ のまま読む）
 tools/make-font.py  表紙の丸ゴシックを作り直す
-tools/make-sfx.py   効果音を合成して audio/ に書く（いまの音はこれで作った自作）
+tools/make-sfx.py   効果音を合成して audio/ に書く（いまの音はこれで作った仮の音）
+tools/check-sound.js 打牌の鳴らし分けをブラウザで確かめる（音源を差し替えたら回す）
 tools/drive-match.js 対局画面をブラウザで回す。配牌・鳴き・河3段・終局を撮り、--video で録画
 
 office.html         ┐
@@ -116,7 +117,7 @@ src/
   ui.js             対局画面。牌はすべてSVG（『忍雀』のイカサマ部分は外した）
   match.js/.css     実対局の入口。卓のDOMを組んでGameを走らせ、着順を返す。
                     四人卓（横持ち・回転表示）と列レイアウト（縦持ち）の両方の CSS
-  sound.js          効果音（WebAudio）。audio/ の9本を読む。鳴らすのは ui.js からだけ
+  sound.js          効果音（WebAudio）。論理名9つを読む（打牌だけ四本から選ぶ）。鳴らすのは ui.js からだけ
   style.css         対局画面のスタイルと配色トークン
 
   characters.js     雀ドル73人＋打ち筋20種＋地域＋契約条件
@@ -241,6 +242,7 @@ src/debug.js        その中身。build.py は読まない（配布から外す
 | 卓の傾き・牌の厚み・河と手牌の押し出し | `src/match.css` の `rotateX(36deg)` `--th` `.rslot` `.413`/`.186` |
 | 牌の移動の速さ | `src/match.css` の `.tile.moving`（.24s） |
 | 効果音の音量の既定・素材 | `src/sound.js` の `DEFAULT_VOLUME`、`audio/*.wav`（`tools/make-sfx.py`） |
+| どの名前が何本の音源を持つか | `src/sound.js` の `FILES`（打牌だけ四本） |
 | 打牌の操作の既定（一度押し） | `src/ui.js` の `discardMode`、スワイプの長さは `SWIPE_PX` |
 | セリフ | `src/serifu.js` の `LINES`（性格名が鍵） |
 | 雑談が出る確率 | `src/ui.js` の `maybeIdle` の `0.18` |
@@ -286,16 +288,25 @@ src/debug.js        その中身。build.py は読まない（配布から外す
 
 ### 効果音
 
-`audio/` の9本（打牌・ツモ・鳴き・リーチ・和了・放銃・ドラ・流局・ボタン）を
-`src/sound.js` が WebAudio で読んで鳴らす（`docs/design/match/spec.md` §2）。
+`audio/` の音を `src/sound.js` が WebAudio で読んで鳴らす（`docs/design/match/spec.md` §2）。
+**論理名は9つ**（打牌・ツモ・鳴き・リーチ・和了・放銃・ドラ・流局・ボタン）で、
+**一つの名前が複数の音源を持てる。**いま複数なのは打牌だけ
+（`discard1.wav`〜`discard4.wav`。一番よく鳴るので、一本だと一局十七回で機械音に聞こえる）。
 
 - **鳴らすのは `ui.js` からだけ。**`game.js` は Node の測定からも読まれるので触らない
 - **`AudioContext` は一つ。**初期化はユーザー操作の中（大会の「卓に着く」）。
   雀荘の夜・遠征の一局から入ったときは、最初のタップで `resume` する保険が効く
 - 早送り（速さ 0）は無音、「速い」（200未満）は打牌とツモだけ間引く
 - 音量は大会の設定（`st.sfxVolume`、0 / 0.5 / 1。無ければ 1）
-- **いまの音は `tools/make-sfx.py` で合成した自作**（出典は `audio/LICENSE.txt`）。
-  実際に牌を録った音に差し替えるときは同じ名前で上書きするだけでよい
+- **`Sound.play('discard')` のまま。**どの一本を鳴らすかは `sound.js` が決める
+  （`FILES`）。**直前と同じものは続けて選ばない。**`ui.js` は名前しか渡さない
+- **`NAMES` は論理名9つのまま公開する。**ファイル名の一覧は `FILES` に別に持つ
+  ——`tools/drive-match.js` は `NAMES` の側を数えている
+- **四本そろっていなくてよい。**読めたものだけで鳴り、一本も無ければ `discard.wav`
+  に落ちる（差し替えの途中で無音にならないため）
+- **いまの音は `tools/make-sfx.py` で合成した仮の音**（出典は `audio/LICENSE.txt`）。
+  差し替えるときは同じ名前で上書きし、**`audio/LICENSE.txt` の出典欄を書き換えること。**
+  差し替えたら `node tools/check-sound.js`
 - **ZIP に `audio/` を含めること。**無くても対局は止まらないが、無音になる
 
 ### 牌の絵

@@ -15,7 +15,11 @@
   ほぼ出せる。牌の音は硬い樹脂が硬い卓に当たる音なので、共鳴は高め・短めにする。
   和了・放銃・流局だけ音程を持つ。
 
-  22050Hz・16bit・モノラル。9本で 300KB ほど。index.html の500KB制限とは無関係。
+  22050Hz・16bit・モノラル。全部で 330KB ほど。index.html の500KB制限とは無関係。
+
+  **打牌だけ四本ある**（discard1〜4）。一番よく鳴るので、一本だと一局十七回で
+  機械音に聞こえる。どれを鳴らすかは src/sound.js が決める（FILES）。
+  discard.wav は四本が一本も読めなかったときの控えなので、消さないこと。
 
 依存：標準ライブラリだけ（numpy を要らないようにしてある）。
 """
@@ -89,9 +93,10 @@ def tone(freq, sec, decay, gain=1.0, harmonics=((1, 1.0), (2, .35), (3, .18), (4
     return out
 
 
-def click(bright=1.0, size=1.0, gain=1.0):
-    """牌が卓に当たる一発。bright で高い成分、size で胴の低い成分を振る"""
-    out = buf(0.16)
+def click(bright=1.0, size=1.0, gain=1.0, sec=0.16):
+    """牌が卓に当たる一発。bright で高い成分、size で胴の低い成分を振る。
+       sec は長さ。打牌の四本（下の DISCARDS）はここを少しずつ変えて別の一本にする"""
+    out = buf(sec)
     add(out, noise(0.006, 0.0015, 0.9 * bright))                 # 当たりの瞬間
     add(out, sine(2600 * bright, 0.05, 0.007, 0.55 * bright))     # 樹脂の硬い鳴り
     add(out, sine(1350, 0.08, 0.012, 0.5))
@@ -120,8 +125,24 @@ def write(name, data, peak=0.9):
 
 # ---------- 9つ ----------
 def discard():
-    """打牌。一番よく鳴るので、短く・硬く・後を引かない"""
+    """打牌。一番よく鳴るので、短く・硬く・後を引かない。
+
+       **これは discard1〜4 が一本も読めなかったときの控え。**
+       ふだん鳴るのは下の DISCARDS のほう（src/sound.js の FILES を見ること）。
+       控えを消さないこと——音源を差し替える途中で打牌が無音になる"""
     return click(bright=1.0, size=1.0)
+
+
+# 打牌の四本。**一番よく鳴るので一本だと機械音に聞こえる**（spec.md §2.2）。
+# 硬さ（bright）・胴の鳴り（size）・長さ（sec）を少しずつ変えるだけで、
+# 「同じ動作の別のひと打ち」に聞こえる。振りすぎると別の物に当たった音になる。
+# ノイズは rng が呼ぶたび別の目を引くので、四本は自然に違う当たりを持つ。
+DISCARDS = [
+    ('discard1', dict(bright=1.00, size=1.00, sec=0.16)),
+    ('discard2', dict(bright=1.12, size=0.85, sec=0.15)),   # 硬く、軽い
+    ('discard3', dict(bright=0.88, size=1.15, sec=0.18)),   # 鈍く、胴が鳴る
+    ('discard4', dict(bright=1.05, size=1.05, sec=0.17)),
+]
 
 
 def draw():
@@ -219,6 +240,10 @@ def main():
     peaks = {'draw': 0.5, 'tap': 0.55, 'dora': 0.75, 'agari': 0.95, 'deal': 0.9}
     for fn in (discard, draw, call, riichi, agari, deal, dora, ryuukyoku, tap):
         write(fn.__name__, fn(), peaks.get(fn.__name__, 0.9))
+    # 打牌の四本。**頭を discard と揃える。**揃えないと、鳴らし分けが
+    # 音色の違いではなく音量のふらつきに聞こえる
+    for name, kw in DISCARDS:
+        write(name, click(**kw), peaks.get('discard', 0.9))
 
 
 if __name__ == '__main__':
