@@ -35,6 +35,7 @@
        ?length=ikkyoku|tonpuu|hanchan
        ?seed=123      Math.random を固定する（同じ並びを何度も見るため）
        ?dealer=2      起家を固定する（Game の opts.startDealer）
+       ?sfx=0.5       効果音の音量（0 で無音）
        ?start=1       開いた瞬間に始める（撮影用） -->
 <div class="dbg">
   <span>対局の単体ページ：</span>
@@ -51,6 +52,7 @@
 <script src="src/engine.js"></script>
 <script src="src/ai.js"></script>
 <script src="src/game.js"></script>
+<script src="src/sound.js"></script>
 <script src="src/ui.js"></script>
 <script src="src/match.js"></script>
 <script src="src/characters.js"></script>
@@ -87,6 +89,7 @@
   }
 
   async function start(auto, speed, length) {
+    Sound.init(); Sound.volume(num('sfx', 1)); Sound.load();
     document.body.classList.add('inMatch');
     const opts = { title: '単体の対局', speed, length, showHints: true };
     if (q.has('dealer')) opts.startDealer = Number(q.get('dealer'));

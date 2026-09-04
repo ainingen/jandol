@@ -107,6 +107,17 @@ const log = (...a) => { process.stdout.write(a.join(' ') + '\n'); };
   if (SEED !== null) q.set('seed', SEED);
   if (DEALER !== null) q.set('dealer', DEALER);
   const url = 'http://127.0.0.1:' + port + '/match.html?' + q.toString();
+  /* 音は聞けないので、Sound.play が何を何回呼ばれたかを数える */
+  await page.addInitScript(() => {
+    window.__sfx = {};
+    const hook = () => {
+      if (typeof Sound === 'undefined' || Sound.__hooked) return;
+      const orig = Sound.play;
+      Sound.play = function (name, opts) { window.__sfx[name] = (window.__sfx[name] || 0) + 1; return orig.call(Sound, name, opts); };
+      Sound.__hooked = true;
+    };
+    document.addEventListener('DOMContentLoaded', hook);
+  });
   await page.goto(url);
   await page.waitForSelector('#table', { timeout: 10000 });
   if (ROTATE) {
@@ -198,6 +209,8 @@ const log = (...a) => { process.stdout.write(a.join(' ') + '\n'); };
   const last = await snap();
   await shot('end');
   log('最後 ' + JSON.stringify(last) + ' 最大ノード数 ' + maxNodes);
+  const sfx = await page.evaluate(() => ({ played: window.__sfx, ready: typeof Sound !== 'undefined' && Sound.ready() }));
+  log('効果音 ' + JSON.stringify(sfx));
   if (errors.length) { log('！ページのエラー ' + errors.length + '件'); process.exitCode = 2; }
 
   await page.close();

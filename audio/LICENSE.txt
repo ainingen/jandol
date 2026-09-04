@@ -1,0 +1,11 @@
+効果音について
+
+audio/ の9本（discard / draw / call / riichi / agari / deal / dora / ryuukyoku / tap）は
+すべて tools/make-sfx.py で合成した自作の音。
+他所のゲームや配布素材からは採っていない（docs/design/match/spec.md §2.1）。
+
+種を固定してあるので、tools/make-sfx.py を回せば同じ音が出る。
+実際に牌を録った音や CC0 の素材に差し替えるときは、同じファイル名で上書きし、
+ここに出典を書き足すこと（tiles/LICENSE.txt と同じ扱い）。
+
+このリポジトリの他の部分と同じ扱いで使ってよい（帰属表示は不要）。

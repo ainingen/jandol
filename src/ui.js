@@ -49,9 +49,47 @@ const UI = {
   showHints: true,
   speed: 520,
 
+  /* ---------- 音 ----------
+     鳴らすのは io 層（ここ）だけ。game.js には一行も足さない（spec.md §2.3）。
+     早送り（speed 0）は無音。速い（200未満）は打牌とツモだけ間引く */
+  sfx(name, opts) {
+    if (typeof Sound === 'undefined') return;
+    if (this.speed === 0) return;
+    if ((name === 'discard' || name === 'draw') && this.speed < 200) return;
+    Sound.play(name, opts);
+  },
+  /* 打牌音。同じ音が17回続くと機械音に聞こえるので、速さを毎回 ±3% 振る */
+  sfxDiscard() { this.sfx('discard', { rate: 1 + (Math.random() * 2 - 1) * 0.03 }); },
+
+  /* 局が進んだかを見て、打牌・ツモ・ドラの音を鳴らす。
+     render() は何度も呼ばれるので、**前回と比べて増えたときだけ**鳴らす。
+     段3でこの差分検出は牌のノードの突き合わせに置き換わる */
+  soundDiff(g) {
+    const key = g.kyoku + ':' + g.honba + ':' + g.dealer;
+    if (this._sndKey !== key) {
+      this._sndKey = key;
+      this._sndRiver = g.players.map((p) => p.discards.length);
+      this._sndDora = g.doraIndicators.length;
+      this._sndDraw = null;
+      return;
+    }
+    let discarded = false;
+    g.players.forEach((p, i) => {
+      if (p.discards.length > this._sndRiver[i]) discarded = true;
+      this._sndRiver[i] = p.discards.length;
+    });
+    if (discarded) this.sfxDiscard();
+    const draw = g.currentDraw ? g.currentDraw.seat + ':' + g.currentDraw.id : null;
+    if (draw && draw !== this._sndDraw) this.sfx('draw');
+    this._sndDraw = draw;
+    if (g.doraIndicators.length > this._sndDora) this.sfx('dora');
+    this._sndDora = g.doraIndicators.length;
+  },
+
   render() {
     const g = this.game;
     if (!g) return;
+    this.soundDiff(g);
     this._maxThreat = Math.max(0, ...g.players.slice(1).map((o) => AI.threatLevel(g, o)));
     const bySeat = (r) => g.players[r % 4];
     /* #info のテンプレートより前に置くこと。後ろに置くと TDZ で落ちる */
@@ -372,7 +410,7 @@ const UI = {
       const el = document.createElement('button');
       el.className = 'act' + (b.primary ? ' primary' : '') + (b.ghost ? ' ghost' : '');
       el.innerHTML = b.label;
-      el.onclick = b.onClick;
+      el.onclick = () => { this.sfx('tap'); b.onClick(); };
       bar.appendChild(el);
     }
   },
@@ -442,6 +480,8 @@ const UI = {
     /* game.js が「誰が・何を」を添えてくる。添えて来ない呼び出しもあるので、
        あるときだけ喋らせる */
     if (who && who.kind) this.say(who.seat, who.kind);
+    if (who && who.kind === 'riichi') this.sfx('riichi');
+    else if (who && who.kind === 'call') this.sfx('call');
     await sleep(ms || 700);
     t.className = '';
     await sleep(120);
@@ -455,8 +495,11 @@ const UI = {
     if (data.type === 'win' && data.winner) {
       this.say(data.winner.seat, data.loser ? 'ron' : 'tsumo');
       if (data.loser) this.say(data.loser.seat, 'deal', true);
+      /* 自分が振ったときだけ沈む音。それ以外は和了の音 */
+      this.sfx(data.loser && data.loser.seat === 0 ? 'deal' : 'agari');
     } else if (data.type === 'draw') {
       this.say(g.dealer, 'draw');
+      this.sfx('ryuukyoku');
     }
     if (data.type === 'win') {
       const r = data.result;
@@ -533,7 +576,7 @@ UI.modal = function (html, buttons) {
   $('#overlay').classList.add('show');
   return new Promise((res) => {
     panel.querySelectorAll('[data-v]').forEach((el) => {
-      el.onclick = () => { $('#overlay').classList.remove('show'); res(el.dataset.v); };
+      el.onclick = () => { UI.sfx('tap'); $('#overlay').classList.remove('show'); res(el.dataset.v); };
     });
   });
 };

@@ -74,6 +74,7 @@ ZIPに混ぜるとURLを知っている人には届いてしまう。
 
 ```
 zip -r jandol.zip . -x '.git/*' 'debug.html' 'src/debug.js' 'tools/*' 'docs/*'
+# audio/（効果音）と tiles/（牌の絵）と img/ と fonts/ は入れること
 ```
 
 ## 直したあと
@@ -272,6 +273,20 @@ src/debug.js        その中身。build.py は読まない（配布から外す
   （`docs/design/match/spec.md` §1）
 - **卓は `#view` の外（`#matchRoot`）に置く。**`ui.js` は `document` 直下のidを見るため
 - 「自動で処理」にすると `playRealMatch` が何も返さず、`taikai.js` が数値処理に落とす
+
+### 効果音
+
+`audio/` の9本（打牌・ツモ・鳴き・リーチ・和了・放銃・ドラ・流局・ボタン）を
+`src/sound.js` が WebAudio で読んで鳴らす（`docs/design/match/spec.md` §2）。
+
+- **鳴らすのは `ui.js` からだけ。**`game.js` は Node の測定からも読まれるので触らない
+- **`AudioContext` は一つ。**初期化はユーザー操作の中（大会の「卓に着く」）。
+  雀荘の夜・遠征の一局から入ったときは、最初のタップで `resume` する保険が効く
+- 早送り（速さ 0）は無音、「速い」（200未満）は打牌とツモだけ間引く
+- 音量は大会の設定（`st.sfxVolume`、0 / 0.5 / 1。無ければ 1）
+- **いまの音は `tools/make-sfx.py` で合成した自作**（出典は `audio/LICENSE.txt`）。
+  実際に牌を録った音に差し替えるときは同じ名前で上書きするだけでよい
+- **ZIP に `audio/` を含めること。**無くても対局は止まらないが、無音になる
 
 ### 牌の絵
 
