@@ -35,7 +35,7 @@ const Title = (() => {
      「データがあるか」ではなく「絵があるか」で絞る。絞らないと
      画像の無い id が並んで、表紙に穴が空く。
      **画像を足したらここも上げること**（img/ に webp を置くのと対） */
-  const PORTRAIT_MAX_ID = 170;
+  const PORTRAIT_MAX_ID = 200;
 
   /* 顔の候補。増やすときはここに足して img/<key>.webp を置くだけ */
   const FACES = [
