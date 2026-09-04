@@ -188,8 +188,12 @@ const UI = {
      卓面は rotateX で寝ているので、奥行きの差は cos ぶん詰まって見える。
      .rslot / .opp の data-angle と body.four から読む */
   localDelta(el, dx, dy) {
+    const body = document.body;
+    /* 回転表示（§7）のあいだは画面が 90 度回っているので、まず画面の差をレイアウトの差に戻す
+       （rotate(90deg): レイアウトの (x,y) → 画面の (-y, x)。逆は (sy, -sx)） */
+    if (body.classList.contains('rotated')) [dx, dy] = [dy, -dx];
     const slot = el.closest('[data-angle]');
-    const four = document.body.classList.contains('four');
+    const four = body.classList.contains('four');
     if (!slot || !four) return [dx, dy];
     const a = (Number(slot.dataset.angle) || 0) * Math.PI / 180;
     const tilt = 36 * Math.PI / 180;

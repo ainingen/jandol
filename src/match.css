@@ -182,17 +182,33 @@ body.inMatch .wind.oya{background:var(--sun);color:var(--line)}
 body.inMatch .wind.me{background:var(--hot);color:#fff}
 body.inMatch .wind.turn{box-shadow:0 0 0 2.5px var(--line),0 0 0 4.5px var(--cool)}
 
-/* ---------- おまかせ ----------
+/* ---------- おまかせ・回転 ----------
    #actions は判断のたびに作り直されるので、そこには置けない。
    卓の上に常設して、いつでも降りられるようにする */
-#giveup{
-  align-self:flex-end;margin:0 2px 4px;
+#topbar{display:flex;justify-content:flex-end;gap:6px;margin:0 2px 4px}
+#giveup,#rotateBtn{
   font:inherit;font-size:11.5px;font-weight:700;padding:5px 12px;border-radius:16px;cursor:pointer;
   border:0;background:var(--plate-2);color:#a99dc4;letter-spacing:.06em;
   box-shadow:0 0 0 2px var(--line),0 3px 0 rgba(0,0,0,.5);
 }
-#giveup:hover{color:#fff}
-#giveup:focus-visible{outline:2px solid var(--sun);outline-offset:1px}
+#giveup:hover,#rotateBtn:hover{color:#fff}
+#giveup:focus-visible,#rotateBtn:focus-visible{outline:2px solid var(--sun);outline-offset:1px}
+/* 回転の釦は縦持ちのときだけ（match.js が canRotate を立てる） */
+#rotateBtn{display:none}
+body.inMatch.canRotate #rotateBtn{display:inline-block}
+#rotateBtn[aria-pressed="true"]{background:var(--sun);color:var(--line)}
+
+/* ---------- 回転表示（§7.2） ----------
+   .matchHost ごと 90 度回して、幅と高さを入れ替える。
+   #toast / #overlay / #rotateHint は position:fixed だが .matchHost の中にいるので、
+   transform の掛かった祖先を基準に一緒に回る（§7.3） */
+body.inMatch.rotated .matchHost{
+  position:fixed;left:50%;top:50%;width:100dvh;height:100dvw;
+  transform:translate(-50%,-50%) rotate(90deg);transform-origin:center;
+}
+body.inMatch.rotated{
+  --tw:clamp(24px,min(calc((100dvh - 250px)/14),13dvw),46px);
+}
 .mdNote{font-size:12.5px;line-height:1.8;color:var(--muted);margin:0 0 4px}
 
 /* ---------- 演出 ----------
@@ -364,7 +380,7 @@ body.inMatch.four #app{
   width:100%;max-width:none;height:100%;min-height:0;padding:0;
   display:flex;flex-direction:column;
 }
-body.inMatch.four #giveup{
+body.inMatch.four #topbar{
   position:absolute;right:14px;bottom:10px;z-index:6;margin:0;
 }
 body.inMatch.four #table{

@@ -33,7 +33,10 @@ const Match = (() => {
      #felt / #center / .rslot を display:contents にして、同じ DOM を格子に並べ直す */
   const TABLE_HTML = `
     <div id="app">
-      <button type="button" id="giveup">おまかせ</button>
+      <div id="topbar">
+        <button type="button" id="rotateBtn" aria-pressed="false">横画面にする</button>
+        <button type="button" id="giveup">おまかせ</button>
+      </div>
       <div id="table">
         <div id="felt">
           <div id="top" class="opp" data-angle="180"></div>
@@ -85,6 +88,11 @@ const Match = (() => {
      縦でも打てるので、閉じる道は必ず残すこと。
   ------------------------------------------------------------ */
   let dismissed = false;
+  /* 回転表示（§7.2）。縦持ちのままラッパー（.matchHost）を 90 度回して横画面にする。
+     OS 側の画面回転ロックを入れている人にも横画面が届く。
+     **強制ではなくトグル。**持ち方を変えていないのに横倒しになると、普通にバグだと思われる。
+     対局をまたいで覚えておく（同じ大会のあいだに毎回押させない） */
+  let rotated = false;
 
   function isPortrait() {
     return window.matchMedia('(orientation:portrait)').matches;
@@ -94,13 +102,34 @@ const Match = (() => {
      横持ちの誘導は出さない。仕組みは残してあるので、
      出したくなったら needRotate を付ける条件を戻すだけでよい */
   function updateRotate() {
-    document.body.classList.remove('needRotate');
-    /* 横持ちなら四人卓（body.four）、縦持ちなら列レイアウト（§4・§7.4）。
-       media query ではなく class にしてあるのは、段7の回転表示（縦持ちのまま
-       ラッパーを回す）でも同じ CSS を使うため */
-    document.body.classList.toggle('four', !isPortrait());
+    const body = document.body;
+    body.classList.remove('needRotate');
+    const portrait = isPortrait();
+    /* 回転の釦は縦持ちのときだけ。横持ちの端末で回すと縦になってしまう */
+    body.classList.toggle('canRotate', portrait);
+    body.classList.toggle('rotated', portrait && rotated);
+    const btn = document.getElementById('rotateBtn');
+    if (btn) {
+      btn.setAttribute('aria-pressed', String(portrait && rotated));
+      btn.textContent = portrait && rotated ? '縦に戻す' : '横画面にする';
+    }
+    /* 横持ち、または回転表示なら四人卓（body.four）。縦持ちで回さないなら列レイアウト（§4・§7.4）。
+       media query ではなく class にしてあるのはこのため——回転表示は
+       縦持ちのまま .matchHost を回すので、orientation は portrait のまま */
+    body.classList.toggle('four', !portrait || rotated);
     fitTable();
     clampTableScroll();
+  }
+
+  /* 回転表示のあいだ getBoundingClientRect は 90 度回った箱を返す。
+     レイアウト上の「上・下・幅」に読み替える（rotate(90deg) は 下 → 画面の左） */
+  function layoutBox(el, ref) {
+    const r = el.getBoundingClientRect();
+    const t = ref.getBoundingClientRect();
+    if (!document.body.classList.contains('rotated')) {
+      return { top: r.top - t.top, bottom: t.bottom - r.bottom, width: r.width };
+    }
+    return { top: t.right - r.right, bottom: r.left - t.left, width: r.height };
   }
 
   /* 四人卓の辺長。画面の高さから手牌ぶんを引いた残りに収まる正方形（§4.2）。
@@ -123,11 +152,10 @@ const Match = (() => {
     let side = Math.min(maxW, H * 1.3);
     for (let i = 0; i < 24; i++) {
       body.style.setProperty('--side', Math.round(side) + 'px');
-      const r = felt.getBoundingClientRect();
-      const tr = t.getBoundingClientRect();
-      const okTop = r.top >= tr.top + topPad;
-      const okBottom = r.bottom <= tr.bottom - botPad;
-      const okWide = r.width <= maxW;
+      const b = layoutBox(felt, t);
+      const okTop = b.top >= topPad;
+      const okBottom = b.bottom >= botPad;
+      const okWide = b.width <= maxW;
       if (okTop && okBottom && okWide) break;
       side *= 0.95;
     }
@@ -288,6 +316,13 @@ const Match = (() => {
       dismissed = true;
       updateRotate();
     });
+    /* 回転表示のトグル。押した瞬間に卓を組み替えるので、牌は動かさず位置だけ確定させる */
+    host.querySelector('#rotateBtn').addEventListener('click', () => {
+      rotated = !rotated;
+      updateRotate();
+      setTimeout(fitTable, 60);
+      UI.render();
+    });
     await tryLockLandscape();
     updateRotate();
     window.addEventListener('resize', onOrientationChange);
@@ -311,7 +346,7 @@ const Match = (() => {
     clearInterval(watch);
     document.body.style.removeProperty('--rw-fit');
     document.body.style.removeProperty('--side');
-    document.body.classList.remove('tableScroll', 'four');
+    document.body.classList.remove('tableScroll', 'four', 'rotated', 'canRotate');
     window.removeEventListener('resize', onOrientationChange);
     if (screen.orientation) screen.orientation.removeEventListener('change', onOrientationChange);
     document.body.classList.remove('needRotate');
