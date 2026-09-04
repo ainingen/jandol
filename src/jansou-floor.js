@@ -1472,26 +1472,39 @@ const JansouFloor = (() => {
       return (Math.floor(c * BEAT_DEFAULT + ph) % 3) === 0 ? 1 : 0;
     }
 
-    /* 頭の上の印（`beat`）。**箱の上に出す**ので、行は負の値になる */
+    /* 頭の上の印（`beat`）。**箱の上に出す**ので、行は負の値になる。
+
+       **三つとも暗い縁で浮かせる**（`outlined`）。床は型ごとに変わるが
+       どれも中間の明るさ（板張り #a89478 / リノリウム #8e8a80 /
+       カーペット #d4c6b2 / 寄木 #b8a07a）なので、**明るい色だけでは
+       床に溶ける型が出る**——`still` の灰色が場末の店で危なかった。
+       縁を付ければ、どの床でも同じ見た目のまま浮く。
+
+       **型ごとに色を変えないこと。**変えると店を移るたびに覚え直しになる。 */
     function drawBeatSign(quirk, p, c, ph) {
       const x = Math.round(p.x), y = Math.round(p.y);
       const has = (k) => quirk.indexOf(k) >= 0;
       if (has('fast')) {
         /* 速度線2本。シアン。少し左右に揺れる（飾り） */
         const w = (Math.floor(c * 4 + ph) % 2) ? 1 : 0;
-        actG.appendChild(rect(x + 1 + w, y - 4, 7, 1, PAL.neonCyan));
-        actG.appendChild(rect(x + 3 + w, y - 2, 7, 1, PAL.neonCyan));
+        outlined(x + 1 + w, y - 7, 8, 2, PAL.neonCyan);
+        outlined(x + 3 + w, y - 4, 8, 2, PAL.neonCyan);
       }
       if (has('slow')) {
-        /* 縦に三点（…）。黄。下から順に灯る（飾り） */
-        const n = 1 + (Math.floor(c * 1.6 + ph) % 3);
-        for (let i = 0; i < n; i++) {
-          actG.appendChild(rect(x + 5, y - 2 - i * 2, 2, 1, PAL.neonYellow));
+        /* 縦に三点（…）。黄。**三つとも必ず描く。**
+           以前は下から順に灯していたが、**瞬間によっては1点しか出ず**、
+           小さな黄色い点ひとつになって見落とした（場末の店で実際に危なかった）。
+           形が変わる動きは「飾り」ではない——動かすのは色の明るさだけ */
+        const lit = Math.floor(c * 1.6 + ph) % 3;
+        for (let i = 0; i < 3; i++) {
+          outlined(x + 5, y - 4 - i * 3, 2, 2, i === lit ? PAL.goldHi : PAL.neonYellow);
         }
       }
       if (has('still')) {
-        /* 横一本の長い線（凪）。灰。動かない */
-        actG.appendChild(rect(x, y - 3, 12, 1, PAL.closedTop));
+        /* 横一本の長い線（凪）。動かない。
+           **灰色ではなくピンク。**灰は場末の店（灰色の床）で埋もれる。
+           シアン・黄と色相がいちばん離れているのがこれ */
+        outlined(x, y - 5, 12, 2, PAL.neonPink);
       }
     }
 
