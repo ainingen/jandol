@@ -318,7 +318,10 @@ const Scout = (() => {
         const v = evaluate(c, st, roster());
         if (!v.ok) { render(); return; }
         const comp = Object.assign({}, st.comp);
-        if (comp[c.id] == null) comp[c.id] = compFromRank(c.rank);
+        /* **自前の `comp` があればそれが正**（`FREE_AGENTS` は 13〜21 を持っている）。
+           `compFromRank` に落とすのは `comp` を持たない `JANDOLS` だけ。
+           入り口で規則が割れると、同じ子でも経路しだいで初期完成度が変わる */
+        if (comp[c.id] == null) comp[c.id] = c.comp == null ? compFromRank(c.rank) : c.comp;
         store.set({
           money: (st.money || 0) - v.cost,
           contracted: (st.contracted || []).concat(c.id),

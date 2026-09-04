@@ -1996,7 +1996,9 @@ const Office = (() => {
 
             if (enough) {
               const comp = Object.assign({}, st.comp);
-              if (comp[c.id] == null) comp[c.id] = compFromRank(c.rank);
+              /* **入り口は scout.js と同じ規則**（自前の `comp` を優先する）。
+                 ここは遠征の交渉で契約する経路。片方だけ直すと必ずずれる */
+              if (comp[c.id] == null) comp[c.id] = c.comp == null ? compFromRank(c.rank) : c.comp;
               store.set({
                 money: (st.money || 0) - (v.cost || 0),
                 contracted: (st.contracted || []).concat(c.id),
