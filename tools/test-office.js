@@ -1217,6 +1217,89 @@ function eq(a, b, name) {
   ok(T.hasRecord(w, 12), '記録がある');
 }
 
+/* ============================================================
+   事務所の部屋（office/room.md）— A6 第一段
+   `layout()` と `roomView()` は純関数。描画そのものはブラウザで見る
+   ============================================================ */
+{
+  global.JansouGuests = require('../src/jansou-guests.js').JansouGuests;
+  global.JansouFloor = require('../src/jansou-floor.js').JansouFloor;
+  const { OfficeRoom } = require('../src/office-room.js');
+  const R = OfficeRoom;
+  const items = R.layout();
+  const taps = items.filter((it) => it.tap);
+
+  ok(items.length >= 8, '部屋に物が置いてある');
+  eq(new Set(taps.map((it) => it.tap)).size, taps.length, '押したときの鍵が重複していない');
+  ['eight', 'board', 'mail', 'desk', 'door'].forEach((k) =>
+    ok(taps.some((it) => it.tap === k), '押せる物がある: ' + k));
+  /* 札は押せる物にだけ。飾りに札を付けると「札の有無＝押せるか」が崩れる */
+  taps.forEach((it) => ok(!!R.TAGS[it.tap], it.name + ' に札がある'));
+  eq(Object.keys(R.TAGS).length, taps.length, '札は押せる物の数だけ');
+
+  /* 押せる物は全部 x 10〜190 の内側（§2.4）。380px の窓でも必ず見える */
+  taps.forEach((it) => {
+    const r = R.hitOf(it);
+    ok(r.x >= R.SAFE.x0 && r.x + r.w <= R.SAFE.x1,
+       it.name + ' の当たりが x 10〜190 の内側', JSON.stringify(r));
+    ok(r.y >= 0 && r.y + r.h <= R.H, it.name + ' の当たりが縦に収まる');
+    ok(r.w >= R.HIT_MIN && r.h >= R.HIT_MIN, it.name + ' の当たりが 22 以上（倍率2で 44px）');
+    ok(it.w >= 8 && it.h >= 8, it.name + ' の絵が 8 以上（当たりだけで浮かせない）');
+  });
+  /* 押せる物どうしの当たりが 4px 以上離れている */
+  for (let i = 0; i < taps.length; i++) {
+    for (let j = i + 1; j < taps.length; j++) {
+      const a = R.hitOf(taps[i]), b = R.hitOf(taps[j]);
+      const apart = a.x + a.w + R.HIT_GAP <= b.x || b.x + b.w + R.HIT_GAP <= a.x
+        || a.y + a.h + R.HIT_GAP <= b.y || b.y + b.h + R.HIT_GAP <= a.y;
+      ok(apart, taps[i].name + ' と ' + taps[j].name + ' の当たりが離れている');
+    }
+  }
+  /* 扉は雀荘の入口と同じ x の帯（§2.1）。上の階の扉が下の階の入口につながる */
+  const door = items.find((it) => it.key === 'door');
+  const jd = JansouFloor.DOOR;
+  const jx0 = JansouFloor.cellX(jd.x), jx1 = JansouFloor.cellX(jd.x) + JansouFloor.KINDS.door.w * JansouFloor.GRID;
+  ok(door.x >= jx0 && door.x + door.w <= jx1, '扉が雀荘の入口と同じ x の帯にある',
+     JSON.stringify({ door, jx0, jx1 }));
+  ok(door.y + door.h >= R.H - 2, '扉は下辺にある');
+  /* 壁の物は壁に、床の物は床に */
+  items.filter((it) => ['eight', 'cert', 'window', 'board'].indexOf(it.key) >= 0)
+    .forEach((it) => ok(it.y + it.h <= JansouFloor.WALL_H, it.name + ' は壁の中'));
+  items.filter((it) => ['pc', 'desk', 'sofa', 'plant', 'door', 'card'].indexOf(it.key) >= 0)
+    .forEach((it) => ok(it.y >= JansouFloor.CARPET_Y, it.name + ' は床の上'));
+
+  /* roomView。第一段で読むのは朝／夜と店の有無、遠征だけ */
+  const v0 = R.roomView({}, {});
+  ok(v0.night === false && v0.open === false && v0.trip === false, '空のセーブでも落ちない');
+  ok(R.roomView({ parlor: { open: true } }, { night: true }).night, '夜');
+  ok(R.roomView({ parlor: { open: true } }, {}).open, '店がある');
+  ok(R.roomView({ trip: { dayLeft: 2 } }, {}).trip, '遠征中');
+  ok(!R.roomView({ trip: { dayLeft: 0 } }, {}).trip, '残り0日の遠征は遠征中ではない');
+  ok(!R.roomView(null, null).night, 'null でも落ちない');
+
+  /* **部屋の下に一覧を続けない**（room.md §0・§12）。
+     `renderMorning` 〜 `renderTrip` に節の見出し（ofSecT）が残っていないこと。
+     一つでも続けたら縦並びに戻るので、機械で止める */
+  const src = require('fs').readFileSync(require('path').join(__dirname, '../src/office.js'), 'utf8');
+  const a = src.indexOf('function renderMorning()');
+  const b = src.indexOf('function renderTrip()');
+  ok(a > 0 && b > a, 'renderMorning と renderTrip がこの順にある');
+  const body = src.slice(a, b).replace(/\/\*[\s\S]*?\*\//g, '');
+  ok(body.indexOf('ofSecT') < 0, 'renderMorning が一覧の見出し（ofSecT）を持たない');
+  ok(/ofRoomHost/.test(body), '朝は部屋を組む');
+  ok(/ofSheetHost/.test(body), '朝はシートで開く');
+  /* 既存の機能の行き先（§4）。シートの中身の生成が残っていること */
+  ['rosterHtml', 'mailHtml', 'eightHtml', 'doorHtml', 'reportHtml'].forEach((f) =>
+    ok(src.indexOf('function ' + f + '(') > 0, 'シートの中身がある: ' + f));
+  ['data-where', 'data-shift', 'data-take', 'data-pass', '#ofTrip', 'data-go', '#ofNext'].forEach((k) =>
+    ok(src.indexOf(k) > 0, '既存の釦が残っている: ' + k));
+  /* JansouFloor の export に足したものが、既存の値を変えていない */
+  ok(typeof JansouFloor.el === 'function' && typeof JansouFloor.rect === 'function', '描画の道具が出ている');
+  ok(Array.isArray(JansouFloor.STAFF_BODY) && typeof JansouFloor.staffColor === 'function', 'スタッフの体が出ている');
+  eq(JansouFloor.PAL.wall, '#301634', 'PAL.wall はそのまま');
+  eq(JansouFloor.PAL.signOff, '#4a2a44', 'PAL.signOff（事務所の壁）はそのまま');
+}
+
 /* ============================================================ */
 console.log('通過 ' + pass + ' 件');
 if (fails.length) {

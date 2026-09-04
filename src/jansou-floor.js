@@ -2465,6 +2465,9 @@ const JansouFloor = (() => {
     SOFA_SPOTS, COUNTER_SPOTS,
     KINDS, DOOR, GRID, COLS, ROWS, GX0, GY0,
     drawWall, drawCarpet, drawFixtures, drawTable,
+    /* 描画の道具。**事務所の部屋（office-room.js）が借りる**（office/room.md §3.1）。
+       同じ関数で描くから同じ粒になる。振る舞いはここで一つも変えていない */
+    el, rect, STAFF_BODY, staffColor,
     PAL, FLOOR_H, FLOOR_W, FLOOR_W_MAX, TABLE_W, TABLE_H, SEAT_W, SEAT_H, COL_PITCH,
     WALL_H, CARPET_Y,
     SLOT_SEC, INTERMISSION, MAX_WALK, WALK_SEC, SWAP_SEC, SEATS_PER_TABLE,

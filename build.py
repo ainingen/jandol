@@ -48,16 +48,18 @@ SRC = os.path.join(HERE, 'src')
 # 読み込み順。並べ替えるときは依存を確認すること
 CSS = ['style.css', 'theme.css', 'maru.css', 'title.css', 'meikan.css',
        'team.css', 'taikai.css', 'scout.css', 'office.css',
-       'jansou.css', 'jansou-floor.css', 'match.css']
+       'jansou.css', 'jansou-floor.css', 'office-room.css', 'match.css']
 # jansou.js は jansou-guests.js / jansou-floor.js を参照するので、必ず後ろに置く。
 # geo.js は office.js と title.js（本拠地の選択）より前に置く。
 # office.js は Jansou.normalize を「呼ぶとき」にだけ参照するので、
-# jansou.js より前でも構わない（読み込み時には触らない）
+# jansou.js より前でも構わない（読み込み時には触らない）。
+# office-room.js（事務所の部屋）は JansouFloor の描画の道具を読み込み時に借りるので、
+# jansou-floor.js より後ろに置く（office/room.md §3.1）
 JS = ['engine.js', 'ai.js', 'game.js', 'ui.js', 'match.js',
       'characters.js', 'geo.js', 'tournament.js', 'offers.js', 'office.js',
       'title.js', 'meikan.js',
       'team.js', 'taikai.js', 'scout.js',
-      'jansou-guests.js', 'jansou-floor.js', 'jansou.js', 'scoutshop.js', 'serifu.js']
+      'jansou-guests.js', 'jansou-floor.js', 'office-room.js', 'jansou.js', 'scoutshop.js', 'serifu.js']
 
 # 開発用。**ここに足さないこと。**足すと本番の index.html に入り、
 # 普通のプレイヤーにデバッグの入口が見えてしまう。

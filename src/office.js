@@ -790,8 +790,20 @@ const Office = (() => {
       });
     }
 
-    /* ---------- 朝 ---------- */
-    function renderMorning() {
+    /* ---------- 朝（room.md）----------
+       **事務所の一室を絵として描き、物を押して各機能へ入る。**
+       いままで縦に並べていた一覧は、それぞれ**シート**（部屋の上に下から
+       上がる引き出し）に移した。中身の HTML は第一段では一つも変えていない
+       （§10）。**部屋の下に一覧を続けないこと**（§0・§12）——
+       一つでも続けたら縦並びに戻る。`tools/test-office.js` が
+       `renderMorning` 〜 `renderTrip` に `ofSecT` が無いことを錠にしている */
+    let roomCtl = null;
+    let sheet = null;          // null | 'roster' | 'board' | 'mail' | 'eight' | 'door' | 'report'
+    let sheetScroll = 0;       // 描き直しても名簿の位置を保つ
+    let reportShown = false;   // 夜に日報を一度は開いた（§6）
+
+    /* 朝に一度だけやること。描き直しても増えない */
+    function morningPrep() {
       /* **朝の依頼発火（§8.1）。**日が変わったときに一度だけ引く。
          `parlor.day` を印にしているので、同じ朝を描き直しても増えない。
          **日付で発火条件を書いているわけではない**（§1.3）——
@@ -807,113 +819,33 @@ const Office = (() => {
       /* 遠征中なら、その日の店を用意する（scout/spec.md §6.2） */
       const t0 = tripOf(store.get());
       if (t0 && ensureShop(store, t0, mark)) { shopNote = ''; shopFound = null; shopTell = ''; }
-      const st = store.get();
-      const pref = prefOf(st);
+    }
+
+    /* 出勤の人数。**配置が店で、なおかつシフトが一つでも入っている子**。
+       `prepareDay` の `dayWorkers` と同じ数え方にすること（ずれると嘘になる） */
+    function onDutyOf(st) {
       const parlor = parlorOf(st);
-      const list = rosterOf(st);
-      /* **`parlor.day` は「終わった日数」。**これから回すのは day + 1 日目
-         （雀荘の画面が「${parlor.day}日目」と出しているのは、そちらが
-         済んだぶんを数えているため。朝はこれから始める日を出す） */
-      const day = parlor ? parlor.day : 0;
-
-      /* 所属一覧。**`pop` と `favor` はいままでどこにも出ていなかった**（引き継ぎ書 §3）。
-         ここが初出。`.mkFace` を借りるので、親を position:relative にすること
-         （引き継ぎ書 §5「顔写真の .mkFace を借りるときは position を上書きする」）。
-         office.css の `.ofMate .mkFace` がそれを戻している。
-
-         第二段で**配置（店・休み）とシフト（昼・夕・夜）を同じ行に**載せた
-         （spec.md §6.3）。シフトの保存先は `parlor.shifts` のままで、
-         書くのは `Jansou.setShift`。**データは移していない。** */
       const assign = assignOf(st);
-      const trip = tripOf(st);
+      return rosterOf(st).filter((c) => assign[c.id] === 'parlor'
+        && Jansou.shiftOf(parlor, c.id).some(Boolean));
+    }
 
-      /* 遠征先の店（scout/spec.md §3）。**静止した一枚。**
-         一日を再生しない。動くのは乱数を使わない常時アニメだけ */
-      const shop = trip && trip.shop;
-      const shopHtml = shop ? `
-        <h2 class="ofSecT">${esc(shop.name)}
-          <span class="ofSecNote">${esc((ScoutShop.TYPE_BY_KEY[shop.type] || {}).name || '')}</span></h2>
-        <p class="ofNote" style="margin:0 0 6px">
-          見るのはただ。<b>声をかけられるのは今日あと ${shop.calls} 回。</b>
-          客をタップすると声をかけます（外しても一回使います）。</p>
-        <div id="ofShopHost" class="ofShop"></div>
-        ${shopFound ? `
-          <div class="ofShopFound">
-            <span class="mkFace sil"><img src="img/${pad3(shopFound.id)}.webp" alt=""
-              onerror="this.remove()"></span>
-            <span class="ofShopFoundBody">
-              <span class="ofShopFoundName">${esc(shopFound.name)}
-                <i>${esc(shopFound.rank)}級</i></span>
-              <span class="ofShopFoundSub">${esc(STYLES[shopFound.style].name)}　${esc(shopFound.region)}</span>
-              ${shopTell ? `<span class="ofShopFoundTell">${esc(shopTell)}</span>` : ''}
-              <span class="ofShopFoundCopy">「${esc(shopFound.copy)}」</span>
-            </span>
-          </div>` : ''}
-        ${shopNote ? `<p class="ofNote ofShopNote">${esc(shopNote)}</p>` : ''}` : '';
+    /* ---------- シートの中身（既存の HTML をそのまま） ---------- */
 
-      /* 雀エイト表（§9.1）。**事務所の壁に貼ってある**という体で、
-         朝の画面に一枚だけ出す。押せるものは無い（見るだけ）。
-         `eightTable` は純関数なので、ここは並べるだけ */
-      const eight = eightTable(st);
-      const next = eightNext(st);
-      const eightHtml = `
-        <h2 class="ofSecT">雀エイト<span class="ofSecNote">全国上位八人</span></h2>
-        <div class="ofEight">${eight.map((r) => `
-          <div class="ofEightRow${r.mine ? ' mine' : ''}">
-            <span class="ofEightNo">${r.place}</span>
-            <span class="mkFace sil"><img src="img/${pad3(r.id)}.webp" alt=""
-              onerror="this.remove()"></span>
-            <span class="ofEightBody">
-              <span class="ofEightName">${esc(r.name)}<i>${esc(r.rank)}級</i></span>
-              <span class="ofEightSub">${esc(r.agency)}</span>
-            </span>
-            <span class="ofEightNums">
-              <span>実力 <b>${Math.round(r.might)}</b></span>
-              <span>人気 <b>${r.pop}</b></span>
-            </span>
-          </div>`).join('')}</div>
-        <p class="ofNote">${next
-          ? `いちばん近いのは <b>${esc(next.name)}</b>。八位まであと ${Math.ceil(next.gap)} 点。`
-              + '<b>実力と人気の両方</b>が要る——育てて大会で勝ち、'
-              + 'アイドル活動で人気を上げること。'
-          : eight.some((r) => r.mine)
-            ? '<b>うちの子が入っている。</b>'
-            : '所属が増えると、ここに割り込む相手が見えてくる。'}</p>`;
-
-      /* 届いている依頼（§8）。遠征中は受けられない（代表が留守なので、
-         大会も相談も動かせない）。見送るのはいつでもできる */
-      const offers = (st.offers || []);
-      const offersHtml = offers.length ? `
-        <h2 class="ofSecT">届いている話<span class="ofSecNote">${offers.length}件</span></h2>
-        <div class="ofOffers">${offers.map((o) => {
-          const def = Offers.byId(o.id);
-          if (!def) return '';
-          const need = def.members.max
-            ? `${def.members.min === def.members.max ? def.members.min
-                : def.members.min + '〜' + def.members.max}人` : '人手は要らない';
-          return `<div class="ofOffer k-${def.kind}">
-            <div class="ofOfferHead">
-              <span class="ofOfferT">${esc(Offers.titleOf(o))}</span>
-              <span class="ofOfferMeta">${def.days ? def.days + '日' : '日は使わない'}・${need}</span>
-            </div>
-            <p class="ofOfferText">${esc(Offers.textOf(o, st, list))}</p>
-            <div class="ofOfferBtns">
-              ${def.kind === 'quest' ? '' : `
-                <button type="button" class="ofTake" data-take="${o.id}"
-                  ${trip ? 'disabled' : ''}>受ける</button>`}
-              <button type="button" class="ofPass" data-pass="${o.id}">${
-                def.kind === 'quest' ? '忘れる' : '見送る'}</button>
-            </div>
-            ${def.kind === 'quest'
-              ? '<p class="ofNote" style="margin:4px 0 0">条件が揃ったら、もう一度会いに行くこと。</p>'
-              : trip ? '<p class="ofNote" style="margin:4px 0 0">遠征から帰るまで受けられません。</p>' : ''}
-          </div>`;
-        }).join('')}</div>` : '';
+    /* 名簿。所属一覧：顔・級・完成度・日当・人気・好感度・疲労・調子。
+       第一段では配置（店／休み）とシフト（昼夕夜）のチップも同居する
+       （第三段でボードの絵へ移す。§10）。`.mkFace` を借りるので、親を
+       position:relative にすること（引き継ぎ書 §5） */
+    function rosterHtml(st) {
+      const list = rosterOf(st);
+      const parlor = parlorOf(st);
+      const assign = assignOf(st);
+      const open = !!(parlor && parlor.open);
+      const onDuty = onDutyOf(st);
       const mates = list.length ? list.map((c) => {
         const kind = assign[c.id];
         const at = kind === 'parlor';
         const sh = Jansou.shiftOf(parlor, c.id);
-        /* 遠征中・依頼中は第三段・第四段。いまは店と休みだけが選べる */
         const busy = kind === 'trip' || kind.indexOf('job:') === 0;
         const chips = Jansou.SLOTS.map((sl) => `
           <button type="button" class="ofChip${at && sh[sl.key] ? ' on' : ''}"
@@ -955,87 +887,160 @@ const Office = (() => {
         </div>`;
       }).join('')
         : '<p class="ofEmpty">まだ誰も所属していません。チーム編成から始めてください。</p>';
-
-      /* 出勤の人数。**配置が店で、なおかつシフトが一つでも入っている子**。
-         `prepareDay` の `dayWorkers` と同じ数え方にすること（ずれると嘘になる） */
-      const onDuty = list.filter((c) => assign[c.id] === 'parlor'
-        && Jansou.shiftOf(parlor, c.id).some(Boolean));
-
-      /* 昼の釦。**店が無くても日は進む**（office/spec.md §1.2）。
-         店があれば雀荘へ降り、無ければ事務所の中で夜へ抜ける */
-      const open = !!(parlor && parlor.open);
-      const wages = list.reduce((a, c) => a + Jansou.wageOf(c), 0);
-      let action;
-      if (trip) {
-        const p = Geo.prefOf(trip.pref);
-        const dep = trip.deputy != null ? list.find((c) => c.id === trip.deputy) : null;
-        action = `<button type="button" class="ofRunBtn" id="ofRun">今日を始める</button>
-          <p class="ofNote"><b>${esc(p.name)}に遠征中。</b>あと ${trip.dayLeft} 日。
-            ${trip.purpose === 'woo' ? '口説きに来ています。' : '雀荘をまわっています。'}<br>
-            下の店を見て、めぼしい客に声をかけること。<br>
-            ${open ? (dep ? `留守は ${esc(dep.name)} に任せています。` : '留守を任せた子がいません。')
-              : '店はまだありません。'}
-            ${open ? '<br>代表がいないので、夜に自分の卓は出せません。' : ''}</p>`;
-      } else if (!list.length) {
-        action = `<button type="button" class="ofRunBtn" disabled>今日を始める</button>
-          <p class="ofNote">まだ誰も所属していません。チーム編成から始めてください。</p>`;
-      } else if (open) {
-        action = `<button type="button" class="ofRunBtn" id="ofRun" ${canRun ? '' : 'disabled'}>
-            今日を始める</button>
-          <p class="ofNote">${day + 1}日目の営業に降ります。
-            出勤は ${onDuty.length} 人。設備は雀荘の画面から。</p>`;
-      } else {
-        action = `<button type="button" class="ofRunBtn" id="ofRun">今日を始める</button>
-          <p class="ofNote">まだ店がありません。今日は営業しない一日になりますが、
-            <b>日当 ${yen(wages)}</b> は出ていきます。<br>
-            開店資金 ${yen(Jansou.OPEN_COST)} を貯めて、まず店を持つこと。</p>
-          <button type="button" class="ofRunBtn ghost" data-go="jansou" ${canGo ? '' : 'disabled'}
-            style="margin-top:10px">雀荘を開く</button>`;
-      }
-
-      root.innerHTML = `
-        <div class="ofHead">
-          <h1 class="ofTitle">${esc(nameOf(st))}</h1>
-          <p class="ofSub">${pref ? esc(pref.name) : ''}　${day + 1}日目の朝</p>
-        </div>
-
-        <div class="ofBar">
-          <span class="ofStat">所持金 <b>${yen(st.money || 0)}</b></span>
-          <span class="ofStat">所属 <b>${list.length}</b>人</span>
-          <span class="ofStat">段位 <b>${esc(st.playerRank || 'D')}</b></span>
-          ${open ? `<span class="ofStat">評判 <b>${parlor.rep}</b></span>`
-            : '<span class="ofStat">店 <b>まだ無い</b></span>'}
-        </div>
-
-        <div class="ofRun">${action}</div>
-
-        <h2 class="ofSecT">所属と今日の配置</h2>
-        ${list.length ? `<p class="ofNote" style="margin:0 0 8px">
+      return `${list.length ? `<p class="ofNote">
           <b>配置は変えるまで続きます。</b>毎朝きき直しません。
           ${open ? `いま店に立つのは ${onDuty.length} 人。` : ''}</p>` : ''}
-        <div class="ofMates">${mates}</div>
+        <div class="ofMates">${mates}</div>`;
+    }
 
-        ${shopHtml}
-        ${offersHtml}
-        ${eightHtml}
+    /* メール。届いている依頼（§8）。遠征中は受けられない（代表が留守なので、
+       大会も相談も動かせない）。見送るのはいつでもできる。
+       **夜は読み返せるだけ**——受けるのは朝（§8.1） */
+    function mailHtml(st, canTake) {
+      const list = rosterOf(st);
+      const trip = tripOf(st);
+      const offers = (st.offers || []);
+      if (!offers.length) return '<p class="ofEmpty">届いている話はありません。</p>';
+      return `<div class="ofOffers">${offers.map((o) => {
+        const def = Offers.byId(o.id);
+        if (!def) return '';
+        const need = def.members.max
+          ? `${def.members.min === def.members.max ? def.members.min
+              : def.members.min + '〜' + def.members.max}人` : '人手は要らない';
+        return `<div class="ofOffer k-${def.kind}">
+          <div class="ofOfferHead">
+            <span class="ofOfferT">${esc(Offers.titleOf(o))}</span>
+            <span class="ofOfferMeta">${def.days ? def.days + '日' : '日は使わない'}・${need}</span>
+          </div>
+          <p class="ofOfferText">${esc(Offers.textOf(o, st, list))}</p>
+          <div class="ofOfferBtns">
+            ${def.kind === 'quest' || !canTake ? '' : `
+              <button type="button" class="ofTake" data-take="${o.id}"
+                ${trip ? 'disabled' : ''}>受ける</button>`}
+            <button type="button" class="ofPass" data-pass="${o.id}">${
+              def.kind === 'quest' ? '忘れる' : '見送る'}</button>
+          </div>
+          ${def.kind === 'quest'
+            ? '<p class="ofNote" style="margin:4px 0 0">条件が揃ったら、もう一度会いに行くこと。</p>'
+            : trip ? '<p class="ofNote" style="margin:4px 0 0">遠征から帰るまで受けられません。</p>'
+            : !canTake ? '<p class="ofNote" style="margin:4px 0 0">受けるのは朝に。</p>' : ''}
+        </div>`;
+      }).join('')}</div>`;
+    }
 
-        <h2 class="ofSecT">出かける</h2>
-        ${trip ? '' : `<button type="button" class="ofRunBtn ghost" id="ofTrip"
+    /* 掲示。雀エイト表（§9.1）。押せるものは無い（見るだけ）。
+       `eightTable` は純関数なので、ここは並べるだけ */
+    function eightHtml(st) {
+      const eight = eightTable(st);
+      const next = eightNext(st);
+      return `<div class="ofEight">${eight.map((r) => `
+          <div class="ofEightRow${r.mine ? ' mine' : ''}">
+            <span class="ofEightNo">${r.place}</span>
+            <span class="mkFace sil"><img src="img/${pad3(r.id)}.webp" alt=""
+              onerror="this.remove()"></span>
+            <span class="ofEightBody">
+              <span class="ofEightName">${esc(r.name)}<i>${esc(r.rank)}級</i></span>
+              <span class="ofEightSub">${esc(r.agency)}</span>
+            </span>
+            <span class="ofEightNums">
+              <span>実力 <b>${Math.round(r.might)}</b></span>
+              <span>人気 <b>${r.pop}</b></span>
+            </span>
+          </div>`).join('')}</div>
+        <p class="ofNote">${next
+          ? `いちばん近いのは <b>${esc(next.name)}</b>。八位まであと ${Math.ceil(next.gap)} 点。`
+              + '<b>実力と人気の両方</b>が要る——育てて大会で勝ち、'
+              + 'アイドル活動で人気を上げること。'
+          : eight.some((r) => r.mine)
+            ? '<b>うちの子が入っている。</b>'
+            : '所属が増えると、ここに割り込む相手が見えてくる。'}</p>`;
+    }
+
+    /* 扉。出かける：遠征・雀荘・スカウト・大会・チーム・名鑑。
+       大会・チーム・名鑑は下のタブにもあるが**落とさない**（§4）。
+       スカウト（見つけた子と契約する）の入口はここだけ */
+    function doorHtml(st) {
+      const list = rosterOf(st);
+      const parlor = parlorOf(st);
+      const trip = tripOf(st);
+      const open = !!(parlor && parlor.open);
+      return `${trip ? '' : `<button type="button" class="ofRunBtn ghost" id="ofTrip"
           ${list.length ? '' : 'disabled'} style="margin-bottom:8px">遠征に出る</button>
           <p class="ofNote" style="margin:0 0 10px">全国の雀荘を歩いて見つけ、その場で口説く。
             出ているあいだ代表は店に降りられません。</p>`}
         <div class="ofDoors">
-          ${door('jansou', '雀荘', '営業と設備、シフト')}
+          ${door('jansou', '雀荘', open ? `評判 ${parlor.rep}・卓 ${parlor.tables}` : `空き店舗。開店資金 ${yen(Jansou.OPEN_COST)}`)}
           ${door('scout', 'スカウト', '見つけた子と契約する')}
           ${door('taikai', '大会', '賞金と名声を取りに行く')}
           ${door('team', 'チーム', '出場する三人を組む')}
           ${door('meikan', '名鑑', '見つけた雀ドルを見る')}
         </div>
-        <p class="ofNote">探しに出るのは「遠征に出る」から。
+        <p class="ofNote" style="margin-top:8px">探しに出るのは「遠征に出る」から。
           スカウトの画面は、見つけた子と契約するところです。</p>`;
+    }
 
-      /* 配置の切り替え（店 ⇄ 休み）。遠征と依頼は第三段・第四段 */
-      root.querySelectorAll('[data-where]').forEach((b) => {
+    const SHEETS = {
+      roster: { title: '名簿', note: '所属と今日の配置' },
+      board:  { title: 'ホワイトボード', note: '配置とシフト' },
+      mail:   { title: 'メール', note: '届いている話' },
+      eight:  { title: '雀エイト', note: '全国上位八人' },
+      door:   { title: '出かける', note: '' },
+      report: { title: '日報', note: '' },
+    };
+
+    /* シート一枚（§8）。**画面は替えない。**部屋の上に載せる。
+       一度に一枚。入れ子にしない（雀荘のポップアップと同じ決めごと） */
+    function renderSheet() {
+      const host = root.querySelector('#ofSheetHost');
+      if (!host) return;
+      host.innerHTML = '';
+      if (!sheet) return;
+      const st = store.get();
+      const def = SHEETS[sheet] || { title: '', note: '' };
+      const night = screen === 'night';
+      let body = '';
+      if (sheet === 'roster' || sheet === 'board') body = rosterHtml(st);
+      else if (sheet === 'mail') body = mailHtml(st, !night);
+      else if (sheet === 'eight') body = eightHtml(st);
+      else if (sheet === 'door') body = doorHtml(st);
+      else if (sheet === 'report') body = reportHtml(st);
+      const offers = (st.offers || []).length;
+      const note = sheet === 'mail' ? `${offers}件` : def.note;
+      host.innerHTML = `
+        <div class="ofSheetWrap">
+          <div class="ofSheetDim" data-close="1"></div>
+          <div class="ofSheet" role="dialog" aria-label="${esc(def.title)}">
+            <div class="ofSheetHandle" data-close="1">
+              <span class="ofSheetT">${esc(def.title)}</span>
+              ${note ? `<span class="ofSheetNote">${esc(note)}</span>` : ''}
+              <button type="button" class="ofSheetClose">閉じる</button>
+            </div>
+            <div class="ofSheetBody">${body}</div>
+          </div>
+        </div>`;
+      const bodyEl = host.querySelector('.ofSheetBody');
+      bodyEl.scrollTop = sheetScroll;
+      bodyEl.addEventListener('scroll', () => { sheetScroll = bodyEl.scrollTop; });
+      const close = () => { sheet = null; sheetScroll = 0; renderSheet(); };
+      host.querySelector('.ofSheetDim').addEventListener('click', close);
+      host.querySelector('.ofSheetClose').addEventListener('click', close);
+      host.querySelector('.ofSheetHandle').addEventListener('click', (e) => {
+        if (!e.target.closest('.ofSheetClose')) close();
+      });
+      bindSheet(host);
+    }
+
+    function openSheet(key) {
+      if (sheet !== key) sheetScroll = 0;
+      sheet = key;
+      renderSheet();
+    }
+
+    /* シートの中の釦。**書くのはいままでと同じ関数**（setAssign / Jansou.setShift /
+       dismissOffer / takeOffer）。動かしたのは置き場所だけ */
+    function bindSheet(host) {
+      /* 配置の切り替え（店 ⇄ 休み） */
+      host.querySelectorAll('[data-where]').forEach((b) => {
         b.addEventListener('click', () => {
           const id = +b.dataset.where;
           setAssign(store, id, assignFor(store.get(), id) === 'parlor' ? 'rest' : 'parlor');
@@ -1044,48 +1049,187 @@ const Office = (() => {
       });
       /* シフトの切り替え。**書くのは `Jansou.setShift` 一つだけ。**
          雀荘の単体ページと同じ関数を通るので、既定値の解釈が割れない */
-      root.querySelectorAll('[data-shift]').forEach((b) => {
+      host.querySelectorAll('[data-shift]').forEach((b) => {
         b.addEventListener('click', () => {
           const slot = +b.dataset.slot;
           const sh = Jansou.setShift(store, +b.dataset.shift, slot);
           b.classList.toggle('on', sh[slot]);
           b.setAttribute('aria-pressed', String(!!sh[slot]));
+          paintBand();
         });
       });
-
       /* 依頼を受ける／見送る（§8.1） */
-      root.querySelectorAll('[data-pass]').forEach((b) => b.addEventListener('click', () => {
+      host.querySelectorAll('[data-pass]').forEach((b) => b.addEventListener('click', () => {
         dismissOffer(store, b.dataset.pass);
         render();
       }));
-      root.querySelectorAll('[data-take]').forEach((b) => b.addEventListener('click', () => {
+      host.querySelectorAll('[data-take]').forEach((b) => b.addEventListener('click', () => {
         if (b.disabled) return;
+        sheet = null;
         takeOffer(b.dataset.take);
       }));
-
-      mountShop(root, shop);
-
-      const goTrip = root.querySelector('#ofTrip');
+      const goTrip = host.querySelector('#ofTrip');
       if (goTrip) goTrip.addEventListener('click', () => {
+        if (goTrip.disabled) return;
         draft = { pref: null, purpose: 'find', members: [], target: null };
+        sheet = null;
         screen = 'trip';
         render();
       });
+      const next = host.querySelector('#ofNext');
+      if (next) next.addEventListener('click', toMorning);
+      bindDoors(host);
+    }
 
-      const run = root.querySelector('#ofRun');
-      if (run) run.addEventListener('click', () => {
-        /* 遠征中は昼を雀荘へ委譲しない。**日ごとの再生はしない**（§7.5）。
-           留守の店を裏で回し、遠征の出来事を一つ進めて夜へ */
-        if (trip) { runTripDay(); return; }
-        if (open) { if (canRun) store.startDay(); return; }
-        /* **店が無い日の昼は、雀荘へ委譲しない。**ここで締めを通して夜へ。
-           日を進めるのは `settle`（`runClosedDay` の中）一箇所のまま */
-        night = { closed: true, wages };
-        Jansou.runClosedDay(store, list);
-        screen = 'night';
-        render();
+    /* 夜を畳んで朝へ。**日は進めない**（`settle` がもう進めている。§6.1） */
+    function toMorning() {
+      night = null;
+      sheet = null; sheetScroll = 0; reportShown = false;
+      screen = 'morning';
+      render();
+    }
+
+    /* 下の帯の一行。**店が無くても日は進む**（office/spec.md §1.2）。
+       店があれば雀荘へ降り、無ければ事務所の中で夜へ抜ける */
+    function bandHtml(st) {
+      const list = rosterOf(st);
+      const parlor = parlorOf(st);
+      const trip = tripOf(st);
+      const open = !!(parlor && parlor.open);
+      const day = parlor ? parlor.day : 0;
+      const wages = list.reduce((a, c) => a + Jansou.wageOf(c), 0);
+      const onDuty = onDutyOf(st);
+      if (trip) {
+        const p = Geo.prefOf(trip.pref);
+        const dep = trip.deputy != null ? list.find((c) => c.id === trip.deputy) : null;
+        return `<button type="button" class="ofRunBtn" id="ofRun">今日を始める</button>
+          <p class="ofNote"><b>${esc(p.name)}に遠征中。</b>あと ${trip.dayLeft} 日。
+            ${trip.purpose === 'woo' ? '口説きに来ています。' : '雀荘をまわっています。'}
+            上の店を見て、めぼしい客に声をかけること。<br>
+            ${open ? (dep ? `留守は ${esc(dep.name)} に任せています。` : '留守を任せた子がいません。')
+              : '店はまだありません。'}
+            ${open ? '代表がいないので、夜に自分の卓は出せません。' : ''}</p>`;
+      }
+      if (!list.length) {
+        return `<button type="button" class="ofRunBtn" disabled>今日を始める</button>
+          <p class="ofNote">まだ誰も所属していません。チーム編成から始めてください。</p>`;
+      }
+      if (open) {
+        return `<button type="button" class="ofRunBtn" id="ofRun" ${canRun ? '' : 'disabled'}>
+            今日を始める</button>
+          <p class="ofNote">${day + 1}日目の営業に降ります。
+            出勤は ${onDuty.length} 人。設備は扉から雀荘へ。</p>`;
+      }
+      return `<button type="button" class="ofRunBtn" id="ofRun">今日を始める</button>
+        <p class="ofNote">まだ店がありません。今日は営業しない一日になりますが、
+          <b>日当 ${yen(wages)}</b> は出ていきます。
+          開店資金 ${yen(Jansou.OPEN_COST)} を貯めて、まず店を持つこと。扉から雀荘へ降りて開けます。</p>`;
+    }
+
+    function paintBand() {
+      const band = root.querySelector('#ofBand');
+      if (!band) return;
+      band.innerHTML = bandHtml(store.get());
+      const run = band.querySelector('#ofRun');
+      if (run) run.addEventListener('click', runToday);
+    }
+
+    /* 「今日を始める」 */
+    function runToday() {
+      const st = store.get();
+      const trip = tripOf(st);
+      const parlor = parlorOf(st);
+      const list = rosterOf(st);
+      if (!list.length) return;
+      /* 遠征中は昼を雀荘へ委譲しない。**日ごとの再生はしない**（§7.5）。
+         留守の店を裏で回し、遠征の出来事を一つ進めて夜へ */
+      if (trip) { runTripDay(); return; }
+      if (parlor && parlor.open) { if (canRun) store.startDay(); return; }
+      /* **店が無い日の昼は、雀荘へ委譲しない。**ここで締めを通して夜へ。
+         日を進めるのは `settle`（`runClosedDay` の中）一箇所のまま */
+      night = { closed: true, wages: list.reduce((a, c) => a + Jansou.wageOf(c), 0) };
+      Jansou.runClosedDay(store, list);
+      screen = 'night';
+      render();
+    }
+
+    /* 上の帯。本拠地の県名。遠征中は滞在先の県名（§13 の回答） */
+    function topOf(st, tail) {
+      const trip = tripOf(st);
+      const pref = trip ? Geo.prefOf(trip.pref) : prefOf(st);
+      return `${pref ? pref.name : ''}　${tail}`;
+    }
+
+    /* 部屋を組む。**押した物 → シート**。「今日を始める」は下の帯 */
+    function mountRoom(host, st, nightView) {
+      const parlor = parlorOf(st);
+      const day = parlor ? parlor.day : 0;
+      const last = parlor && parlor.log.length ? parlor.log[parlor.log.length - 1] : null;
+      roomCtl = OfficeRoom.mount(host, {
+        title: nameOf(st),
+        sub: topOf(st, nightView ? `${last ? last.day : day}日目の夜` : `${day + 1}日目の朝`),
       });
-      bindDoors(root);
+      roomCtl.render(OfficeRoom.roomView(st, { night: nightView }));
+      roomCtl.idle();
+      roomCtl.on('desk', () => openSheet('roster'));
+      roomCtl.on('board', () => openSheet('board'));
+      roomCtl.on('mail', () => openSheet('mail'));
+      roomCtl.on('eight', () => openSheet('eight'));
+      roomCtl.on('door', () => openSheet('door'));
+      roomCtl.band.id = 'ofBand';
+    }
+
+    function renderMorning() {
+      morningPrep();
+      const st = store.get();
+      const trip = tripOf(st);
+      const parlor = parlorOf(st);
+      const day = parlor ? parlor.day : 0;
+
+      /* 遠征先の店（scout/spec.md §3）。**静止した一枚。**一日を再生しない。
+         **枠に入るのは部屋ではなく滞在先の店**（room.md §7）。
+         部屋の物は「事務所に電話する」の行から同じシートで開く */
+      const shop = trip && trip.shop;
+      if (shop) {
+        root.innerHTML = `
+          <div class="ofShop">
+            <p class="ofNote" style="margin:6px 0">
+              <b>${esc(shop.name)}</b>　${esc((ScoutShop.TYPE_BY_KEY[shop.type] || {}).name || '')}。
+              見るのはただ。<b>声をかけられるのは今日あと ${shop.calls} 回。</b>
+              客をタップすると声をかけます（外しても一回使います）。</p>
+            <div id="ofShopHost"></div>
+            <div class="ofRoomBand" id="ofBand"></div>
+            ${shopFound ? `
+              <div class="ofShopFound">
+                <span class="mkFace sil"><img src="img/${pad3(shopFound.id)}.webp" alt=""
+                  onerror="this.remove()"></span>
+                <span class="ofShopFoundBody">
+                  <span class="ofShopFoundName">${esc(shopFound.name)}
+                    <i>${esc(shopFound.rank)}級</i></span>
+                  <span class="ofShopFoundSub">${esc(STYLES[shopFound.style].name)}　${esc(shopFound.region)}</span>
+                  ${shopTell ? `<span class="ofShopFoundTell">${esc(shopTell)}</span>` : ''}
+                  <span class="ofShopFoundCopy">「${esc(shopFound.copy)}」</span>
+                </span>
+              </div>` : ''}
+            ${shopNote ? `<p class="ofNote ofShopNote">${esc(shopNote)}</p>` : ''}
+          </div>
+          <div class="ofPhone">
+            <span class="ofPhoneT">事務所に電話する</span>
+            <button type="button" class="ofPhoneBtn" data-sheet="roster">名簿</button>
+            <button type="button" class="ofPhoneBtn" data-sheet="board">ボード</button>
+            <button type="button" class="ofPhoneBtn" data-sheet="mail">メール</button>
+            <button type="button" class="ofPhoneBtn" data-sheet="eight">掲示</button>
+          </div>
+          <div id="ofSheetHost"></div>`;
+        mountShop(root, shop, topOf(st, `${day + 1}日目の朝`));
+        root.querySelectorAll('[data-sheet]').forEach((b) =>
+          b.addEventListener('click', () => openSheet(b.dataset.sheet)));
+      } else {
+        root.innerHTML = '<div id="ofRoomHost"></div><div id="ofSheetHost"></div>';
+        mountRoom(root.querySelector('#ofRoomHost'), st, false);
+      }
+      paintBand();
+      renderSheet();
     }
 
     function door(key, label, note) {
@@ -1240,13 +1384,15 @@ const Office = (() => {
 
        `render(state)` で一枚描き、`idle(hooks)` で時計だけ進める。
        **タイムラインは持たない。一日を再生しない**（§3.1）。 */
-    function mountShop(host, shop) {
+    function mountShop(host, shop, headNote) {
       const el = host.querySelector('#ofShopHost');
       if (!el || !shop || typeof JansouFloor === 'undefined') return;
       shopCtl = JansouFloor.mount(el, {
         title: shop.name, bare: true, pal: ScoutShop.palOf(shop.type),
       });
-      shopCtl.render(ScoutShop.stateOf(shop, store.get()));
+      /* 上の帯は滞在先の県名と日（room.md §13 の回答）。表示だけ */
+      shopCtl.render(Object.assign(ScoutShop.stateOf(shop, store.get()),
+        headNote ? { headNote } : {}));
       shopCtl.idle({ onGuestTap: (g) => onShopTap(g) });
     }
 
@@ -1637,13 +1783,15 @@ const Office = (() => {
       return simulateTable(table, STYLES);
     }
 
-    /* ---------- 夜 ---------- */
-    /* 詳しい日報は雀荘のポップアップ（`showResult`）が出しきっている。
+    /* ---------- 夜（room.md §6） ----------
+       **同じ部屋が夜になる。**日報は机の上の一枚で、夜に来た瞬間シートが
+       開いた状態で出る——夜にやることは日報を読んで明日へ進むことだけなので、
+       机を探させない。閉じれば夜の部屋が見え、下の帯が「明日へ」になっている。
+       詳しい日報は雀荘のポップアップ（`showResult`）が出しきっている。
        ここは一日を締める枠で、収支だけを一行で置いて朝へ返す。
        **数字は `parlor.log` の最後の一件から読む**（settle が書いたもの）。
        ここで計算し直さないこと。二重に持つと必ずずれる */
-    function renderNight() {
-      const st = store.get();
+    function reportHtml(st) {
       const parlor = parlorOf(st);
       const last = parlor && parlor.log.length ? parlor.log[parlor.log.length - 1] : null;
       /* 店が無い日は、この画面が唯一の日報。日当の支出だけを載せる。
@@ -1702,33 +1850,39 @@ const Office = (() => {
             <b>${back.store.profit >= 0 ? '+' : '−'}${yen(Math.abs(back.store.profit))}</b></div>
         </div>` : '';
 
-      root.innerHTML = `
-        <div class="ofHead">
-          <h1 class="ofTitle">${back ? '帰ってきた'
+      return `
+        <p class="ofNote" style="margin:0 0 8px"><b>${back ? '帰ってきた'
             : (job && job.noDay) ? '話を受けた'
-            : last ? `${last.day}日目の夜` : '夜'}</h1>
-          <p class="ofSub">${esc(nameOf(st))}${closed ? '　まだ店は無い'
-            : away ? '　遠征中' : ''}</p>
-        </div>
+            : last ? `${last.day}日目の夜` : '夜'}</b>
+          　${esc(nameOf(st))}${closed ? '　まだ店は無い' : away ? '　遠征中' : ''}</p>
         ${backBody}${tripBody}${jobBody}
         ${body ? `<div class="ofRep">${body}</div>` : ''}
         <div class="ofRun">
           <button type="button" class="ofRunBtn" id="ofNext">明日へ</button>
           <p class="ofNote">日はもう進んでいます。畳んで朝に戻るだけの釦です。</p>
         </div>`;
+    }
 
-      root.querySelector('#ofNext').addEventListener('click', () => {
-        night = null;
-        screen = 'morning';
-        render();
-      });
+    function renderNight() {
+      const st = store.get();
+      root.innerHTML = '<div id="ofRoomHost"></div><div id="ofSheetHost"></div>';
+      mountRoom(root.querySelector('#ofRoomHost'), st, true);
+      const band = root.querySelector('#ofBand');
+      band.innerHTML = `
+        <button type="button" class="ofRunBtn" id="ofNext">明日へ</button>
+        <p class="ofNote">日はもう進んでいます。畳んで朝に戻るだけの釦です。机の日報を読んでから。</p>`;
+      band.querySelector('#ofNext').addEventListener('click', toMorning);
+      /* 日報は開いた状態で出る（一度だけ。閉じたあと部屋を触れる） */
+      if (!reportShown) { reportShown = true; sheet = 'report'; sheetScroll = 0; }
+      renderSheet();
     }
 
     function render() {
       /* **前の床を必ず止める。**`idle()` の rAF は自分では終わらない。
          `wrap.isConnected` を見て自滅する保険も入れてあるが、
-         画面を替えた瞬間に止めるのはこちらの仕事 */
+         画面を替えた瞬間に止めるのはこちらの仕事。部屋も同じ */
       if (shopCtl) { shopCtl.destroy(); shopCtl = null; }
+      if (roomCtl) { roomCtl.destroy(); roomCtl = null; }
       if (screen === 'pick') renderPick();
       else if (screen === 'trip') renderTrip();
       else if (screen === 'night') renderNight();

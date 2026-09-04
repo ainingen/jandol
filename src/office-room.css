@@ -1,0 +1,121 @@
+/* ============================================================
+   事務所の部屋 — office-room.css（A6 第一段）
+   読み込み順は office.css → jansou-floor.css → これ。
+   枠は雀荘の `.jnFloor` 一式を借りて、部屋ぶんの差分だけ上書きする
+   （office/room.md §3.1）。
+
+   **画素の層に文字を置かない。**文字は当たり層（.ofRoomHits）と
+   下の帯（.ofRoomBand）にだけ出す。
+   ============================================================ */
+
+/* 枠。ピンクは自分の店の顔なので、上の階は金で縁取る
+   （遠征先の店 `.ofShop .jnFloor.bare` と同じ考えかた） */
+.ofRoom.jnFloor{
+  margin:6px auto 0;
+  border-radius:5px;
+}
+.ofRoom .jnFlTop{
+  border-radius:4px 4px 0 0;
+  background:rgba(0,0,0,.35);
+  padding:6px 10px;
+}
+.ofRoom .jnFlName{color:var(--gold);font-size:15px}
+.ofRoom .jnFlDay{color:var(--muted);margin-left:auto}
+.ofRoom .jnFlStage{border-color:var(--gold-dim)}
+/* 夜は枠も沈める。中の膜は SVG が描く */
+.ofRoom.night .jnFlStage{border-color:rgba(138,115,56,.55)}
+
+/* 当たり層。**絵より大きく取る**（44px まで広げる。room.md §2.3）。
+   透明の釦で、押したときだけ薄く光る */
+.ofRoomHits{position:absolute;inset:0}
+.ofRoomHit{
+  position:absolute;padding:0;margin:0;border:0;cursor:pointer;
+  background:transparent;border-radius:4px;
+  -webkit-tap-highlight-color:rgba(217,180,94,.25);
+}
+.ofRoomHit:active{background:rgba(217,180,94,.18)}
+.ofRoomHit:focus-visible{outline:2px solid var(--gold);outline-offset:-2px}
+/* 押せる物の札。飾りには付けない（札の有無＝押せるかどうか） */
+.ofRoomTag{pointer-events:none;z-index:2;font-size:9.5px;padding:0 5px;background:rgba(36,16,40,.92)}
+
+/* 下の帯。雀荘の .jnFlTicker の位置に「今日を始める」 */
+.ofRoomBand{
+  padding:8px 10px 9px;
+  background:rgba(0,0,0,.35);
+  border-radius:0 0 4px 4px;
+  text-align:center;
+}
+.ofRoomBand .ofRunBtn{max-width:none}
+.ofRoomBand .ofNote{margin:6px 0 0;text-align:left}
+
+/* 遠征中の枠の下。「事務所に電話する」（room.md §7） */
+.ofPhone{
+  display:flex;align-items:center;gap:6px;flex-wrap:wrap;
+  margin:8px 0 0;padding:6px 8px;border-radius:4px;
+  border:1px solid var(--gold-dim);background:rgba(255,255,255,.03);
+}
+.ofPhoneT{font-size:11px;color:var(--muted);letter-spacing:.08em;margin-right:2px}
+.ofPhoneBtn{
+  font-size:11.5px;padding:5px 10px;border-radius:3px;cursor:pointer;
+  border:1px solid var(--gold-dim);background:transparent;color:var(--gold);
+}
+.ofPhoneBtn:focus-visible{outline:2px solid var(--gold);outline-offset:1px}
+
+/* ------------------------------------------------------------
+   シート（room.md §8）。部屋の上に下から引き出しが上がる。
+   **画面は替えない。**#nav の上に載せ、取っ手か暗い所で閉じる。
+   高さは 70dvh まで、超えたぶんは中でスクロール
+------------------------------------------------------------ */
+.ofSheetWrap{
+  position:fixed;left:0;right:0;top:0;bottom:0;z-index:45;
+  display:flex;flex-direction:column;justify-content:flex-end;
+}
+.ofSheetDim{position:absolute;inset:0;background:rgba(6,12,10,.62)}
+.ofSheet{
+  position:relative;z-index:1;
+  max-width:760px;width:100%;margin:0 auto;
+  max-height:min(72dvh,calc(100dvh - 120px));
+  display:flex;flex-direction:column;
+  margin-bottom:calc(64px + env(safe-area-inset-bottom));  /* #nav のぶん */
+  background:linear-gradient(var(--urushi-2),var(--urushi));
+  border:1px solid var(--gold-dim);border-bottom:0;
+  border-radius:9px 9px 0 0;
+  box-shadow:0 -8px 30px rgba(0,0,0,.45);
+}
+.ofSheetHandle{
+  flex:none;display:flex;align-items:center;gap:10px;
+  padding:9px 12px 8px;border-bottom:1px solid rgba(201,162,74,.22);
+  cursor:pointer;
+}
+.ofSheetHandle::before{
+  content:"";width:34px;height:4px;border-radius:2px;background:var(--gold-dim);
+  position:absolute;left:50%;top:3px;transform:translateX(-50%);
+}
+.ofSheetT{
+  font-family:var(--maru);font-size:13.5px;letter-spacing:.16em;color:var(--gold);
+  margin-top:3px;
+}
+.ofSheetNote{font-size:10.5px;color:var(--muted);margin-top:3px}
+.ofSheetClose{
+  margin-left:auto;font-size:11px;padding:4px 10px;border-radius:3px;cursor:pointer;
+  border:1px solid var(--gold-dim);background:transparent;color:var(--muted);
+}
+.ofSheetClose:focus-visible{outline:2px solid var(--gold);outline-offset:1px}
+.ofSheetBody{
+  flex:1;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;
+  overscroll-behavior:contain;padding:10px 12px 14px;
+}
+.ofSheetBody .ofNote{margin:0 0 8px}
+/* 名簿の行はそのまま。シートの中では既定の行間で */
+.ofSheetBody .ofMates{gap:5px}
+
+/* 夜。日報のシートは開いた状態で出る（room.md §6）。中身は既存の .ofRep */
+.ofSheetBody .ofRep{margin-top:0}
+.ofSheetBody .ofRep + .ofRep{margin-top:8px}
+.ofSheetBody .ofRun{padding:12px 0 2px}
+
+@media (max-width:380px){
+  .ofRoom .jnFlName{font-size:13.5px}
+  .ofRoom .jnFlDay{font-size:10.5px}
+  .ofRoomBand{padding:7px 8px 8px}
+}
