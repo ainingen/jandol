@@ -175,6 +175,52 @@ const Office = (() => {
     return out;
   }
 
+  /* ---------- 印（`room.md` §5・§9） ----------
+     未読 ＝ `offers` のうち `mailRead` に無いもの。**メールを開いたら消える。**
+     セーブは最上位（`mailRead`）。`shell.html` の `blankState` / `loadState` /
+     `onStart` の三箇所に既定を書いてある——列挙し忘れたキーは落ちる
+     （`condDay` で踏んだ罠） */
+  function markMailRead(store) {
+    const st = store.get();
+    const ids = (st.offers || []).map((o) => o.id);
+    const was = st.mailRead || [];
+    /* もう届いていない id は落とす。**溜め続けない** */
+    const next = ids.slice();
+    if (next.length === was.length && next.every((id) => was.indexOf(id) >= 0)) return false;
+    store.set({ mailRead: next });
+    return true;
+  }
+
+  /* 疲れている子がいるか（机の赤い付箋）。**帯で見る**——
+     数値そのままではなく `fatigueBand`（§9）と同じ切り口にする */
+  function tiredOf(st) {
+    return rosterOf(st).some((c) => {
+      const k = fatigueBand(fatigueOf(st, c.id)).key;
+      return k === 'tired' || k === 'limit';
+    });
+  }
+
+  /* うちの子が雀エイトに入っているか（額が金になる） */
+  function mine8Of(st) {
+    return eightTable(st).some((r) => r.mine);
+  }
+
+  /* 夜に残っている子（`room.md` §6）。**夜は帰ったあとなので部屋は空。**
+     ただし空っぽだと寂しいので、**その日いちばん働いた子（出勤帯が多い子）が
+     一人だけ机に残る**（`LATE_SPOT`＝ランプの下）。
+     同数なら id 順で固定（並びが揺れない） */
+  function overtimeOf(st) {
+    const parlor = parlorOf(st);
+    const assign = assignOf(st);
+    let best = null, bestN = 0;
+    rosterOf(st).forEach((c) => {
+      if (assign[c.id] !== 'parlor') return;
+      const n = Jansou.shiftOf(parlor, c.id).filter(Boolean).length;
+      if (n > bestN) { best = c; bestN = n; }
+    });
+    return best ? [{ id: best.id, name: best.name, where: 'late' }] : [];
+  }
+
   /* 部屋から出ている人がいるか（扉の脇の鞄） */
   function anyAwayOf(st) {
     const assign = assignOf(st);
@@ -712,8 +758,10 @@ const Office = (() => {
     if (kind === 'trip') return { trip: true };
     if (typeof kind === 'string' && kind.indexOf('job:') === 0) return { job: true };
     /* 店。出勤している帯の数だけ溜まる */
+    /* **`parlorOf` を通すこと。**`st.parlor` を直に渡すと、開店前のセーブ
+       （`parlor` がまだ無い）で `shifts` が無いオブジェクトが渡り、落ちる */
     const sh = (typeof Jansou !== 'undefined' && Jansou.shiftOf)
-      ? Jansou.shiftOf(st.parlor || {}, c.id) : [false, false, true];
+      ? Jansou.shiftOf(parlorOf(st), c.id) : [false, false, true];
     return { slots: sh.filter(Boolean).length };
   }
 
@@ -1072,6 +1120,9 @@ const Office = (() => {
     function openSheet(key) {
       if (sheet !== key) sheetScroll = 0;
       sheet = key;
+      /* メールを開いたら未読が消える。**絵のほうも消す**
+         ——開いたのに光ったままだと、印が状態を言っていないことになる */
+      if (key === 'mail' && markMailRead(store)) paintRoom();
       renderSheet();
     }
 
@@ -1156,7 +1207,7 @@ const Office = (() => {
       if (open) {
         /* 部屋に出しきれなかった人数は、必ず数で言う（§10 第四段）。
            **描かないのと、いないことにするのは違う** */
-        const over = OfficeRoom.roomView(st, { people: roomPeopleOf(st) }).over;
+        const over = OfficeRoom.roomView(st, roomCtxOf(st, false)).over;
         return `<button type="button" class="ofRunBtn" id="ofRun" ${canRun ? '' : 'disabled'}>
             今日を始める</button>
           <p class="ofNote">${day + 1}日目の営業に降ります。
@@ -1203,6 +1254,25 @@ const Office = (() => {
       return `${pref ? pref.name : ''}　${tail}`;
     }
 
+    /* 部屋の見え方に渡すもの。**`assign` と疲労と雀エイトの解釈は office.js が持つ**
+       ——`office-room.js` に `Office` を読ませると node のテストで循環する。
+       **夜は人を消す**（帰ったあと）。残業の一人だけソファに置く（§6） */
+    function roomCtxOf(st, nightView) {
+      return {
+        night: nightView,
+        people: nightView ? overtimeOf(st) : roomPeopleOf(st),
+        away: anyAwayOf(st),
+        tired: tiredOf(st),
+        mine8: mine8Of(st),
+      };
+    }
+
+    /* 部屋の絵だけ描き直す（シートは閉じない）。未読が消えたときなど */
+    function paintRoom() {
+      if (!roomCtl) return;
+      roomCtl.render(OfficeRoom.roomView(store.get(), roomCtxOf(store.get(), screen === 'night')));
+    }
+
     /* 部屋を組む。**押した物 → シート**。「今日を始める」は下の帯 */
     function mountRoom(host, st, nightView) {
       const parlor = parlorOf(st);
@@ -1212,9 +1282,7 @@ const Office = (() => {
         title: nameOf(st),
         sub: topOf(st, nightView ? `${last ? last.day : day}日目の夜` : `${day + 1}日目の朝`),
       });
-      roomCtl.render(OfficeRoom.roomView(st, {
-        night: nightView, people: roomPeopleOf(st), away: anyAwayOf(st),
-      }));
+      roomCtl.render(OfficeRoom.roomView(st, roomCtxOf(st, nightView)));
       roomCtl.idle();
       roomCtl.on('desk', () => openSheet('roster'));
       roomCtl.on('board', () => openSheet('board'));
@@ -1988,7 +2056,7 @@ const Office = (() => {
 
   return { mount, defaultName, nameOf, prefOf, rosterOf, prefPickerHtml, bindPicker, NAME_MAX,
            ASSIGN_KINDS, assignFor, assignOf, parlorRoster, setAssign, fatigueOf, condOf,
-           roomPeopleOf, anyAwayOf,
+           roomPeopleOf, anyAwayOf, markMailRead, tiredOf, mine8Of, overtimeOf,
            planTrip, deputyOf, tripOf, tripStart, regionOfPref,
            fireOffers, dismissOffer, acceptOffer, dropQuest, popOf, idolResult,
            ensureShop, callOn, negotiate, favorGain, addFavor, FAVOR_GAIN,

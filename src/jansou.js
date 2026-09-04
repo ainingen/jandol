@@ -426,7 +426,11 @@ const Jansou = (() => {
      `shifts` を素通しするので、既定はこの関数だけが知っている。
      事務所へUIを移すとき（office/spec.md §6.3）も、読み書きはここを通すこと */
   function shiftOf(parlor, id) {
-    const v = parlor.shifts[id];
+    /* **`shifts` が無い parlor を渡されても落ちない。**開店前のセーブには
+       `parlor` そのものが無く、素の `{}` を渡してくる呼び手がいた
+       （`Office.actOf`。新規プレイヤーの初日の朝で落ちていた）。
+       ここは読み口が一つしかないので、保険はここに置くのがいちばん安い */
+    const v = ((parlor && parlor.shifts) || {})[id];
     return Array.isArray(v) ? v.slice(0, 3) : [false, false, true];
   }
 

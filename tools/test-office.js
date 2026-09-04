@@ -1338,6 +1338,46 @@ function eq(a, b, name) {
     ok(Office.anyAwayOf(st), '出ている子がいる');
     ok(!Office.anyAwayOf({ contracted: roster.map((c) => c.id) }), '全員いれば鞄は出ない');
     eq(Office.roomPeopleOf({}).length, 0, '所属ゼロでも落ちない');
+
+    /* ---------- 印（第二段） ---------- */
+    const c0 = JANDOLS[0];
+    /* 未読はセーブの中だけで決まる */
+    eq(R.roomView({ offers: [{ id: 'a' }, { id: 'b' }] }, {}).unread, 2, '未読は届いている数');
+    eq(R.roomView({ offers: [{ id: 'a' }, { id: 'b' }], mailRead: ['a'] }, {}).unread, 1, '読んだぶんは減る');
+    eq(R.roomView({ offers: [], mailRead: ['a'] }, {}).unread, 0, '届いていなければ0');
+    ok(R.roomView({}, { tired: true }).tired, '疲れている印');
+    ok(R.roomView({}, { mine8: true }).mine8, '額が金になる印');
+    /* markMailRead：開いたら消える。**溜め続けない** */
+    let saved = { offers: [{ id: 'a' }, { id: 'b' }], mailRead: ['z'] };
+    const fake = { get: () => saved, set: (p2) => { saved = Object.assign({}, saved, p2); } };
+    ok(Office.markMailRead(fake), '未読があれば書く');
+    eq(JSON.stringify(saved.mailRead), JSON.stringify(['a', 'b']), '届いている id だけが残る');
+    ok(!Office.markMailRead(fake), '二度目は書かない');
+    eq(R.roomView(saved, {}).unread, 0, '開いたあとは未読ゼロ');
+    /* 疲労の印は帯で見る（§9 と同じ切り口） */
+    const stT = { contracted: [c0.id], fatigue: { [c0.id]: 0 } };
+    ok(!Office.tiredOf(stT), '元気なら付箋は出ない');
+    ok(Office.tiredOf({ contracted: [c0.id], fatigue: { [c0.id]: 80 } }), '疲れていれば付箋');
+    /* 夜の残り（残業）。**出勤帯がいちばん多い子が一人だけ** */
+    const stN = { contracted: JANDOLS.slice(0, 3).map((c) => c.id),
+      parlor: { open: true, shifts: { [JANDOLS[0].id]: [false, false, true],
+        [JANDOLS[1].id]: [true, true, true], [JANDOLS[2].id]: [true, false, true] } } };
+    const ot = Office.overtimeOf(stN);
+    eq(ot.length, 1, '夜に残るのは一人');
+    eq(ot[0].id, JANDOLS[1].id, 'いちばん働いた子が残る');
+    eq(ot[0].where, 'late', '残る子は机（ランプの下）');
+    eq(R.spotsFor(ot)[0].x, R.LATE_SPOT[0], '残業の子は机の向こうに立つ');
+    eq(Office.overtimeOf({}).length, 0, '所属ゼロなら誰も残らない');
+    eq(Office.overtimeOf({ contracted: [c0.id], assign: { [c0.id]: 'rest' } }).length, 0,
+       '休みの子は残業しない');
+    /* **開店前のセーブ（`parlor` がまだ無い）で落ちない。**
+       新規プレイヤーの初日の朝がこれ（実際に落ちていた） */
+    ok(Office.actOf({ contracted: [c0.id] }, c0).slots >= 0, '店が無くても actOf が返る');
+    eq(JSON.stringify(Jansou.shiftOf({}, c0.id)), JSON.stringify([false, false, true]),
+       'shifts が無い parlor でも既定を返す');
+    eq(JSON.stringify(Jansou.shiftOf(null, c0.id)), JSON.stringify([false, false, true]),
+       'null でも既定を返す');
+    eq(Office.overtimeOf({ contracted: [c0.id] }).length, 1, '店が無くても夜の一人は決まる');
   }
 
   /* **部屋の下に一覧を続けない**（room.md §0・§12）。

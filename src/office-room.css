@@ -47,6 +47,8 @@
 
 /* 押せる物の札。飾りには付けない（札の有無＝押せるかどうか） */
 .ofRoomTag{pointer-events:none;z-index:2;font-size:9.5px;padding:0 5px;background:rgba(36,16,40,.92)}
+/* 未読の件数が付いた札。**光っているのが何件ぶんかを、開かずに言う** */
+.ofRoomTag.on{border-color:var(--jnGreen,#96ffb4);color:#96ffb4}
 
 /* 下の帯。雀荘の .jnFlTicker の位置に「今日を始める」 */
 .ofRoomBand{

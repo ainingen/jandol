@@ -188,6 +188,10 @@ body.inMatch #matchRoot{flex:1;min-height:0}
       assign: {},                // { [charaId]: 'parlor'|'trip'|'rest'|'job:<id>' }
       trip: null,                // 遠征中なら { pref, purpose, target, members, deputy, dayLeft, log }
       offers: [],                // 届いている依頼（受ける前）
+      /* メールを開いたときに見えていた依頼の id（office/room.md §9）。
+         未読 ＝ offers のうちここに無いもの。**三箇所に書くこと**
+         （blankState / loadState / onStart）——落とすと毎回ぜんぶ未読に戻る */
+      mailRead: [],
       offerFired: [],            // once の依頼で既に発火した id
       offerAccepted: [],         // 受けた依頼の id（RULES.event が見る）
       popUp: {},                 // { [charaId]: 人気の底上げ }。アイドル活動で貯まる
@@ -239,6 +243,7 @@ body.inMatch #matchRoot{flex:1;min-height:0}
            Office.tripOf が null に落とし、assign の trip も店に戻る */
         trip: s.trip && typeof s.trip === 'object' ? s.trip : null,
         offers: Array.isArray(s.offers) ? s.offers : [],
+        mailRead: Array.isArray(s.mailRead) ? s.mailRead : [],
         offerFired: Array.isArray(s.offerFired) ? s.offerFired : [],
         offerAccepted: Array.isArray(s.offerAccepted) ? s.offerAccepted : [],
         popUp: s.popUp && typeof s.popUp === 'object' ? s.popUp : {},
@@ -302,6 +307,9 @@ body.inMatch #matchRoot{flex:1;min-height:0}
         playerName: state.playerName, playerFace: state.playerFace,
         officeName: state.officeName, officePref: state.officePref,
       };
+      /* mailRead は進行なので持ち越さない。**blankState が空で入れる**
+         ——ここで書き忘れても消えるだけだが、三箇所を揃えておく */
+      keep.mailRead = [];
       state = Object.assign(blankState(), keep);
       saveState(state);
       go('team');

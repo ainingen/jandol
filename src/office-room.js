@@ -67,6 +67,10 @@ const OfficeRoom = (() => {
   const REST_SPOTS = [
     [141, 68, true], [153, 68, true], [168, 78, false], [131, 74, false],
   ];
+  /* 夜に一人だけ残る子（`room.md` §6）。**机の向こう＝ランプの下**に立たせる。
+     ソファにも置いてみたが、灯りが机にしかないので**暗がりに座っている**だけに
+     見えた。残業は「まだ仕事をしている」なので、机で書いているほうが読める */
+  const LATE_SPOT = [96, 76];
 
   /* 何人まで部屋に出すか（§10 第四段の実測）。
      超えたぶんは出さず、下の帯に「ほか N 人」と出す——
@@ -80,7 +84,9 @@ const OfficeRoom = (() => {
     const out = [];
     let d = 0, r = 0;
     (people || []).forEach((p) => {
-      if (p.where === 'rest') {
+      if (p.where === 'late') {
+        out.push({ id: p.id, where: 'late', x: LATE_SPOT[0], y: LATE_SPOT[1], sit: false, over: false });
+      } else if (p.where === 'rest') {
         if (r >= REST_SPOTS.length) { out.push({ id: p.id, where: p.where, over: true }); return; }
         const s = REST_SPOTS[r++];
         out.push({ id: p.id, where: 'rest', x: s[0], y: s[1], sit: s[2], over: false });
@@ -127,6 +133,11 @@ const OfficeRoom = (() => {
        （`Office.roomPeopleOf`。`assign` の解釈は向こうが持っている）。
        ここがやるのは**どこに立つか**だけ */
     const people = spotsFor(ctx.people || []);
+    /* 未読（第二段）。**セーブの中だけで決まる**ので、ここで数える。
+       疲労と雀エイトは `Office` を引かないと分からないので、
+       office.js が `ctx` で渡す（人と同じ分担） */
+    const read = st.mailRead || [];
+    const unread = (st.offers || []).filter((o) => read.indexOf(o.id) < 0).length;
     return {
       night: !!ctx.night,
       open: !!parlor.open,
@@ -136,6 +147,10 @@ const OfficeRoom = (() => {
       over: people.filter((p) => p.over).length,
       /* 誰かが出ている（遠征・依頼）。扉の脇に鞄を置く印になる */
       away: !!ctx.away,
+      /* ---- 印（§5） ---- */
+      unread,                       // パソコンの画面が光る＋件数
+      tired: !!ctx.tired,           // 机に赤い付箋
+      mine8: !!ctx.mine8,           // 額が金になる
     };
   }
 
@@ -154,20 +169,25 @@ const OfficeRoom = (() => {
     g.appendChild(rect(0, WALL_H - 6, W, 3, PAL.tableWood));
   }
 
-  /* 雀エイトの額（48×26）。金の額縁に八つの小さな写真の枠 */
+  /* 雀エイトの額（48×26）。八つの小さな写真の枠。
+     **額縁は普段は木。金になるのは「うちの子が入っている」ときだけ**（§5）——
+     いつも金だと、金であることが何も言っていない */
   function drawEight(g, it, view) {
+    const mine = !!view.mine8;
     g.appendChild(rect(it.x, it.y, it.w, it.h, PAL.ink));
-    g.appendChild(rect(it.x + 1, it.y + 1, it.w - 2, it.h - 2, PAL.gold));
+    g.appendChild(rect(it.x + 1, it.y + 1, it.w - 2, it.h - 2, mine ? PAL.goldHi : PAL.tableWood));
+    if (mine) g.appendChild(rect(it.x + 2, it.y + 2, it.w - 4, it.h - 4, PAL.gold));
     g.appendChild(rect(it.x + 3, it.y + 3, it.w - 6, it.h - 6, PAL.panel));
-    /* 八人の枠。2段×4。第二段で「うちの子」が金に灯る */
     for (let i = 0; i < 8; i++) {
       const cx = it.x + 6 + (i % 4) * 10, cy = it.y + 5 + Math.floor(i / 4) * 9;
-      g.appendChild(rect(cx, cy, 8, 7, PAL.closedTop));
+      /* うちの子は一枠だけ金で縁取る（表の中の「金で縁取られる」と同じ言いかた） */
+      const own = mine && i === 0;
+      g.appendChild(rect(cx - (own ? 1 : 0), cy - (own ? 1 : 0),
+        8 + (own ? 2 : 0), 7 + (own ? 2 : 0), own ? PAL.goldHi : PAL.closedTop));
       g.appendChild(rect(cx + 2, cy + 1, 4, 3, PAL.tileLow));
       g.appendChild(rect(cx + 1, cy + 5, 6, 2, PAL.closed));
     }
-    /* 題字の帯（文字は置かない。金の細い帯だけ） */
-    g.appendChild(rect(it.x + 6, it.y + it.h - 3, it.w - 12, 1, PAL.goldHi));
+    g.appendChild(rect(it.x + 6, it.y + it.h - 3, it.w - 12, 1, mine ? PAL.goldHi : PAL.closed));
   }
 
   /* 段位の賞状（8×18）。押せない。朱の印が一つ */
@@ -228,11 +248,19 @@ const OfficeRoom = (() => {
     g.appendChild(rect(dx + it.w - 5, dy + 12, 3, 2, PAL.ink));
     /* 画面（20×16）。縁は暗く、面は消えた色 */
     const mx = dx + 10, my = it.y + 2;
+    /* **未読があれば画面が点いている**（§5）。消えていれば灰。
+       光の明滅は `lightG` が持つ——形は動かさない、明るさだけ */
+    const on = view.unread > 0 && !view.night;
     g.appendChild(rect(mx, my, 22, 17, PAL.ink));
-    g.appendChild(rect(mx + 2, my + 2, 18, 12, view.night ? PAL.closed : PAL.closedTop));
-    g.appendChild(rect(mx + 4, my + 4, 10, 1, PAL.tileLow));
-    g.appendChild(rect(mx + 4, my + 7, 13, 1, PAL.tileLow));
-    g.appendChild(rect(mx + 4, my + 10, 8, 1, PAL.tileLow));
+    g.appendChild(rect(mx + 2, my + 2, 18, 12, on ? PAL.night : view.night ? PAL.closed : PAL.closedTop));
+    g.appendChild(rect(mx + 4, my + 4, 10, 1, on ? PAL.neonCyan : PAL.tileLow));
+    g.appendChild(rect(mx + 4, my + 7, 13, 1, on ? PAL.neonCyan : PAL.tileLow));
+    g.appendChild(rect(mx + 4, my + 10, 8, 1, on ? PAL.neonCyan : PAL.tileLow));
+    /* 封筒の印。**画面の中に置く**ので、光っているのが何の光かが分かる */
+    if (on) {
+      g.appendChild(rect(mx + 15, my + 8, 5, 4, PAL.tile));
+      g.appendChild(rect(mx + 15, my + 8, 5, 1, PAL.neonCyan));
+    }
     /* 脚と台 */
     g.appendChild(rect(mx + 9, my + 17, 4, 2, PAL.ink));
     g.appendChild(rect(mx + 6, my + 19, 10, 1, PAL.ink));
@@ -274,6 +302,17 @@ const OfficeRoom = (() => {
     g.appendChild(rect(it.x + 51, it.y + 14, 5, 4, PAL.closed));
   }
 
+  /* 疲れている子がいる印（§5）。**机に赤い付箋を一枚。**
+     人数は出さない——名簿を開けば誰かは分かるので、ここは「見にいく理由」だけ。
+     台帳の上に貼るので、名簿とつながって見える */
+  function drawNote(g, desk) {
+    const x = desk.x + 10, y = desk.y + 6;
+    g.appendChild(rect(x - 1, y - 1, 10, 9, PAL.ink));
+    g.appendChild(rect(x, y, 8, 7, PAL.felt));
+    g.appendChild(rect(x, y, 8, 2, PAL.feltTop));
+    g.appendChild(rect(x + 2, y + 4, 4, 1, PAL.tile));
+  }
+
   /* 扉（24×25）。下の階へ降りる。雀荘の入口と同じ x の帯 */
   function drawDoor(g, it, view) {
     g.appendChild(rect(it.x - 2, it.y - 2, it.w + 4, it.h + 2, PAL.ink));
@@ -281,9 +320,16 @@ const OfficeRoom = (() => {
     g.appendChild(rect(it.x + 3, it.y + 3, it.w - 6, 8, PAL.plankGrain));
     g.appendChild(rect(it.x + 3, it.y + 13, it.w - 6, 8, PAL.plankGrain));
     g.appendChild(rect(it.x + it.w - 6, it.y + 12, 2, 2, PAL.gold));
-    /* 上の階だと分かる札。店が無ければ暗い札 */
+    /* 下の階の看板。**店があればネオンが点き、無ければ消えている**（§5）。
+       消えているだけでは「まだ持っていない」と読めないので、
+       **扉に貸店舗の貼り紙**を足す——これで空き店舗だと分かる */
     g.appendChild(rect(it.x + 4, it.y - 7, it.w - 8, 5, PAL.ink));
     g.appendChild(rect(it.x + 5, it.y - 6, it.w - 10, 3, view.open ? PAL.neonPink : PAL.closed));
+    if (!view.open) {
+      g.appendChild(rect(it.x + 7, it.y + 6, 10, 12, PAL.ink));
+      g.appendChild(rect(it.x + 8, it.y + 7, 8, 10, PAL.tile));
+      for (let i = 0; i < 3; i++) g.appendChild(rect(it.x + 10, it.y + 9 + i * 3, 4, 1, PAL.closed));
+    }
   }
 
   /* ---------- 人（第四段） ----------
@@ -320,19 +366,47 @@ const OfficeRoom = (() => {
     g.appendChild(rect(x + 3, y - 2, 4, 2, PAL.ink));
   }
 
-  /* 夜の膜と机のランプ（room.md §6）。雀荘の drawLight の夜と同じ手 */
-  function drawNight(g, items) {
-    g.appendChild(el('rect', { x: 0, y: 0, width: W, height: H, fill: PAL.night, opacity: 0.42 }));
+  /* ============================================================
+     光の層（room.md §5・§6）。**毎フレーム描き直すのはここだけ。**
+     部屋そのもの（`roomG`）は一枚のまま。
+
+     動くのは**明るさだけ。形は動かさない**——`slow` の三点で学んだこと
+     （形が変わる動きは飾りではない）。位相は `clock` だけから引き、
+     **乱数を混ぜない**。
+     ============================================================ */
+  function drawLight(g, view, clock) {
+    while (g.firstChild) g.removeChild(g.firstChild);
+    const items = layout();
     const desk = items.find((it) => it.key === 'desk');
-    if (desk) {
-      g.appendChild(el('rect', { x: desk.x - 6, y: desk.y - 10, width: desk.w + 12, height: desk.h + 16,
-        fill: PAL.goldHi, opacity: 0.16 }));
-      /* ランプ本体 */
-      g.appendChild(rect(desk.x + it0(desk), desk.y - 4, 6, 3, PAL.goldHi));
-      g.appendChild(rect(desk.x + it0(desk) + 2, desk.y - 1, 2, 7, PAL.ink));
+    const pc = items.find((it) => it.key === 'pc');
+
+    if (view.night) {
+      /* 夜の膜。**壁のほうを深く沈める**（灯りは机の上にしかない） */
+      g.appendChild(el('rect', { x: 0, y: 0, width: W, height: CARPET_Y,
+        fill: PAL.night, opacity: 0.52 }));
+      g.appendChild(el('rect', { x: 0, y: CARPET_Y, width: W, height: H - CARPET_Y,
+        fill: PAL.night, opacity: 0.40 }));
+      /* 机のランプ。**灯っているのはここだけ**なので、夜に見る物（日報）が分かる。
+         **一枚の矩形で塗らない**——四角い光の箱に見えて、床板を横切る線が出る
+         （実際に出た）。薄いのを三枚重ねて、外へ行くほど弱くする */
+      if (desk) {
+        [[16, 24, 0.05], [9, 14, 0.06], [3, 6, 0.07]].forEach(([m, mv, op]) => {
+          g.appendChild(el('rect', { x: desk.x - m, y: desk.y - mv, width: desk.w + m * 2,
+            height: desk.h + mv + 8, fill: PAL.goldHi, opacity: op }));
+        });
+        g.appendChild(rect(desk.x + desk.w - 12, desk.y - 4, 6, 3, PAL.goldHi));
+        g.appendChild(rect(desk.x + desk.w - 10, desk.y - 1, 2, 7, PAL.ink));
+      }
+      return;
+    }
+
+    /* 未読があるあいだ、画面の光が呼吸する。**1.6秒で一往復、明るさだけ** */
+    if (view.unread > 0 && pc) {
+      const t = (Math.sin(clock * (Math.PI * 2) / 1.6) + 1) / 2;
+      g.appendChild(el('rect', { x: pc.x + 8, y: pc.y, width: 26, height: 21,
+        fill: PAL.neonCyan, opacity: 0.10 + 0.14 * t }));
     }
   }
-  const it0 = (desk) => desk.w - 12;
 
   /* ---------- 一枚描く ---------- */
   function drawRoom(svg, view) {
@@ -366,10 +440,14 @@ const OfficeRoom = (() => {
       Object.assign({ id: 1, kind: 'sofa' }, toCell(sofa)),
       Object.assign({ id: 2, kind: 'plant' }, toCell(plant)),
     ] }, { interior: 1 }, PAL);
+    /* 疲れている子がいる印。台帳の上に貼る */
+    if (view.tired) {
+      const desk = items.find((it) => it.key === 'desk');
+      if (desk) drawNote(g, desk);
+    }
     /* 人は物の**あと**。机やソファの手前に立つ */
     if (view.away) drawBag(g);
     drawPeople(g, view);
-    if (view.night) drawNight(g, items);
   }
 
   /* ============================================================
@@ -402,7 +480,7 @@ const OfficeRoom = (() => {
     const ui = wrap.querySelector('.jnFlUi');
     const hits = wrap.querySelector('.ofRoomHits');
     const band = wrap.querySelector('.ofRoomBand');
-    let svg = null;
+    let svg = null, lightG = null;
     let scale = 2, floorW = W, panX = 0;
     let view = { night: false, open: false, trip: false };
     const handlers = {};
@@ -449,6 +527,12 @@ const OfficeRoom = (() => {
           const t = document.createElement('span');
           t.className = 'jnFlTag ofRoomTag';
           t.textContent = tags[it.tap] || it.name;
+          /* **件数は札に。**画素の層に文字は置かない（§5）。
+             光っているのが何件ぶんなのかは、開かなくても分かるべき */
+          if (it.tap === 'mail' && view.unread > 0 && !view.night) {
+            t.textContent += ' ' + view.unread;
+            t.classList.add('on');
+          }
           /* 下に出す。下辺の物（扉）は上に */
           const below = it.y + it.h + 9 <= H;
           const q = floorToScreen(it.x + it.w / 2, below ? it.y + it.h : it.y);
@@ -495,6 +579,10 @@ const OfficeRoom = (() => {
       ui.innerHTML = '';
       measure();
       drawRoom(svg, view);
+      /* **光の層は部屋のいちばん上。**人も膜の下に沈む（夜） */
+      lightG = el('g', { 'shape-rendering': 'crispEdges' });
+      svg.appendChild(lightG);
+      drawLight(lightG, view, live.clock);
       wrap.classList.toggle('night', !!view.night);
     }
 
@@ -505,6 +593,8 @@ const OfficeRoom = (() => {
       const tick = (now) => {
         if (!wrap.isConnected) return;
         live.clock = (now - live.t0) / 1000;
+        /* **動かすものが無い日は触らない。**未読が無ければ光は静止画のまま */
+        if (lightG && !view.night && view.unread > 0) drawLight(lightG, view, live.clock);
         raf = requestAnimationFrame(tick);
       };
       raf = requestAnimationFrame(tick);
@@ -530,7 +620,7 @@ const OfficeRoom = (() => {
   }
 
   return { mount, layout, hitOf, roomView, spotsFor, TAGS, SAFE, HIT_MIN, HIT_GAP,
-           DUTY_SPOTS, REST_SPOTS, MAX_DUTY, MAX_REST, W, H };
+           DUTY_SPOTS, REST_SPOTS, LATE_SPOT, MAX_DUTY, MAX_REST, W, H };
 })();
 
 if (typeof module !== 'undefined') {
