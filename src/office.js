@@ -599,10 +599,16 @@ const Office = (() => {
     return out;
   }
 
-  /* 疲労が `comp` の補間位置をどれだけ戻すか（§9）。
+  /* 疲労が `comp` の補間位置をどれだけ戻すか（§9）。**A5 で確定した値。**
      **新しい計算系は作らない。**`paramsOf` の `t = comp/100` に
-     実効 comp を渡すだけ。0.25 なら満タンで一段だけ落ちる
-     （S級90 → 68 ＝ A級。0.35 では B級まで落ちて別人になる） */
+     実効 comp を渡すだけ。満タンで一段だけ落ちる
+     （S級90 → 68 ＝ A級。0.35 では B級まで落ちて別人になる）。
+
+     **`skill` 側に別の経路を作らないこと。**`compEff` は `paramsOf` の `t` を
+     通るので `skill`（＝ `t`）も一緒に動く。実対局の実測では、効きの
+     ほとんどが `skill` 側から出ていた（`compEff` 経由 +0.21 と
+     `skill` だけ +0.22 が誤差の中で同じ。`office/spec.md` §9.2）。
+     もう一本足すと二重に効く */
   const FATIGUE_PULL = 0.25;
   const COND_SHIFT = 2;             // 調子1段ぶんの comp
 
@@ -636,6 +642,38 @@ const Office = (() => {
     let r = (rng || Math.random)();
     for (let i = 0; i < w.length; i++) { r -= w[i]; if (r <= 0) return i - 2; }
     return 2;
+  }
+
+  /* その子が「きのう何をしていたか」を `assign` と `parlor.shifts` から読む。
+     **配置は変えるまで続く**（§6.3）ので、いま置かれている配置が
+     そのまま前日の行動になる。別の記録を持たない——持つと古びる */
+  function actOf(st, c) {
+    /* **`assignFor`（一人ぶん）。**`assignOf` は全員ぶんの表を返す別物 */
+    const kind = assignFor(st, c.id);
+    if (kind === 'rest') return { rest: true };
+    if (kind === 'trip') return { trip: true };
+    if (typeof kind === 'string' && kind.indexOf('job:') === 0) return { job: true };
+    /* 店。出勤している帯の数だけ溜まる */
+    const sh = (typeof Jansou !== 'undefined' && Jansou.shiftOf)
+      ? Jansou.shiftOf(st.parlor || {}, c.id) : [false, false, true];
+    return { slots: sh.filter(Boolean).length };
+  }
+
+  /* **一日ぶんの疲労を進める。**`ensureCond` と同じ「朝に一度だけ」の形で、
+     `st.fatigueDay !== day` のときだけ動く。
+
+     **`settle` の中には置かない。**あそこは「スキップしても再生しても完全一致」が
+     乗っている純関数で、日を進めるのもあそこ一箇所だけ、という決めごとがある。
+     疲労は日が進んだあと（＝朝）に、進んだぶんを追いかけて足す。
+
+     **調子より先に呼ぶこと。**調子は疲労の高さで重みが変わる */
+  function ensureFatigue(store, day) {
+    const st = store.get();
+    if (st.fatigueDay === day) return false;
+    const acts = {};
+    rosterOf(st).forEach((c) => { acts[c.id] = actOf(st, c); });
+    store.set({ fatigue: stepFatigue(st, acts), fatigueDay: day });
+    return true;
   }
 
   /* **朝に一度だけ引いて確定させる**（§9）。`ensureShop` と同じ形で、
@@ -731,6 +769,11 @@ const Office = (() => {
       const p0 = parlorOf(store.get());
       const mark = (p0 ? p0.day : 0);
       if (firedFor !== mark) { firedFor = mark; fireOffers(store); }
+      /* **疲労を進めてから、調子を引く**（§9）。順番を入れ替えないこと——
+         調子の重みは疲労の高さで変わる。どちらも「その日ぶんは一度だけ」の
+         印を持っているので、朝を描き直しても動かない */
+      ensureFatigue(store, mark);
+      ensureCond(store, mark);
       /* 遠征中なら、その日の店を用意する（scout/spec.md §6.2） */
       const t0 = tripOf(store.get());
       if (t0 && ensureShop(store, t0, mark)) { shopNote = ''; shopFound = null; shopTell = ''; }
@@ -1404,7 +1447,10 @@ const Office = (() => {
           if (mate) log.push(`${mate.name}が同郷で、${c.name}との場が和んだ`);
 
           /* --- 2. 対局（第三段のまま） --- */
-          const table = [playerCard(st), c].concat(mates.slice(0, 2));
+          /* 同行者は疲れを持ち込む（§9）。**相手（c）は疲れない**——
+             よその子の疲労はこちらのセーブに無い */
+          const table = [playerCard(st), c]
+            .concat(mates.slice(0, 2).map((m) => tableCardOf(st, m)));
           /* 卓が埋まらないぶんは相手と同格のCPUで埋める */
           for (let i = table.length; i < 4; i++) {
             table.push(Object.assign({}, c, { id: 9500 + i, name: '地元の常連', guest: true }));
@@ -1697,7 +1743,8 @@ const Office = (() => {
            eightTable, eightNext, powerOf, mightOf, charaTitle, rivalOf, RIVALS,
            RANK_TITLE, TIER_POINT, POWER_MIX, FAME_MIX, agencyTitle, EIGHT_N,
            FATIGUE, FATIGUE_PULL, COND_SHIFT, fatigueDelta, stepFatigue,
-           compEffOf, tableCardOf, condWeights, rollCond, ensureCond };
+           compEffOf, tableCardOf, condWeights, rollCond, ensureCond,
+           actOf, ensureFatigue };
 })();
 
 if (typeof module !== 'undefined' && module.exports) {

@@ -418,8 +418,14 @@ const Taikai = (() => {
 
     function start(tierId) {
       const st = store.get();
+      /* **枠を組むときだけ疲労と調子を乗せる**（`office/spec.md` §9）。
+         `teamCards()` そのものは素のまま——`finish()` の育成が
+         `st.comp` を読み直すので二重に効かないが、表示にも使われているため。
+         `Office` は「あれば使う」（単体ページでは素の子が出る） */
+      const carded = (c) => (typeof Office !== 'undefined' && Office.tableCardOf)
+        ? Office.tableCardOf(st, c) : c;
       prepared = prepare(tierId, {
-        team: teamCards(), pool: poolCards(),
+        team: teamCards().map((c) => (c.id === 0 ? c : carded(c))), pool: poolCards(),
         region: st.region || (teamCards()[1] || {}).region || null,
         recent: st.recent || [],
       });

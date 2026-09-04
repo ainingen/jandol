@@ -45,6 +45,19 @@ const Jansou = (() => {
      第五段（A5）の定数。**`computeDay` は旗が立ったときだけ使う**
      （`office/spec.md` §11。三局面を測り直すまで既定にしない）
   ------------------------------------------------------------ */
+  /* 好感度の読み口。**ここ一箇所だけ**——`office.js` の表示と食い違わないよう、
+     `st.favor` をそのまま読む（`popOf` が `pop` でやっているのと同じ作法） */
+  const favorOf = (st, id) => Math.max(0, ((st && st.favor || {})[id]) | 0);
+  /* 疲労と調子を乗せた卓の写し（`office/spec.md` §9）。
+     **`Office` は「あれば使う」。**単体ページで office.js が読まれていなければ
+     素の子がそのまま座る＝いままでどおりに落ちる */
+  const carded = (st, c) => (typeof Office !== 'undefined' && Office.tableCardOf)
+    ? Office.tableCardOf(st, c) : c;
+  /* 帯ごとの Σfavor。**推しファンは夜にしか来ない**ので効くのは夜だけだが、
+     入力は三帯ぶん揃えておく（`computeDay` が帯で切る） */
+  const slotFavorOf = (st, slotWorkers) =>
+    slotWorkers.map((w) => w.reduce((a, c) => a + favorOf(st, c.id), 0));
+
   const BASE_SEATS = 8;            // 代表が一人で回せるぶん（2卓）
   const SEATS_PER_WORKER = 8;      // 一人が受け持てる席数
   const FAVOR_FEE_CAP = 0.15;      // 夜の単価に乗る上限
@@ -491,7 +504,9 @@ const Jansou = (() => {
      cfg = { tables, interior, auto, sign, rep, slotPop:[昼,夕,夜の出勤popの合計],
              slotWorkers:[人数], slotFavor:[好感度の合計], pullBonus, closedTables,
              playerNight, staffing, favorFee, baseSeats }
-     **`staffing` と `favorFee` は既定で偽。**第五段の再測が済むまで効かない
+     **`staffing` と `favorFee` は `computeDay` の既定では偽**（純関数としての既定）。
+     **本編の三つの呼び出し側はどれも真を渡す**（A5 で確定）。
+     偽のまま呼べるのは、旧基準と比べたい計測の道具だけ
      rng は 0〜1 を返す関数（テストで固定できるように注入する） */
   function computeDay(cfg, rng) {
     rng = rng || Math.random;
@@ -639,8 +654,11 @@ const Jansou = (() => {
     return {
       st0: st, parlor, list, closed: true,
       slotWorkers: [[], [], []], dayWorkers: [],
+      /* 卓0なので `computeDay` は早期に返る。旗を渡すのは、
+         **三つの呼び出し側で同じ形にしておく**ため（読む人が迷わないように） */
       day: computeDay({ tables: 0, interior: parlor.interior, auto: parlor.auto,
-                        sign: parlor.sign, rep: parlor.rep }),
+                        sign: parlor.sign, rep: parlor.rep,
+                        staffing: true, favorFee: true }),
       ev: null, rolls: {}, fillers: [], challenge: null, arashiTier: 0,
       closedTables: 0, myTable: -1, tableIdx: [],
       timeline: [], summary: null, faces: [], names: {}, tips: 0, combo: null,
@@ -711,8 +729,12 @@ const Jansou = (() => {
       rep: parlor.rep,
       slotPop: slotWorkers.map((w) => w.reduce((a, c) => a + (c.pop || 0), 0)),
       slotWorkers: slotWorkers.map((w) => w.length),
+      slotFavor: slotFavorOf(st, slotWorkers),
       pullBonus, closedTables,
       playerNight: false,          // **代表がいないので joinNight は効かない**
+      /* 第五段（A5）。**`baseSeats` は渡さない**——既定の 8 のまま。
+         遠征中に 0 にすると序盤で符号が反転する（`office/spec.md` §11.1） */
+      staffing: true, favorFee: true,
     }, rng);
 
     const ev = pickEvent(st, parlor, dayWorkers, rng);
@@ -768,7 +790,8 @@ const Jansou = (() => {
       let outcome = 'police';
       if (deputy) {
         const mates = plan.dayWorkers.filter((c) => c.id !== deputy.id).slice(0, 2);
-        const table = [deputy, ev.chara].concat(mates);
+        /* 疲れた子は打ち筋が鈍る（§9）。荒らしは疲れない */
+        const table = [carded(st, deputy), ev.chara].concat(mates.map((c) => carded(st, c)));
         while (table.length < 4) table.push(Object.assign({}, deputy, { id: 9400 + table.length }));
         const rank = simulateTable(table, STYLES);
         const hers = rank.find((r) => r.chara.id === deputy.id);
@@ -1541,8 +1564,11 @@ const Jansou = (() => {
         rep: parlor.rep,
         slotPop: slotWorkers.map((w) => w.reduce((a, c) => a + (c.pop || 0), 0)),
         slotWorkers: slotWorkers.map((w) => w.length),
+        slotFavor: slotFavorOf(st0, slotWorkers),
         pullBonus, closedTables,
         playerNight: parlor.joinNight,
+        /* 第五段（A5）。**`baseSeats` は渡さない**——既定の 8 のまま */
+        staffing: true, favorFee: true,
       }, rng);
 
       const ev = pickEvent(st0, parlor, dayWorkers, rng);
@@ -1741,7 +1767,9 @@ const Jansou = (() => {
         });
       } else if (node.kind === 'joinNight') {
         const night = plan.slotWorkers[2].slice().sort((a, b) => (b.pop || 0) - (a.pop || 0));
-        const table = [playerCard()].concat(night.slice(0, 3));
+        /* 代表（id 0）は疲労を持たない。所属だけ写しを通す（§9） */
+        const st1 = store.get();
+        const table = [playerCard()].concat(night.slice(0, 3).map((c) => carded(st1, c)));
         for (let i = 0; table.length < 4; i++) table.push(plan.fillers[i]);
         const rank = await playOrSimulate(table, '店の卓で一局');
         const mine = rank.find((r) => r.chara.id === 0);

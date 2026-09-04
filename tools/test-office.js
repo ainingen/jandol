@@ -1073,6 +1073,109 @@ function eq(a, b, name) {
 }
 
 /* ============================================================
+   A5 で数字を置いたあとの錠（step 6）
+   ============================================================ */
+{
+  const all = JANDOLS.concat(FREE_AGENTS);
+
+  /* --- 疲労を進める口。朝に一度だけ --- */
+  {
+    const roster = JANDOLS.slice(0, 3);
+    const ids = roster.map((c) => c.id);
+    let saved = {
+      contracted: ids, comp: {}, fatigue: {}, cond: {}, popUp: {},
+      assign: {}, parlor: { shifts: {} },
+    };
+    const store = { get: () => saved, set: (p) => { saved = Object.assign({}, saved, p); } };
+
+    /* 既定シフト（夜だけ）＝ +1 */
+    eq(Office.ensureFatigue(store, 5), true, '朝に一度進む');
+    eq(saved.fatigue[ids[0]], 1, '**夜だけ出勤の子は +1**');
+    eq(saved.fatigueDay, 5, '進めた日が印として残る');
+    eq(Office.ensureFatigue(store, 5), false, '**同じ朝は二度進まない**');
+    eq(saved.fatigue[ids[0]], 1, '二度目で動かない');
+
+    /* 休み ＝ −15 */
+    saved = Object.assign({}, saved, { fatigue: { [ids[0]]: 40 },
+      assign: { [ids[0]]: 'rest' } });
+    Office.ensureFatigue(store, 6);
+    eq(saved.fatigue[ids[0]], 25, '**休みの子は一日で −15**');
+
+    /* 遠征5日で +40 前後 */
+    let f = 0;
+    for (let d = 0; d < 5; d++) f += Office.fatigueDelta({ trip: true });
+    ok(f >= 35 && f <= 45, '**遠征5日で +40 前後**（' + f + '）');
+    /* 着いた日は現地で一局打つぶん重い */
+    const withMatch = f + Office.FATIGUE.tripMatch;
+    ok(withMatch > f, '現地で打つ日は上乗せ');
+  }
+
+  /* --- きのう何をしていたかの読み（配置は変えるまで続く） --- */
+  {
+    const c = JANDOLS[0];
+    const base = { parlor: { shifts: {} }, assign: {}, trip: null };
+    eq(Office.actOf(base, c).slots, 1, '既定は夜だけの1帯');
+    eq(Office.actOf(Object.assign({}, base, { assign: { [c.id]: 'rest' } }), c).rest, true, '休み');
+    /* trip は「生きている遠征か」で見るので、assign だけでは店に落ちる */
+    const tripSt = Object.assign({}, base, { assign: { [c.id]: 'trip' },
+      trip: { pref: 'tokyo', dayLeft: 3 } });
+    eq(Office.actOf(tripSt, c).trip, true, '遠征');
+    const jobSt = Object.assign({}, base, { assign: { [c.id]: 'job:x' },
+      offerAccepted: ['x'] });
+    ok(Office.actOf(jobSt, c).job || Office.actOf(jobSt, c).slots >= 0, '依頼か店に落ちる');
+    /* 三帯すべてに入っていれば +9 */
+    const full = { parlor: { shifts: { [c.id]: [true, true, true] } }, assign: {}, trip: null };
+    eq(Office.actOf(full, c).slots, 3, 'フル出勤は3帯');
+    eq(Office.fatigueDelta(Office.actOf(full, c)), 9, 'フル出勤は +9');
+  }
+
+  /* --- 疲労 → 調子の順（調子の重みは疲労の高さで変わる） --- */
+  {
+    const roster = JANDOLS.slice(0, 2);
+    let saved = { contracted: roster.map((c) => c.id), comp: {}, fatigue: {}, cond: {},
+                  popUp: {}, assign: {}, parlor: { shifts: {} } };
+    const store = { get: () => saved, set: (p) => { saved = Object.assign({}, saved, p); } };
+    const seeded = (n) => { let s = n >>> 0;
+      return () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296; }; };
+    Office.ensureFatigue(store, 3);
+    Office.ensureCond(store, 3, seeded(1));
+    const snap = JSON.stringify({ f: saved.fatigue, c: saved.cond });
+    /* 朝を二度描いても、どちらも動かない */
+    Office.ensureFatigue(store, 3);
+    Office.ensureCond(store, 3, seeded(77));
+    eq(JSON.stringify({ f: saved.fatigue, c: saved.cond }), snap,
+       '**朝を二度描いても疲労も調子も動かない**');
+  }
+}
+
+/* ============================================================
+   `computeDay` の新旧の基準（step 6 で本編の既定になった）
+   ============================================================ */
+{
+  /* 三局面のうち中盤で、旗の有無が旧基準／新基準になること。
+     `tools/measure-jansou.js` が出す数字と同じ組み立て */
+  const cfg = { tables: 4, interior: 2, auto: 2, sign: 1, rep: 40,
+    slotPop: [153, 143, 472], slotWorkers: [2, 2, 6] };
+  const seeded = (n) => { let s = n >>> 0;
+    return () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296; }; };
+  const avg = (extra) => {
+    const rng = seeded(1); let g = 0, sales = 0;
+    for (let d = 0; d < 2000; d++) {
+      const day = Jansou.computeDay(Object.assign({}, cfg, extra), rng);
+      g += day.guests; sales += day.sales;
+    }
+    return { guests: Math.round(g / 2000), sales: Math.round(sales / 2000) };
+  };
+  const old = avg({});
+  const now = avg({ staffing: true, favorFee: true, slotFavor: [80, 80, 240] });
+  eq(old.guests, 82, '旧基準の中盤は 82人');
+  eq(old.sales, 179251, '旧基準の中盤の場代');
+  eq(now.guests, 82, '**新基準でも客数は動かない**');
+  eq(now.sales, 186323, '新基準の中盤の場代（好感度が夜の単価に乗る）');
+  ok(now.sales > old.sales, '効いているのは売上だけ');
+}
+
+/* ============================================================
    子ごとの大会戦績（tournament.js。office/spec.md §9.1）
    ============================================================ */
 {

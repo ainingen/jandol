@@ -191,8 +191,12 @@ body.inMatch #matchRoot{flex:1;min-height:0}
       offerAccepted: [],         // 受けた依頼の id（RULES.event が見る）
       popUp: {},                 // { [charaId]: 人気の底上げ }。アイドル活動で貯まる
       wins: {},                  // { [charaId]: { [tierId]: {entries,win,place} } } 大会戦績
-      fatigue: {},               // { [charaId]: 0..100 }  第五段で数値を置く
-      cond: {},                  // { [charaId]: -2..2 }   第五段で数値を置く
+      fatigue: {},               // { [charaId]: 0..100 }
+      cond: {},                  // { [charaId]: -2..2 }
+      /* 「その日ぶんはもう引いた」の印（§9）。**ここに書き忘れると
+         リロードのたびに引き直され、朝を開くたび調子が変わる** */
+      fatigueDay: -1,
+      condDay: -1,
     };
   }
 
@@ -240,6 +244,9 @@ body.inMatch #matchRoot{flex:1;min-height:0}
         wins: s.wins && typeof s.wins === 'object' ? s.wins : {},
         fatigue: s.fatigue && typeof s.fatigue === 'object' ? s.fatigue : {},
         cond: s.cond && typeof s.cond === 'object' ? s.cond : {},
+        /* **印を落とさないこと。**落とすとリロードのたびに引き直される */
+        fatigueDay: typeof s.fatigueDay === 'number' ? s.fatigueDay : -1,
+        condDay: typeof s.condDay === 'number' ? s.condDay : -1,
       });
     } catch (e) { return blankState(); }
   }
