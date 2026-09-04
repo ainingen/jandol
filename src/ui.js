@@ -355,7 +355,7 @@ const UI = {
         if (t) this.onTileClick(+t.dataset.id);
       };
     }
-    this.renderTachie();
+    this.renderCutin();
     this.renderHintText();
   },
 
@@ -432,47 +432,20 @@ const UI = {
   },
 
   /* ============================================================
-     顔とセリフ
+     セリフのカットイン（spec.md §6）
 
-     四人ぶんの顔を小さく並べておき、喋った人だけ大きくする。
-     一人ずつ入れ替える形だと、誰が喋ったのか追えなくなる。
+     喋った人の写真を上の角に出し、吹き出しを添える。
+     左側の席（上家・自分）は左上、右側の席（下家・対面）は右上。
+     同時に席プレートを光らせるので、誰が喋ったかは写真・名前・プレートの三つで分かる。
 
      吹き出しは「そこから四回捨てられるまで」残す。時間ではなく
      捨て牌の数で測るので、早送りでも自分の手番でも同じだけ残る。
+
+     SERIFU 側は触らない。chara 19種を鍵にする仕組みも場面11種もそのまま。
      ============================================================ */
   BUBBLE_TURNS: 4,          // 吹き出しが残る長さ（捨て牌の数）
-
-  /* 卓の並びと同じ順（下家→対面→上家→自分）で顔を作る。
-     対局のはじめに一度だけ。名前は入力された文字が入るので、
-     innerHTML ではなく textContent で入れること */
-  initTachie() {
-    const box = $('#tachie');
-    const g = this.game;
-    if (!box || !g) return;
-    const row = box.querySelector('.tcRow');
-    if (!row) return;
-    row.innerHTML = '';
-    [1, 2, 3, 0].forEach((seat) => {
-      const p = g.players[seat];
-      if (!p) return;
-      const slot = document.createElement('div');
-      slot.className = 'tcSlot';
-      slot.dataset.seat = String(seat);
-      const face = document.createElement('span');
-      face.className = 'tcFace';
-      if (p.face) face.style.backgroundImage = 'url("' + p.face + '")';
-      const tag = document.createElement('span');
-      tag.className = 'tcTag';
-      tag.textContent = p.name || '';
-      slot.appendChild(face);
-      slot.appendChild(tag);
-      row.appendChild(slot);
-    });
-    box.classList.remove('talk');
-    box.querySelector('.tcBubble').textContent = '';
-    this._sayAt = null;
-    this._tachieReady = true;
-  },
+  HOT_KINDS: ['riichi', 'tsumo', 'ron'],   // 吹き出しの地を差し色にする場面
+  PLATE_IDS: ['plate-bottom', 'plate-right', 'plate-top', 'plate-left'],
 
   /* 場に出ている捨て牌の総数。吹き出しを引っ込める目安に使う */
   discardCount() {
@@ -483,28 +456,28 @@ const UI = {
     return n;
   },
 
-  /* 一言を出す。喋った人の顔を大きくして、吹き出しをその下に置く */
+  /* 一言を出す。名前は入力された文字が入るので textContent で入れること */
   say(seat, kind, hold) {
     if (typeof SERIFU === 'undefined') return;
     const g = this.game;
-    const box = $('#tachie');
+    const box = $('#cutin');
     if (!g || !box) return;
     const p = g.players[seat];
     if (!p) return;
     const line = SERIFU.pick(p.chara, kind);
     if (!line) return;
-    if (!this._tachieReady) this.initTachie();
 
-    box.querySelectorAll('.tcSlot').forEach((el) => {
-      el.classList.toggle('on', Number(el.dataset.seat) === seat);
-    });
-    box.querySelector('.tcBubble').textContent = line;
-    box.classList.add('talk');
-    box.classList.toggle('riichi', !!p.riichi);
-    /* 喋った人の席プレートも光らせる（§6.1） */
+    const img = box.querySelector('img');
+    if (p.face) { img.src = p.face; img.hidden = false; } else { img.removeAttribute('src'); img.hidden = true; }
+    box.querySelector('.who').textContent = p.name || '';
+    box.querySelector('.line').textContent = line;
+    box.dataset.side = (seat === 0 || seat === 3) ? 'left' : 'right';
+    box.classList.toggle('hot', this.HOT_KINDS.includes(kind));
+    box.classList.add('on');
+    /* 喋った人の席プレートも光らせる */
     this._cutinSeat = seat;
     document.querySelectorAll('#table .seat').forEach((el) => {
-      el.classList.toggle('talking', el.id === ['plate-bottom', 'plate-right', 'plate-top', 'plate-left'][seat]);
+      el.classList.toggle('talking', el.id === this.PLATE_IDS[seat]);
     });
     /* 放銃の一言（hold）は長めに残す */
     this._sayAt = this.discardCount();
@@ -512,33 +485,22 @@ const UI = {
     this._sayKyoku = g.kyoku;
   },
 
-  renderTachie() {
+  /* 時間切れで引っ込める。四回捨てられたか、局が変わったら */
+  renderCutin() {
     const g = this.game;
-    const box = $('#tachie');
+    const box = $('#cutin');
     if (!g || !box) return;
-    if (!this._tachieReady) this.initTachie();
-
-    /* 吹き出しを引っ込める。四回捨てられたか、局が変わったら */
     if (this._sayAt !== null && this._sayAt !== undefined) {
       const past = this.discardCount() - this._sayAt;
       if (past >= this._sayFor || this._sayKyoku !== g.kyoku) {
-        box.classList.remove('talk', 'riichi');
-        box.querySelector('.tcBubble').textContent = '';
-        box.querySelectorAll('.tcSlot.on').forEach((el) => el.classList.remove('on'));
+        box.classList.remove('on', 'hot');
         this._sayAt = null;
         this._cutinSeat = null;
         document.querySelectorAll('#table .seat.talking').forEach((el) => el.classList.remove('talking'));
       }
     }
-
-    /* いま打っている人に薄く印を付ける。顔は動かさないので取り違えない */
     const turn = g.currentDraw ? g.currentDraw.seat
       : (g.lastDiscard ? g.lastDiscard.seat : g.dealer);
-    box.querySelectorAll('.tcSlot').forEach((el) => {
-      const s = Number(el.dataset.seat);
-      el.classList.toggle('turn', s === turn);
-      el.classList.toggle('rc', !!(g.players[s] && g.players[s].riichi));
-    });
     this.maybeIdle(turn);
   },
 

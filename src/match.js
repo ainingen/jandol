@@ -52,9 +52,9 @@ const Match = (() => {
         <div id="plate-right" class="seat s-right"></div>
         <div id="plate-bottom" class="seat s-bottom mine"></div>
       </div>
-      <div id="tachie" aria-hidden="true">
-        <div class="tcRow"></div>
-        <div class="tcBubble"></div>
+      <div id="cutin" class="cutin" data-side="left" aria-live="polite">
+        <div class="card"><span class="tape"></span><img alt=""></div>
+        <div class="bubble"><span class="who"></span><span class="line"></span></div>
       </div>
       <div id="myarea">
         <div id="melds-row"></div>
@@ -253,17 +253,15 @@ const Match = (() => {
     /* おまかせ。以降は自分の席もCPUが打つ。
        着順はごまかさず、そのまま結果になる                        */
     UI.auto = false;
-    /* UI は対局をまたいで使い回すので、立ち絵まわりの覚えを戻す。
-       _tachieSeat が残っていると次の対局の一枚目で差し替えが飛ばされ、
-       前の対局の顔がそのまま出る。
+    /* UI は対局をまたいで使い回すので、カットインまわりの覚えを戻す。
+       _cutinSeat / _sayAt が残っていると、次の対局の一局目で
+       前の対局の一言が引っ込む前提で動き、プレートの光りが取り違えられる。
        _idleSeat / _idleKyoku も同じ性質で、残っていると
        二戦目の一局目で席がたまたま一致したとき雑談が一度飛ぶ */
-    UI._tachieSeat = null;
     UI._cutinSeat = null;
     UI._idleSeat = null;
     UI._idleKyoku = null;
     UI._sayAt = null;
-    UI._tachieReady = false;      // 顔の並びは対局ごとに組み直す
     /* 牌のノードも対局ごと。前の卓の DOM は host ごと消えているので、
        Map だけ残っていると外れたノードを使い回そうとする */
     UI._nodes = null;

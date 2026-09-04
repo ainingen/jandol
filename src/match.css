@@ -513,96 +513,73 @@ body.inMatch.four #hintbox{
   position:absolute;left:14px;bottom:calc(100% + 8px);margin:0;min-height:0;text-align:left;
 }
 
-/* 立ち絵（段6でカットインに置き換わるまでの仮置き）。左上の帯に小さく */
-body.inMatch.four #tachie{
-  position:absolute;left:12px;top:10px;z-index:7;
-  width:min(240px,30vw);max-height:46%;min-height:0;margin:0;padding:5px;
-  background:var(--plate);border:0;border-radius:8px;
-  box-shadow:0 0 0 2.5px var(--line),0 4px 0 rgba(0,0,0,.45);
-}
-body.inMatch.four .tcRow{height:70px}
-body.inMatch.four .tcTag{font-size:9px}
 
 
 /* ============================================================
-   顔とセリフ（列レイアウト）
-
-   四人ぶんの顔を小さく並べ、喋った人だけ大きくする。
-   置き場所は #app の中、#table と #myarea のあいだ。
-   縦持ちでは #table を「中身なりの高さ」にして、余った高さを
-   ここが flex:1 で全部もらう。序盤は顔が大きく、河が埋まると縮む。
+   セリフのカットイン（§6）
+   喋った人の写真と吹き出し。左側の席（上家・自分）は左上、右側の席（下家・対面）は右上。
+   カードは左右で反転させる。左上は左に傾いて影が右下、右上は右に傾いて影が左下、
+   テープの位置も外側。これがないと右上で「左から貼られた紙」に見える。
+   しっぽはカードを向く（漫画の作法どおり）。
    ============================================================ */
-body.inMatch #tachie{
-  flex:1 1 auto;min-height:96px;max-height:40dvh;
-  display:flex;flex-direction:column;gap:5px;
-  margin:6px 2px 0;padding:6px;
-  background:var(--plate);
-  border-radius:8px;box-shadow:0 0 0 2.5px var(--line),0 4px 0 rgba(0,0,0,.45);
-  position:relative;overflow:hidden;
+body.inMatch .cutin{
+  display:flex;align-items:flex-start;
+  opacity:0;pointer-events:none;
+  transition:opacity .22s ease,transform .28s cubic-bezier(.2,.8,.3,1);
 }
-
-/* ---------- 四人の顔 ---------- */
-.tcRow{display:flex;gap:5px;flex:1 1 auto;min-height:0}
-.tcSlot{
-  flex:1 1 0;min-width:0;position:relative;
-  display:flex;flex-direction:column;justify-content:flex-end;
-  border-radius:6px;overflow:hidden;
-  box-shadow:0 0 0 2px var(--line);
-  background:var(--plate-2);
-  transition:flex-grow .28s cubic-bezier(.2,.9,.3,1.05),filter .2s;
-  filter:saturate(.72) brightness(.72);
+body.inMatch .cutin[data-side="left"]{flex-direction:row;transform:translateX(-18px) scale(.95)}
+body.inMatch .cutin[data-side="right"]{flex-direction:row-reverse;transform:translateX(18px) scale(.95)}
+body.inMatch .cutin.on{transform:none;opacity:1}
+/* padding:0;border:0 は style.css の .card（忍雀のイカサマ札）を打ち消すため。
+   残っていると写真が枠の内側で小さくなる（実際になった） */
+body.inMatch .cutin .card{
+  position:relative;width:var(--cw,96px);height:calc(var(--cw,96px)*1.5);border-radius:6px;overflow:hidden;flex:none;
+  padding:0;border:0;cursor:default;
+  background:var(--plate-2);box-shadow:0 0 0 3px var(--line),8px 8px 0 var(--sun),8px 8px 0 3px var(--line);
 }
-.tcFace{
-  position:absolute;inset:0;
-  background-position:50% 14%;background-size:cover;background-repeat:no-repeat;
+body.inMatch .cutin[data-side="left"] .card{transform:rotate(-2.5deg)}
+body.inMatch .cutin[data-side="right"] .card{transform:rotate(2.5deg);
+  box-shadow:0 0 0 3px var(--line),-8px 8px 0 var(--sun),-8px 8px 0 3px var(--line)}
+body.inMatch .cutin .card img{width:100%;height:100%;object-fit:cover;object-position:50% 16%;display:block;
+  filter:saturate(1.15) contrast(1.06)}
+body.inMatch .cutin .card img[hidden]{display:none}
+body.inMatch .cutin .tape{position:absolute;left:-10px;top:12px;width:52px;height:15px;background:var(--cool);
+  transform:rotate(-20deg);box-shadow:0 0 0 2px var(--line);opacity:.95}
+body.inMatch .cutin[data-side="right"] .tape{left:auto;right:-10px;transform:rotate(20deg)}
+body.inMatch .cutin .bubble{
+  position:relative;margin-top:24px;max-width:min(180px,44vw);
+  background:var(--paper);color:var(--line);border-radius:16px;padding:10px 15px;
+  font-size:15px;font-weight:800;line-height:1.5;
+  box-shadow:0 0 0 3px var(--line),5px 6px 0 rgba(0,0,0,.4);
 }
-.tcTag{
-  position:relative;z-index:1;
-  font-size:9.5px;line-height:1.3;color:#e6dcf5;font-weight:700;
-  padding:2px 4px;text-align:center;
-  background:linear-gradient(transparent,rgba(12,8,23,.85) 45%);
-  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
-}
-/* いま打っている人。薄く印を付けるだけ。顔は動かさない */
-.tcSlot.turn{filter:saturate(.9) brightness(.92)}
-/* リーチ中 */
-.tcSlot.rc::after{
-  content:"立";position:absolute;top:3px;left:3px;z-index:2;
-  font-family:var(--maru);font-weight:900;font-size:10px;color:#fff;
-  background:var(--hot);border-radius:3px;padding:0 3px;box-shadow:0 0 0 2px var(--line);
-}
-/* 喋っている人。大きくして色を戻す */
-.tcSlot.on{
-  flex-grow:2.4;filter:none;
-  box-shadow:0 0 0 2px var(--line),0 0 0 5px var(--sun);
-}
-.tcSlot.on .tcTag{
-  font-size:11.5px;font-family:var(--maru);font-weight:800;color:var(--sun);
-}
+body.inMatch .cutin[data-side="left"] .bubble{margin-left:18px}
+body.inMatch .cutin[data-side="right"] .bubble{margin-right:18px}
+body.inMatch .cutin .who{display:block;font-size:10px;font-weight:800;color:#0e7a75;margin-bottom:2px;letter-spacing:.06em}
+body.inMatch .cutin .bubble::before,body.inMatch .cutin .bubble::after{content:"";position:absolute;width:0;height:0}
+body.inMatch .cutin .bubble::before{border:11px solid transparent}
+body.inMatch .cutin .bubble::after{border:8px solid transparent}
+body.inMatch .cutin[data-side="left"] .bubble::before{left:-21px;top:16px;border-right-color:var(--line)}
+body.inMatch .cutin[data-side="left"] .bubble::after{left:-14px;top:19px;border-right-color:var(--paper)}
+body.inMatch .cutin[data-side="right"] .bubble::before{right:-21px;top:16px;border-left-color:var(--line)}
+body.inMatch .cutin[data-side="right"] .bubble::after{right:-14px;top:19px;border-left-color:var(--paper)}
+/* リーチ・ツモ・ロンは地を差し色に */
+body.inMatch .cutin.hot .bubble{background:var(--sun)}
+body.inMatch .cutin.hot[data-side="left"] .bubble::after{border-right-color:var(--sun)}
+body.inMatch .cutin.hot[data-side="right"] .bubble::after{border-left-color:var(--sun)}
 @media(prefers-reduced-motion:reduce){
-  .tcSlot{transition:none}
+  body.inMatch .cutin{transition:none}
 }
 
-/* ---------- 吹き出し ----------
-   四回捨てられるまで残る（長さは ui.js の BUBBLE_TURNS）。
-   空のときも場所を取っておく。高さが変わると卓が上下に跳ねる */
-body.inMatch .tcBubble{
-  flex:none;min-height:34px;
-  display:flex;align-items:center;
-  font-size:14px;font-weight:800;line-height:1.45;color:var(--line);
-  padding:7px 13px;border-radius:14px 14px 14px 4px;
-  background:var(--paper);box-shadow:0 0 0 2.5px var(--line),3px 4px 0 rgba(0,0,0,.4);
-  opacity:0;transform:translateY(4px);
-  transition:opacity .18s,transform .18s;
-}
-body.inMatch #tachie.talk .tcBubble{opacity:1;transform:none}
-body.inMatch #tachie.riichi .tcBubble{background:var(--sun)}
-@media(prefers-reduced-motion:reduce){
-  body.inMatch .tcBubble{transition:none}
-}
+/* 四人卓：上の角。卓の左右の帯に写真が収まり、吹き出しだけが卓の上隅へ少し伸びる。
+   カードの高さは画面の高さで抑え、左右のプレート（top:56%）に掛からないようにする */
+body.inMatch.four .cutin{position:absolute;top:10px;z-index:8;--cw:clamp(64px,23vh,96px)}
+body.inMatch.four .cutin[data-side="left"]{left:14px}
+body.inMatch.four .cutin[data-side="right"]{right:14px}
+body.inMatch.four .s-left,body.inMatch.four .s-right{top:56%}
 
-/* 画面が低いときは顔の枠を抑える */
-@media(max-height:620px){
-  body.inMatch:not(.four) #tachie{max-height:32dvh;min-height:84px}
-  .tcTag{font-size:9px}
+/* 列レイアウト：卓と手牌のあいだ。空のときも場所を取っておく（高さが変わると卓が跳ねる） */
+body.inMatch:not(.four) .cutin{
+  flex:1 1 auto;min-height:104px;max-height:34dvh;margin:8px 8px 0;padding:4px 6px;--cw:64px;
 }
+body.inMatch:not(.four) .cutin .card{max-height:100%}
+body.inMatch:not(.four) .cutin .bubble{margin-top:10px;max-width:none;flex:1 1 auto;font-size:14px}
