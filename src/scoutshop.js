@@ -166,13 +166,20 @@ const ScoutShop = (() => {
      ただの客と見分けが付かない——「二拍そろう」が目で判る形に
      なっているのは、この分けかたのおかげ。
   ------------------------------------------------------------ */
+  /* `hint` は「話す」で返す言いかた（§10.2）。**系統は片方しか言わない** */
   const QUIRKS = [
-    { key: 'fast',  kind: 'beat', name: '手が速い',       tell: '手が速かったのは' },
-    { key: 'slow',  kind: 'beat', name: '長考する',       tell: '長考していたのは' },
-    { key: 'still', kind: 'beat', name: '動かない',       tell: '動きが少なかったのは' },
-    { key: 'bou',   kind: 'mark', name: '立直棒が早い',   tell: '立直棒を早くから置いていたのは' },
-    { key: 'meld',  kind: 'mark', name: '鳴きが多い',     tell: '鳴きが多かったのは' },
-    { key: 'guard', kind: 'mark', name: '河が横に伸びる', tell: '河が横に伸びていたのは' },
+    { key: 'fast',  kind: 'beat', name: '手が速い',       tell: '手が速かったのは',
+      hint: '手の速い子' },
+    { key: 'slow',  kind: 'beat', name: '長考する',       tell: '長考していたのは',
+      hint: 'やたら長考する子' },
+    { key: 'still', kind: 'beat', name: '動かない',       tell: '動きが少なかったのは',
+      hint: 'じっと動かない子' },
+    { key: 'bou',   kind: 'mark', name: '立直棒が早い',   tell: '立直棒を早くから置いていたのは',
+      hint: '立直棒を早くから置く子' },
+    { key: 'meld',  kind: 'mark', name: '鳴きが多い',     tell: '鳴きが多かったのは',
+      hint: 'よく鳴く子' },
+    { key: 'guard', kind: 'mark', name: '河が横に伸びる', tell: '河が横に伸びていたのは',
+      hint: '河が横に伸びる子' },
   ];
   const QUIRK_BY_KEY = {};
   QUIRKS.forEach((q) => { QUIRK_BY_KEY[q.key] = q; });
@@ -194,6 +201,56 @@ const ScoutShop = (() => {
 
   /* ただの客に癖が付く割合。**初期値。§8 で実機を見てから決める** */
   const PLAIN_QUIRK = 0.25;
+
+  /* 癖から打ち筋を一つ引く（対局のとき、観察が効くようにするため）。
+     **写像は 20→6 なので逆は一意でない。**先頭の一つを返すだけ */
+  function styleForQuirk(q) {
+    const keys = Object.keys(STYLE_QUIRK);
+    for (let i = 0; i < keys.length; i++) if (STYLE_QUIRK[keys[i]] === q) return keys[i];
+    return null;
+  }
+
+  /* ------------------------------------------------------------
+     男に声をかけたとき返ってくるもの（`spec.md` §10.2）— A7-2
+
+     **何も起きない／話す／誘われる**の三つ。**`buildShop` で決める**——
+     乱数は建てるときに使い切り、押した瞬間には引かない（癖と同じ作法）。
+
+     いちばん大事なのは**癖が付いた男は誘ってくる**という項。
+     `PLAIN_QUIRK = 0.25` の「打てる常連はいる」（§4.3）の伏線をここで回収する
+     ——**一拍の癖は声をかける前に床の上で見えている**ので、
+     「どの男を押すか」も判断になる。
+  ------------------------------------------------------------ */
+  const INVITE_BASE = 0.15;      // 無印の男が誘ってくる見込み
+  const INVITE_QUIRK = 0.35;     // 癖が付いていれば上乗せ（＝0.50）
+  const INVITE_LOCAL = 0.20;     // 認められた度合いの上乗せ（A7-3。いまは 0）
+  const INVITE_MAX = 0.75;
+  const TALK_SHARE = 0.30;       // 誘われなかったときに「話す」になる割合
+
+  function inviteChance(hasQuirk, local) {
+    return Math.min(INVITE_MAX,
+      INVITE_BASE + (hasQuirk ? INVITE_QUIRK : 0) + INVITE_LOCAL * ((local || 0) / 100));
+  }
+  function replyFor(hasQuirk, local, rng) {
+    if (rng() < inviteChance(hasQuirk, local)) return 'invite';
+    return rng() < TALK_SHARE ? 'talk' : 'none';
+  }
+
+  /* 「話す」で返る一言（純関数）。**その日の店から作る。**
+
+     返すのは二つだけ——**雀ドルがいるかどうか**と、いるなら**癖の系統を片方。**
+     **両方言わない。**両方言うと二拍がその場で特定でき、観察が要らなくなる
+     （§10.2）。どちらの系統を言うかは席ごとに `buildShop` が決めてある */
+  function hintOf(shop, seat) {
+    const jd = (shop.seats || []).filter((s) => s.charaId != null);
+    if (!jd.length) return '「今日は、見ない顔はいないな」';
+    const side = seat && seat.hintSide === 'mark' ? 'mark' : 'beat';
+    const q = (jd[0].quirk || []).find((k) =>
+      QUIRK_BY_KEY[k] && QUIRK_BY_KEY[k].kind === side);
+    const def = q && QUIRK_BY_KEY[q];
+    if (!def) return '「一人、見ない顔がいたよ」';
+    return '「さっき、' + def.hint + 'が来てたな」';
+  }
 
   /* ------------------------------------------------------------
      男女（spec.md §4.4）— 母集団を絞るための一手
@@ -355,10 +412,19 @@ const ScoutShop = (() => {
       s.quirk = quirksFor(c.style, rng);
     }
 
+    /* --- 男には「声をかけたら何が返るか」を決めておく（§10.2） ---
+       **押した瞬間には引かない。**乱数はここで使い切る */
     /* --- 残りはただの客。**一部にだけ癖が付く**（§4.3） ---
        「癖がある＝雀ドル」にすると観察が完全情報になり、
        3回の上限も見抜く余地も意味を失う。**打てる常連はいる** */
     seats.forEach((s) => { if (!s.quirk) s.quirk = quirksFor(null, rng); });
+    /* 男だけ。**女は雀ドルか、ただの客か**という既存の二値のまま */
+    const local = ((st.local || {})[trip.pref]) | 0;
+    seats.forEach((s) => {
+      if (s.charaId != null || s.sex !== 'male') return;
+      s.reply = replyFor((s.quirk || []).length > 0, local, rng);
+      s.hintSide = rng() < 0.5 ? 'beat' : 'mark';
+    });
 
     return {
       day: -1,                      // 呼ぶ側が parlor.day を入れる（引き直しの印）
@@ -429,6 +495,8 @@ const ScoutShop = (() => {
     SHOP_TYPES, TYPE_BY_KEY, PALETTES, ANY_CHANCE, TWO_CHANCE, CALLS_PER_DAY,
     QUIRKS, QUIRK_BY_KEY, STYLE_QUIRK, BEATS, MARKS, PLAIN_QUIRK, AISHO_LINES,
     FEMALE_RATE, sexFor, aishoLine,
+    INVITE_BASE, INVITE_QUIRK, INVITE_LOCAL, INVITE_MAX, TALK_SHARE,
+    inviteChance, replyFor, hintOf, styleForQuirk,
     seeded, palOf, pickType, jandolCount, nameOf, buildShop, stateOf, seatOfGuestId,
     quirkOf, quirksFor,
   };

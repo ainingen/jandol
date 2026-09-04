@@ -418,7 +418,10 @@ const Office = (() => {
     const rng = ScoutShop.seeded(day * 7919 + (prefIdx + 1) * 613 + (trip.days | 0));
     const shop = ScoutShop.buildShop(st, trip, rng);
     shop.day = day;
-    store.set({ trip: Object.assign({}, trip, { shop }) });
+    /* **その日打った子の控えを空にする**（`scout/spec.md` §10.3）。
+       `ensureFatigue` はこの直前に走っているので、きのうぶんは足し終わっている
+       ——**別の記録を持たず、遠征と一緒に消える**ところに置くのが要点 */
+    store.set({ trip: Object.assign({}, trip, { shop, matched: [] }) });
     return true;
   }
 
@@ -772,7 +775,12 @@ const Office = (() => {
     /* **`assignFor`（一人ぶん）。**`assignOf` は全員ぶんの表を返す別物 */
     const kind = assignFor(st, c.id);
     if (kind === 'rest') return { rest: true };
-    if (kind === 'trip') return { trip: true };
+    /* 遠征。**現地で一局打った子は上乗せ**（`FATIGUE.tripMatch`。A7-2 で初めて使う）。
+       控えは `st.trip.matched`——**遠征と一緒に消えるので古びない** */
+    if (kind === 'trip') {
+      const m = (st.trip && st.trip.matched) || [];
+      return { trip: true, tripMatch: m.indexOf(c.id) >= 0 };
+    }
     if (typeof kind === 'string' && kind.indexOf('job:') === 0) return { job: true };
     /* 店。出勤している帯の数だけ溜まる */
     /* **`parlorOf` を通すこと。**`st.parlor` を直に渡すと、開店前のセーブ
@@ -1611,6 +1619,9 @@ const Office = (() => {
       if (!r) return;
       shopFound = r.found || null;
       shopTell = r.found ? tellOf(r.seat, r.found) : '';
+      /* **男に声をかけたら三つに分かれる**（`scout/spec.md` §10.2）。
+         何が返るかは `buildShop` が決めてあるので、ここでは読むだけ */
+      if (!r.found && r.seat.sex === 'male') { maleReply(r, shop); return; }
       shopNote = r.found
         ? `${r.found.name} を見つけた。名鑑に載った。　あと ${r.calls} 回`
         : `ただの客だった。　あと ${r.calls} 回`;
@@ -1626,6 +1637,123 @@ const Office = (() => {
         }
       }
       render();
+    }
+
+    /* ---------- 男に声をかけた（`scout/spec.md` §10.2・§10.3）— A7-2 ----------
+       **空振りを空振りでなくする。**三つのうち一つが返る。
+
+         none   … 「……」。回数だけ減る
+         talk   … その日の店についてのヒント。**癖の系統は片方だけ**
+         invite … 「打っていくか」。受ければ一局（§10.3）
+
+       **誰が誘いそうかは押す前に床の上で見えている**（一拍の癖）ので、
+       どの男を押すかも判断になる */
+    async function maleReply(r, shop) {
+      const seat = r.seat;
+      const left = `　あと ${r.calls} 回`;
+      if (seat.reply === 'talk') {
+        shopNote = ScoutShop.hintOf(shop, seat) + left;
+        render();
+        return;
+      }
+      if (seat.reply !== 'invite') {
+        shopNote = '「……」　こちらを見もしない。' + left;
+        render();
+        return;
+      }
+      shopNote = '「兄ちゃん、打っていくか」' + left;
+      render();
+      await inviteMatch(seat, shop, r.calls);
+    }
+
+    /* 誘いを受ける。**打つ人を選ばせる**（§10.3）。
+       代表は疲れないが段位どまり、同行者は `comp` 次第で強いが +4 疲れる。
+       **疲労と調子は既存の `tableCardOf` を通す**——新しい経路は作らない */
+    async function inviteMatch(seat, shop, callsLeft) {
+      const st0 = store.get();
+      const trip = tripOf(st0);
+      if (!trip) return;
+      const list = rosterOf(st0);
+      const mates = list.filter((c) => (trip.members || []).indexOf(c.id) >= 0);
+      const who = await pickPlayer(mates);
+      if (!who) {
+        shopNote = '「そうか、またな」　声はかけたが、打たずに離れた。　あと ' + callsLeft + ' 回';
+        render();
+        return;
+      }
+      /* 誘ってきた客。**癖から打ち筋を引く**ので、観察が対局にも効く */
+      const q = (seat.quirk || [])[0] || null;
+      const styleKey = (q && ScoutShop.styleForQuirk(q)) || 'balance';
+      const foe = { id: 9700, name: '常連', guest: true, rank: 'C',
+                    comp: 42 + ((seat.quirk || []).length ? 16 : 0), style: styleKey,
+                    pop: 0, salary: 0 };
+      const card = who.id === 0 ? playerCard(store.get()) : tableCardOf(store.get(), who);
+      const table = [card, foe];
+      for (let i = table.length; i < 4; i++) {
+        table.push(Object.assign({}, foe, { id: 9700 + i, name: '相席の客' }));
+      }
+      const rank = await playOrSimulate(table, '店の常連との一局', { length: 'ikkyoku' });
+      const mine = rank.find((x) => x.chara.id === card.id);
+      const his = rank.find((x) => x.chara.id === foe.id);
+      const won = !!(mine && his && mine.place < his.place);
+
+      /* 同行者が打ったら疲れる。**控えは `trip.matched`**（朝に `actOf` が読む） */
+      const st = store.get();
+      const t2 = tripOf(st);
+      const matched = ((t2 && t2.matched) || []).slice();
+      if (who.id !== 0 && matched.indexOf(who.id) < 0) matched.push(who.id);
+      const line = `${Geo.prefOf(t2.pref).name}の${shop.name}で、常連と一局打って`
+        + (won ? '勝った' : '負けた') + `（${who.id === 0 ? '代表' : who.name}）`;
+      store.set({ trip: Object.assign({}, t2, {
+        matched, log: (t2.log || []).concat(line),
+      }) });
+      shopNote = won
+        ? `「やるじゃないか」　常連に勝った。　あと ${callsLeft} 回`
+        : `「まだまだだな」　常連に負けた。　あと ${callsLeft} 回`;
+      render();
+    }
+
+    /* 打つ人を選ぶ札。**代表と同行者が顔で並ぶ。**押した人が打つ。
+       `null` を返したら見送り（声かけは既に使っている） */
+    function pickPlayer(mates) {
+      return new Promise((resolve) => {
+        const st = store.get();
+        const ov = document.createElement('div');
+        ov.className = 'popup';
+        const row = (c) => `<button type="button" class="ofPickBtn" data-pick="${c.id}">
+          <span class="mkFace sil"><img src="img/${c.id === 0
+            ? esc((typeof Title !== 'undefined' && Title.normalizeFace)
+                ? Title.normalizeFace(st.playerFace) : 'p01')
+            : pad3(c.id)}.webp" alt="" onerror="this.remove()"></span>
+          <span class="ofPickBody"><span class="ofPickName">${esc(c.name)}</span>
+            <span class="ofPickSub">${esc(c.note)}</span></span></button>`;
+        const me = { id: 0, name: st.playerName || '代表',
+          note: `段位 ${st.playerRank || 'D'}　疲れない` };
+        const rows = [me].concat(mates.map((c) => ({
+          id: c.id, name: c.name,
+          note: `完成度 ${c.comp}　疲労 +${FATIGUE.tripMatch}`,
+        })));
+        ov.innerHTML = `<div class="popupBox ofPickBox" role="dialog" aria-modal="true"
+            aria-label="誰が打つか">
+          <div class="popupBody">
+            <div class="ofSayName">「打っていくか」</div>
+            <p class="ofSayNote">一局だけ。<b>声をかけた回数はもう使っています。</b>
+              日は進みません。</p>
+            <div class="ofPicks">${rows.map(row).join('')}</div>
+            <div class="ofSayBtns"><button type="button" class="ofSayBtn"
+              data-pick="skip">見送る</button></div>
+          </div>
+        </div>`;
+        document.body.appendChild(ov);
+        ov.addEventListener('click', (e) => {
+          const b = e.target.closest('[data-pick]');
+          if (!b) return;
+          ov.remove();
+          if (b.dataset.pick === 'skip') { resolve(null); return; }
+          const id = +b.dataset.pick;
+          resolve(id === 0 ? me : (mates.find((c) => c.id === id) || null));
+        });
+      });
     }
 
     /* 「あの癖はこの打ち筋だった」の一言（`scout/spec.md` §4.4）。
@@ -1965,9 +2093,10 @@ const Office = (() => {
 
     /* 現地の対局。**`index.html` では実対局、単体ページでは `simulateTable`**
        （`jansou.js` の playOrSimulate と同じ作法。§7.3） */
-    async function playOrSimulate(table, title) {
+    async function playOrSimulate(table, title, opts) {
       if (typeof store.playRealMatch === 'function') {
-        const r = await store.playRealMatch(table, { tier: { name: '遠征' }, name: title });
+        const r = await store.playRealMatch(table, Object.assign(
+          { tier: { name: '遠征' }, name: title }, opts || {}));
         if (r) return r;
       }
       return simulateTable(table, STYLES);

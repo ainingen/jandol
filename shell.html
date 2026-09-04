@@ -293,6 +293,9 @@ body.inMatch #matchRoot{flex:1;min-height:0}
         title: ctx.tier.name + '　' + ctx.name,
         speed: state.matchSpeed || 520,
         showHints: state.showHints !== false,
+        /* 遠征先の常連との一局は 'ikkyoku'（scout/spec.md §10.3）。
+           渡さなければ既定の東風のまま */
+        length: ctx.length || undefined,
       }).then(function (rank) {
         document.body.classList.remove('inMatch');
         return rank;

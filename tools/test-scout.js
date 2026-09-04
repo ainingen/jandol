@@ -762,6 +762,81 @@ function fakeStore(st) {
   }
 }
 
+/* ============================================================
+   男に声をかける（A7-2。`spec.md` §10.2・§10.3）
+   ============================================================ */
+{
+  const st = { discovered: [], contracted: [], comp: {}, agency: 2 };
+  const trip = { pref: 'tokyo', purpose: 'find', days: 4, dayLeft: 4 };
+
+  /* 誘われる見込み。**癖が付いた男は誘ってくる**——§4.3 の伏線の回収 */
+  eq(ScoutShop.inviteChance(false, 0), 0.15, '無印の男は 0.15');
+  eq(ScoutShop.inviteChance(true, 0), 0.5, '癖が付いていれば 0.50');
+  ok(ScoutShop.inviteChance(true, 100) > ScoutShop.inviteChance(true, 0),
+     '認められた度合いで上がる（A7-3）');
+  ok(ScoutShop.inviteChance(true, 100) <= ScoutShop.INVITE_MAX, '上限を超えない');
+  eq(ScoutShop.INVITE_LOCAL, 0.20, 'local の上乗せは 0.20');
+
+  /* 分布。**癖の有無で倍以上ちがう**（押す前に見えているので判断になる） */
+  const count = (hasQuirk) => {
+    const rng = ScoutShop.seeded(7);
+    const o = { none: 0, talk: 0, invite: 0 };
+    for (let i = 0; i < 4000; i++) o[ScoutShop.replyFor(hasQuirk, 0, rng)] += 1;
+    return o;
+  };
+  const plain = count(false), marked = count(true);
+  ok(Math.abs(plain.invite / 4000 - 0.15) < 0.03, '無印の誘いは 15% 前後',
+     String(plain.invite / 4000));
+  ok(Math.abs(marked.invite / 4000 - 0.50) < 0.03, '癖ありの誘いは 50% 前後',
+     String(marked.invite / 4000));
+  ok(marked.invite > plain.invite * 2, '癖があると倍以上誘われる');
+  ok(plain.talk > 0 && plain.none > 0, '三つとも起きる');
+
+  /* 建てるときに決めてある（押した瞬間には引かない。癖と同じ作法） */
+  const shop = ScoutShop.buildShop(st, trip, ScoutShop.seeded(11));
+  const males = shop.seats.filter((x) => x.sex === 'male' && x.charaId == null);
+  const females = shop.seats.filter((x) => x.sex === 'female');
+  ok(males.length > 0, '男の客がいる');
+  ok(males.every((x) => ['none', 'talk', 'invite'].indexOf(x.reply) >= 0),
+     '男には返事が決めてある');
+  ok(males.every((x) => x.hintSide === 'beat' || x.hintSide === 'mark'),
+     'どちらの系統を言うかも決めてある');
+  ok(females.every((x) => x.reply == null), '女には返事を持たせない（既存の二値のまま）');
+  /* 同じ種なら同じ返事（再現する） */
+  const again = ScoutShop.buildShop(st, trip, ScoutShop.seeded(11));
+  eq(again.seats.map((x) => x.reply || '-').join(''),
+     shop.seats.map((x) => x.reply || '-').join(''), '同じ種なら返事も同じ');
+
+  /* ヒント。**癖の系統は片方だけ**——両方言うと二拍が特定できてしまう */
+  const noJd = { seats: [{ charaId: null }] };
+  ok(/見ない顔はいない/.test(ScoutShop.hintOf(noJd, { hintSide: 'beat' })),
+     '雀ドルがいない日はそう言う');
+  const withJd = { seats: [{ charaId: 1, quirk: ['slow', 'meld'] }] };
+  const hb = ScoutShop.hintOf(withJd, { hintSide: 'beat' });
+  const hm = ScoutShop.hintOf(withJd, { hintSide: 'mark' });
+  ok(/長考/.test(hb), '頭の印の側を聞けば、頭の印を言う', hb);
+  ok(/鳴く/.test(hm), '体の物の側を聞けば、体の物を言う', hm);
+  ok(!/鳴く/.test(hb) && !/長考/.test(hm), '**両方は言わない**');
+  ok(hb !== hm, '系統で中身が変わる');
+
+  /* 癖 → 打ち筋。観察が対局にも効く（誘ってきた客の打ち筋になる） */
+  ScoutShop.QUIRKS.forEach((q) => {
+    const k = ScoutShop.styleForQuirk(q.key);
+    ok(k && ScoutShop.STYLE_QUIRK[k] === q.key, q.key + ' から打ち筋が引ける');
+  });
+  ok(ScoutShop.QUIRKS.every((q) => q.hint), '癖ごとに「話す」の言いかたがある');
+
+  /* office.js 側の配線（本文を機械的に見る） */
+  const osrc = require('fs').readFileSync(require('path').join(__dirname, '../src/office.js'), 'utf8');
+  ok(/length: 'ikkyoku'/.test(osrc), '常連との対局は一局（§10.3）');
+  ok(/trip\.matched|t2\.matched|matched/.test(osrc), '打った子を trip.matched に控える');
+  ok(/tripMatch: m\.indexOf/.test(osrc), '疲労は既存の tripMatch に乗せる');
+  ok(!/dayLeft:\s*trip\.dayLeft\s*-\s*1[\s\S]{0,200}?inviteMatch/.test(osrc),
+     '対局で日数を食わない');
+  const shsrc = require('fs').readFileSync(require('path').join(__dirname, '../shell.html'), 'utf8');
+  ok(/length: ctx\.length/.test(shsrc), 'shell が対局の長さを渡す');
+}
+
 /* ============================================================ */
 console.log('通過 ' + pass + ' 件');
 if (fails.length) {

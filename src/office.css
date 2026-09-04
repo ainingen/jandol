@@ -273,6 +273,27 @@
 }
 .ofSayBtn:hover{border-color:var(--gold);color:var(--gold)}
 .ofSayBtn:focus-visible{outline:2px solid var(--gold);outline-offset:1px}
+/* 打つ人を選ぶ札（`scout/spec.md` §10.3）— A7-2。
+   代表と同行者が顔で並ぶ。380px で押せる大きさを保つ */
+.ofPickBox{max-width:360px}
+.ofPicks{display:flex;flex-direction:column;gap:6px;margin:2px 0 10px}
+.ofPickBtn{
+  display:flex;align-items:center;gap:9px;width:100%;
+  padding:6px 9px;border-radius:6px;cursor:pointer;text-align:left;
+  border:1px solid var(--gold-dim);background:rgba(255,255,255,.03);color:inherit;
+}
+.ofPickBtn:hover{border-color:var(--gold)}
+.ofPickBtn:focus-visible{outline:2px solid var(--gold);outline-offset:1px}
+/* **`.mkFace` は position:absolute を持たされているので戻す**（引き継ぎ書 §5） */
+.ofPickBtn .mkFace{
+  position:relative;inset:auto;
+  flex:none;width:38px;height:38px;border-radius:50%;overflow:hidden;background:var(--sil);
+}
+.ofPickBtn .mkFace img{width:100%;height:100%;object-fit:cover;object-position:center top}
+.ofPickBody{flex:1;min-width:0;display:flex;flex-direction:column;gap:1px}
+.ofPickName{font-family:var(--maru);font-size:13.5px;color:var(--ivory)}
+.ofPickSub{font-size:10.5px;color:var(--muted)}
+
 /* 課題の札。届いている話の中で、他の依頼と見分けが付くように */
 .ofOffer.k-quest{border-left:3px solid var(--gold-dim)}
 
