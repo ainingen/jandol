@@ -187,7 +187,8 @@ const log = (...a) => { process.stdout.write(a.join(' ') + '\n'); };
         if (!tiles.length) return null;
         const t = tiles[Math.floor(Math.random() * tiles.length)];
         t.click();
-        if (UI.pending && UI.discardMode === 'double') t.click();
+        /* 二度押しの設定（段8より前は常に二度押し）なら、同じ牌をもう一度 */
+        if (UI.pending && UI.pending.type === 'turn') t.click();
         return 'discard';
       });
       if (done) await sleep(Math.max(120, SPEED));

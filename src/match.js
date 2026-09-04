@@ -105,12 +105,16 @@ const Match = (() => {
       last.getBoundingClientRect().bottom - t.getBoundingClientRect().bottom;
 
     body.style.setProperty('--rw-fit', '1');
+    body.classList.remove('tableScroll');
     if (overflow() <= 1) { body.style.removeProperty('--rw-fit'); return; }
     for (let f = 0.94; f >= 0.48; f -= 0.06) {
       body.style.setProperty('--rw-fit', f.toFixed(2));
       if (overflow() <= 1) return;
     }
-    /* ここまで縮めても収まらない端末では、卓のスクロールで見てもらう */
+    /* ここまで縮めても収まらない端末では、卓のスクロールで見てもらう。
+       普段は overflow を切らない（牌が卓の外から飛んでくるので）。
+       スクロールが要るときだけ立てる */
+    body.classList.add('tableScroll');
   }
 
   function clampTableScroll(toTop) {
@@ -204,6 +208,11 @@ const Match = (() => {
     UI._idleKyoku = null;
     UI._sayAt = null;
     UI._tachieReady = false;      // 顔の並びは対局ごとに組み直す
+    /* 牌のノードも対局ごと。前の卓の DOM は host ごと消えているので、
+       Map だけ残っていると外れたノードを使い回そうとする */
+    UI._nodes = null;
+    UI._seq = null;
+    UI._seqKyoku = null;
     const giveBtn = host.querySelector('#giveup');
     giveBtn.addEventListener('click', async () => {
       const v = await UI.modal(
@@ -247,6 +256,7 @@ const Match = (() => {
 
     clearInterval(watch);
     document.body.style.removeProperty('--rw-fit');
+    document.body.classList.remove('tableScroll');
     window.removeEventListener('resize', onOrientationChange);
     if (screen.orientation) screen.orientation.removeEventListener('change', onOrientationChange);
     document.body.classList.remove('needRotate');

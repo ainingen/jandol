@@ -61,29 +61,164 @@ const UI = {
   /* 打牌音。同じ音が17回続くと機械音に聞こえるので、速さを毎回 ±3% 振る */
   sfxDiscard() { this.sfx('discard', { rate: 1 + (Math.random() * 2 - 1) * 0.03 }); },
 
-  /* 局が進んだかを見て、打牌・ツモ・ドラの音を鳴らす。
-     render() は何度も呼ばれるので、**前回と比べて増えたときだけ**鳴らす。
-     段3でこの差分検出は牌のノードの突き合わせに置き換わる */
+  /* ツモとドラの音。render() は何度も呼ばれるので、**前回と比べて増えたときだけ**鳴らす。
+     打牌の音は牌のノードの突き合わせ（reconcile）が「河に牌が増えた」瞬間に鳴らす
+     ——アニメーションの開始と音の頭を揃えるため（spec.md §3.5） */
   soundDiff(g) {
     const key = g.kyoku + ':' + g.honba + ':' + g.dealer;
     if (this._sndKey !== key) {
       this._sndKey = key;
-      this._sndRiver = g.players.map((p) => p.discards.length);
       this._sndDora = g.doraIndicators.length;
       this._sndDraw = null;
       return;
     }
-    let discarded = false;
-    g.players.forEach((p, i) => {
-      if (p.discards.length > this._sndRiver[i]) discarded = true;
-      this._sndRiver[i] = p.discards.length;
-    });
-    if (discarded) this.sfxDiscard();
     const draw = g.currentDraw ? g.currentDraw.seat + ':' + g.currentDraw.id : null;
     if (draw && draw !== this._sndDraw) this.sfx('draw');
     this._sndDraw = draw;
     if (g.doraIndicators.length > this._sndDora) this.sfx('dora');
     this._sndDora = g.doraIndicators.length;
+  },
+
+  /* ============================================================
+     牌のノード（spec.md §3）
+
+     手牌と四つの河だけ keyed にする。牌の id（0〜135）が鍵で、
+     Map<id, HTMLElement> にノードを持ち、描画のたびに「あるべき並び」と
+     突き合わせて、あるものは使い回し、無いものだけ作り、余ったものだけ外す。
+
+     同じノードが手牌から河へ移るので、自分の打牌は FLIP で動かせる。
+     他家の打牌は裏牌に元のノードが無いので、河に作ったノードを
+     その家の手牌のあたりから飛ばし込む。
+
+     席プレートも中央の情報も吹き出しも、今までどおり innerHTML で組み直す。
+     他家の手牌（.backs）は個体差が無いので keyed にしない。
+     ============================================================ */
+  _nodes: null,               // Map<id, HTMLElement>
+  _seq: null,                 // 前回の並び。変わったときだけ動かす
+
+  tileNode(id) {
+    if (!this._nodes) this._nodes = new Map();
+    let el = this._nodes.get(id);
+    if (!el) {
+      el = document.createElement('span');
+      el.dataset.id = String(id);
+      el.innerHTML = tileFaceSVG(kindOf(id), Engine.isRed(id));
+      this._nodes.set(id, el);
+    }
+    return el;
+  },
+
+  /* 飛んでいる最中（.moving）の印は残す。render() は飛んでいる途中にも呼ばれるので、
+     className を丸ごと書くと transition と z-index が消えて、牌が立ち絵の裏に隠れる（実際に隠れた） */
+  setTileClass(el, cls) {
+    el.className = cls + (el.classList.contains('moving') ? ' moving' : '');
+  },
+
+  /* 河。container の子を items（{id, cls}）の並びに合わせる。
+     返すのは「新しく河に入った id」——打牌の音と飛ばし込みの手掛かり */
+  reconcileRiver(container, items, used) {
+    const fresh = [];
+    items.forEach((it, i) => {
+      const el = this.tileNode(it.id);
+      used.add(it.id);
+      if (el.parentElement !== container) fresh.push(it.id);
+      this.setTileClass(el, 'tile small ' + it.cls);
+      if (container.children[i] !== el) container.insertBefore(el, container.children[i] || null);
+    });
+    while (container.children.length > items.length) container.lastChild.remove();
+    return fresh;
+  },
+
+  /* 手牌。牌ごとに .tilewrap で包む（危険度の帯を下に置くため）。
+     包みは牌の親として付いてまわり、河へ移った牌の空の包みは末尾に押し出されて外れる */
+  reconcileHand(container, items, used) {
+    items.forEach((it, i) => {
+      const el = this.tileNode(it.id);
+      used.add(it.id);
+      let w = el.parentElement;
+      if (!w || !w.classList.contains('tilewrap') || w.parentElement !== container) {
+        w = document.createElement('span');
+        w.appendChild(el);
+      }
+      w.className = 'tilewrap' + (it.drawn ? ' drawn' : '');
+      this.setTileClass(el, 'tile big ' + it.cls);
+      const bar = w.querySelector('.hintbar');
+      if (bar) bar.remove();
+      if (it.bar) w.insertAdjacentHTML('beforeend', it.bar);
+      if (container.children[i] !== w) container.insertBefore(w, container.children[i] || null);
+    });
+    while (container.children.length > items.length) container.lastChild.remove();
+  },
+
+  /* 使われなかったノードは捨てる。局をまたいで Map が育たないように */
+  pruneNodes(used) {
+    if (!this._nodes) return;
+    for (const [id, el] of this._nodes) {
+      if (used.has(id)) continue;
+      if (el.parentElement) {
+        const w = el.parentElement;
+        el.remove();
+        if (w.classList.contains('tilewrap')) w.remove();
+      }
+      this._nodes.delete(id);
+    }
+  },
+
+  get reducedMotion() {
+    if (this._rm === undefined) {
+      this._rm = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+    }
+    return this._rm;
+  },
+  /* 早送りと prefers-reduced-motion では動かさない。位置だけ即座に確定させる */
+  get animates() { return this.speed !== 0 && !this.reducedMotion; },
+
+  /* 位置と大きさの差分を逆向きに当ててから 0 へ遷移させる（FLIP）。
+     transform は .picked や河の横向きが使うので、translate / scale の個別プロパティで動かす */
+  snapRects() {
+    const m = new Map();
+    if (!this._nodes) return m;
+    for (const [id, el] of this._nodes) {
+      if (el.parentElement) m.set(id, el.getBoundingClientRect());
+    }
+    return m;
+  },
+  flip(el, from, to) {
+    const dx = (from.left + from.width / 2) - (to.left + to.width / 2);
+    const dy = (from.top + from.height / 2) - (to.top + to.height / 2);
+    const sx = to.width ? from.width / to.width : 1;
+    const sy = to.height ? from.height / to.height : 1;
+    if (Math.abs(dx) < 1 && Math.abs(dy) < 1 && Math.abs(sx - 1) < .02 && Math.abs(sy - 1) < .02) return;
+    el.style.transition = 'none';
+    el.style.translate = dx.toFixed(1) + 'px ' + dy.toFixed(1) + 'px';
+    el.style.scale = sx.toFixed(3) + ' ' + sy.toFixed(3);
+    el.classList.add('moving');
+    void el.offsetWidth;                        // ここで一度描かせる
+    el.style.transition = '';
+    el.style.translate = '0px 0px';
+    el.style.scale = '1 1';
+    /* transitionend は transform（つまみ上げの戻り）や box-shadow でも飛んでくる。
+       それで片づけると、飛んでいる途中で translate が消えて牌が瞬間移動する（実際にした）。
+       translate / scale の終わりだけを見る */
+    const done = (e) => {
+      if (e && e.target !== el) return;
+      if (e && e.propertyName !== 'translate' && e.propertyName !== 'scale') return;
+      el.classList.remove('moving');
+      el.style.translate = ''; el.style.scale = ''; el.style.transition = '';
+      el.removeEventListener('transitionend', done);
+      clearTimeout(timer);
+    };
+    el.addEventListener('transitionend', done);
+    const timer = setTimeout(() => done(), 600);   // transitionend が来ない環境の保険
+  },
+  /* 他家の打牌。その家の手牌（.backs）の中心から河へ飛ばし込む */
+  flyIn(el, fromEl) {
+    if (!fromEl) return;
+    const to = el.getBoundingClientRect();
+    const f = fromEl.getBoundingClientRect();
+    const from = { left: f.left + f.width / 2 - to.width * .35, top: f.top + f.height / 2 - to.height * .35,
+      width: to.width * .7, height: to.height * .7 };
+    this.flip(el, from, to);
   },
 
   render() {
@@ -139,38 +274,66 @@ const UI = {
     $('#left').innerHTML = oppHTML(bySeat(3), true);
     $('#right').innerHTML = oppHTML(bySeat(1), true);
 
-    // 河
-    const riverHTML = (p, side) => p.discards.map((d, i) => {
-      const last = g.lastDiscard && g.lastDiscard.seat === p.seat && i === p.discards.length - 1;
-      const t = tileHTML(d.id, 'small',
-        (d.riichi ? 'riichi ' : '') + (d.tsumogiri ? 'tsumogiri ' : '') + (last ? 'last' : ''));
-      return side ? `<span class="cell ${d.riichi ? 'riichi' : ''}">${t}</span>` : t;
-    }).join('');
-    $('#river-bottom').innerHTML = riverHTML(bySeat(0), false);
-    $('#river-right').innerHTML = riverHTML(bySeat(1), true);
-    $('#river-top').innerHTML = riverHTML(bySeat(2), false);
-    $('#river-left').innerHTML = riverHTML(bySeat(3), true);
-
-    // 自分
+    // 河と手牌（keyed。spec.md §3）
     const me = g.players[0];
     $('#melds-row').innerHTML = me.melds.map((m) => meldHTML(m, 'small')).join('');
     const drawn = g.currentDraw && g.currentDraw.seat === 0 ? g.currentDraw.id : null;
     const hand = me.hand.filter((id) => id !== drawn);
     const selectable = this.pending && this.pending.type === 'turn';
     const allowed = this.allowedDiscards();
-    const cell = (id, extra) => {
+    const handItems = hand.concat(drawn !== null ? [drawn] : []).map((id) => {
       const ok = selectable && (!allowed || allowed.has(id));
-      const picked = this._selected === id ? 'picked ' : '';
-      return tileHTML(id, 'big',
-        picked + (ok ? 'selectable ' : (selectable ? 'dim ' : '')) + (extra || ''),
-        `data-id="${id}"`) + (ok ? this.hintBar(id) : '');
-    };
-    $('#handrow').innerHTML = hand.map((id) => `<span class="tilewrap">${cell(id)}</span>`).join('')
-      + (drawn !== null ? `<span class="tilewrap drawn">${cell(drawn, 'drawn')}</span>` : '');
-
-    $('#handrow').querySelectorAll('.tile.selectable').forEach((el) => {
-      el.onclick = () => this.onTileClick(+el.dataset.id);
+      const isDrawn = id === drawn;
+      return {
+        id, drawn: isDrawn,
+        cls: (this._selected === id ? 'picked ' : '') + (ok ? 'selectable ' : (selectable ? 'dim ' : ''))
+          + (isDrawn ? 'drawn' : ''),
+        bar: ok ? this.hintBar(id) : '',
+      };
     });
+    const riverItems = (p) => p.discards.map((d, i) => {
+      const last = g.lastDiscard && g.lastDiscard.seat === p.seat && i === p.discards.length - 1;
+      return { id: d.id, cls: (d.riichi ? 'riichi ' : '') + (d.tsumogiri ? 'tsumogiri ' : '') + (last ? 'last' : '') };
+    });
+    const rivers = [
+      ['#river-bottom', bySeat(0)], ['#river-right', bySeat(1)], ['#river-top', bySeat(2)], ['#river-left', bySeat(3)],
+    ].map(([sel, p]) => ({ el: $(sel), p, items: riverItems(p) }));
+
+    /* 並びが変わったときだけ、動かす前の位置を控える。
+       毎回の描画で animation を仕掛けると画面が痙攣する */
+    const seq = handItems.map((it) => it.id).join(',') + '|' + rivers.map((r) => r.items.map((it) => it.id).join(',')).join('|');
+    const changed = seq !== this._seq;
+    const sameKyoku = this._seqKyoku === g.kyoku + ':' + g.honba + ':' + g.dealer;
+    this._seq = seq;
+    this._seqKyoku = g.kyoku + ':' + g.honba + ':' + g.dealer;
+    const before = changed && sameKyoku && this.animates ? this.snapRects() : null;
+
+    const used = new Set();
+    this.reconcileHand($('#handrow'), handItems, used);
+    const freshBySeat = rivers.map((r) => this.reconcileRiver(r.el, r.items, used));
+    this.pruneNodes(used);
+
+    /* 河に牌が増えた瞬間に鳴らす。局の頭（河が空になったところ）では鳴らない */
+    if (changed && sameKyoku && freshBySeat.some((f) => f.length)) this.sfxDiscard();
+
+    if (before) {
+      for (const [id, el] of this._nodes) {
+        if (!el.parentElement) continue;
+        const prev = before.get(id);
+        if (prev) { this.flip(el, prev, el.getBoundingClientRect()); continue; }
+        /* 元のノードが無い＝他家の打牌。その家の手牌から飛ばし込む */
+        const seat = freshBySeat.findIndex((f) => f.includes(id));
+        if (seat > 0) this.flyIn(el, $(['#river-bottom', '#right', '#top', '#left'][seat] + ' .backs'));
+      }
+    }
+
+    const handrow = $('#handrow');
+    if (!handrow.onclick) {
+      handrow.onclick = (e) => {
+        const t = e.target.closest('.tile.selectable');
+        if (t) this.onTileClick(+t.dataset.id);
+      };
+    }
     this.renderTachie();
     this.renderHintText();
   },
@@ -233,6 +396,7 @@ const UI = {
 
   onTileClick(id) {
     if (!this.pending || this.pending.type !== 'turn') return;
+    if (!this.game.players[0].hand.includes(id)) return;     // 河の牌は押せない
     const allowed = this.allowedDiscards();
     if (allowed && !allowed.has(id)) return;
     if (this._selected !== id) {      // 一度目は選ぶだけ

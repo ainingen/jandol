@@ -21,7 +21,6 @@ body.inMatch{
 }
 body.inMatch #handrow{gap:1px}
 body.inMatch #handrow .drawn{margin-left:5px}
-body.inMatch #table{overflow:hidden}
 /* 横持ちは高さが足りない。河が伸びると卓が縦に膨らんで手牌が画面外に出るので、
    牌は高さで頭打ちにし、河は思い切って小さくする */
 @media(orientation:landscape){
@@ -30,7 +29,7 @@ body.inMatch #table{overflow:hidden}
     --rw:clamp(10px,1.55vw,17px);
   }
   body.inMatch #app{height:100dvh;min-height:0;padding:4px}
-  body.inMatch #table{min-height:0;overflow:hidden;padding:4px;border-radius:10px}
+  body.inMatch #table{min-height:0;padding:4px;border-radius:10px}
   body.inMatch #info{min-width:92px;padding:5px 9px;font-size:10.5px;line-height:1.4}
   body.inMatch #info .kyoku{font-size:16px}
   body.inMatch #myarea{padding:3px 2px 1px}
@@ -72,6 +71,18 @@ body.inMatch #table{overflow:hidden}
 
 body.inMatch #handrow{min-height:calc(var(--tw)*1.42)}
 body.inMatch #myarea{padding:8px 2px 4px}
+
+/* ---------- 牌の移動（spec.md §3） ----------
+   FLIP と飛ばし込みは translate / scale の個別プロパティで動かす。
+   transform は .picked と河の横向きが使うので触らない。
+   .selectable の transition:transform を消さないよう、両方を並べる */
+body.inMatch .tile.moving{
+  transition:translate .24s cubic-bezier(.2,.8,.3,1),scale .24s cubic-bezier(.2,.8,.3,1),transform .12s;
+  z-index:12;
+}
+@media(prefers-reduced-motion:reduce){
+  body.inMatch .tile.moving{transition:none}
+}
 
 /* つまみ上げたときの見え方も大きく */
 body.inMatch .tile.picked{
@@ -198,7 +209,7 @@ body.inMatch.needRotate #rotateHint{display:flex}
    ============================================================ */
 body.inMatch #table{
   display:flex;flex-direction:column;justify-content:flex-start;
-  gap:0;padding:8px 10px;overflow:hidden;
+  gap:0;padding:8px 10px;
 }
 body.inMatch #center{display:contents}
 
@@ -290,8 +301,12 @@ body.inMatch #river-bottom{padding-left:0;border-bottom:0}
 }
 
 /* 河が埋まって鳴きが入ると、詰めても収まらない端末があり得る。
-   隠すのではなくスクロールできるようにして、捨て牌が消えないようにする */
-body.inMatch #table{overflow-y:auto;overflow-x:hidden;scrollbar-width:thin}
+   隠すのではなくスクロールできるようにして、捨て牌が消えないようにする。
+   ただし普段は overflow を切らない——自分の打牌は手牌（#table の外）から
+   河へ飛ぶので、切ると飛んでいる途中が見えない（spec.md §3・§5.1）。
+   fitTable() が「縮めても収まらない」と判断したときだけ tableScroll を立てる */
+body.inMatch #table{overflow:visible}
+body.inMatch.tableScroll #table{overflow-y:auto;overflow-x:hidden;scrollbar-width:thin}
 body.inMatch #table::-webkit-scrollbar{width:4px}
 body.inMatch #table::-webkit-scrollbar-thumb{
   background:rgba(201,162,74,.5);border-radius:2px;
