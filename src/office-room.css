@@ -35,6 +35,16 @@
 }
 .ofRoomHit:active{background:rgba(217,180,94,.18)}
 .ofRoomHit:focus-visible{outline:2px solid var(--gold);outline-offset:-2px}
+/* 夜は顔も沈める。**膜は SVG が描くので、当たり層の写真には掛からない**
+   ——掛けないと顔だけが煌々と浮いて、部屋から浮き上がる（実際に浮いた） */
+.ofRoom.night .jnFlHead img{filter:brightness(.66) saturate(.85)}
+.ofRoom.night .jnFlHead{border-color:rgba(217,180,94,.55)}
+
+/* 人の当たり。頭から足元まで。**押したら名簿のその行へ飛ぶ** */
+.ofRoomMate{border-radius:50% 50% 4px 4px}
+/* 部屋から飛んできた行。**一度だけ光る**（開き直したら消える） */
+.ofSheetBody .ofMate.lit{border-color:var(--gold);background:rgba(217,180,94,.10)}
+
 /* 押せる物の札。飾りには付けない（札の有無＝押せるかどうか） */
 .ofRoomTag{pointer-events:none;z-index:2;font-size:9.5px;padding:0 5px;background:rgba(36,16,40,.92)}
 

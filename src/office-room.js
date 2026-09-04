@@ -46,6 +46,53 @@ const OfficeRoom = (() => {
   /* 押せる物どうしの当たりの間隔（floor px） */
   const HIT_GAP = 4;
 
+  /* ---------- 人の立ち位置（room.md §10 第四段）。純関数 ----------
+     **事務所に女の子がいなければ、それは事務所ではなく管理画面になる。**
+
+     出勤の子は**扉の脇**、休みの子は**ソファ**。遠征・依頼の子は**いない**
+     （不在そのものが絵になる）。机と扉のあいだの床は、ここに立たせるために
+     空けてあった（§2.2）。
+
+     並びは**扉に近いほうから左右交互**。左右に振るのは、片側だけ伸びると
+     「行列」に見えて、事務所ではなく順番待ちになるため。
+     `[x, y]` は体（9×7）の左上。頭（11px）はその上に乗る */
+  const DUTY_SPOTS = [
+    /* 前列は片側4人まで。**5人目からは後列**——片側5人並ぶと
+       「行列」に見えて、集合写真ではなく順番待ちになる（14人の絵で見た） */
+    [64, 134], [118, 134], [52, 134], [130, 134], [40, 134], [142, 134], [28, 134], [154, 134],
+    [58, 118], [134, 118], [46, 118], [146, 118], [34, 118], [158, 118], [22, 118],
+    [16, 134], [166, 134],
+  ];
+  /* ソファ（x140〜164・y62〜86）。座るのは二人まで、あとは脇に立つ */
+  const REST_SPOTS = [
+    [141, 68, true], [153, 68, true], [168, 78, false], [131, 74, false],
+  ];
+
+  /* 何人まで部屋に出すか（§10 第四段の実測）。
+     超えたぶんは出さず、下の帯に「ほか N 人」と出す——
+     **描かないより、いないことにするほうが嘘になる**ので、数は必ず言う */
+  const MAX_DUTY = DUTY_SPOTS.length;
+  const MAX_REST = REST_SPOTS.length;
+
+  /* 人 → 立ち位置。純関数。**並びは id 順で固定**（毎朝入れ替わると、
+     誰がどこにいるかを覚えられない。雀エイトの「同点は id で固定」と同じ話） */
+  function spotsFor(people) {
+    const out = [];
+    let d = 0, r = 0;
+    (people || []).forEach((p) => {
+      if (p.where === 'rest') {
+        if (r >= REST_SPOTS.length) { out.push({ id: p.id, where: p.where, over: true }); return; }
+        const s = REST_SPOTS[r++];
+        out.push({ id: p.id, where: 'rest', x: s[0], y: s[1], sit: s[2], over: false });
+      } else {
+        if (d >= DUTY_SPOTS.length) { out.push({ id: p.id, where: p.where, over: true }); return; }
+        const s = DUTY_SPOTS[d++];
+        out.push({ id: p.id, where: 'duty', x: s[0], y: s[1], sit: false, over: false });
+      }
+    });
+    return out;
+  }
+
   /* ---------- 見取り図（room.md §2.2）。純関数 ----------
      tap … 押したときの鍵。無ければ飾り（当たりを持たない）。
      **タイムカードは置かない。**「今日を始める」は下の帯にあり、部屋の中に
@@ -76,10 +123,19 @@ const OfficeRoom = (() => {
   function roomView(st, ctx) {
     st = st || {}; ctx = ctx || {};
     const parlor = st.parlor || {};
+    /* 部屋にいる人（第四段）。**誰がいるかは office.js が決める**
+       （`Office.roomPeopleOf`。`assign` の解釈は向こうが持っている）。
+       ここがやるのは**どこに立つか**だけ */
+    const people = spotsFor(ctx.people || []);
     return {
       night: !!ctx.night,
       open: !!parlor.open,
       trip: !!(st.trip && st.trip.dayLeft > 0),
+      people,
+      /* 出しきれなかった人数。下の帯に出す */
+      over: people.filter((p) => p.over).length,
+      /* 誰かが出ている（遠征・依頼）。扉の脇に鞄を置く印になる */
+      away: !!ctx.away,
     };
   }
 
@@ -230,6 +286,40 @@ const OfficeRoom = (() => {
     g.appendChild(rect(it.x + 5, it.y - 6, it.w - 10, 3, view.open ? PAL.neonPink : PAL.closed));
   }
 
+  /* ---------- 人（第四段） ----------
+     **雀荘で制服を着て歩いている、あの体そのもの**（`STAFF_BODY`）。
+     同じスプライトが上の階に立っているのが、地続きのいちばん強い形。
+     顔は写真の丸（`.jnFlHead`）を当たり層に置く——雀荘のフロアと同じ作り。
+
+     **体は `<use>` で使い回す。**14人ぶんを毎回 rect で描くと400枚を超える */
+  function bodyDef(defs) {
+    const g = el('g', { id: 'ofr-body' });
+    F.gridRects(F.STAFF_BODY, F.staffColor).forEach((r) => g.appendChild(r));
+    defs.appendChild(g);
+  }
+  function drawPeople(g, view) {
+    (view.people || []).forEach((p) => {
+      if (p.over) return;
+      /* 足元の影。**座っている子には敷かない**（浮いて見える） */
+      if (!p.sit) {
+        g.appendChild(rect(p.x + 1, p.y + 7, 7, 1, PAL.shadow));
+        g.appendChild(rect(p.x, p.y + 8, 9, 1, PAL.shadow));
+      }
+      g.appendChild(el('use', { href: '#ofr-body', x: p.x, y: p.y }));
+    });
+  }
+
+  /* 出ている子がいる印（遠征・依頼）。**扉の脇に鞄。**
+     不在は絵にならない——誰も立っていない部屋は「休みが多い日」と
+     見分けが付かないので、物のほうで言う */
+  function drawBag(g) {
+    const x = 74, y = 150;
+    g.appendChild(rect(x, y, 10, 8, PAL.ink));
+    g.appendChild(rect(x + 1, y + 1, 8, 6, PAL.tableWood));
+    g.appendChild(rect(x + 1, y + 3, 8, 1, PAL.plankGrain));
+    g.appendChild(rect(x + 3, y - 2, 4, 2, PAL.ink));
+  }
+
   /* 夜の膜と机のランプ（room.md §6）。雀荘の drawLight の夜と同じ手 */
   function drawNight(g, items) {
     g.appendChild(el('rect', { x: 0, y: 0, width: W, height: H, fill: PAL.night, opacity: 0.42 }));
@@ -247,6 +337,9 @@ const OfficeRoom = (() => {
   /* ---------- 一枚描く ---------- */
   function drawRoom(svg, view) {
     while (svg.firstChild) svg.removeChild(svg.firstChild);
+    const defs = el('defs', {});
+    svg.appendChild(defs);
+    bodyDef(defs);
     const g = el('g', { 'shape-rendering': 'crispEdges' });
     svg.appendChild(g);
     const items = layout();
@@ -273,6 +366,9 @@ const OfficeRoom = (() => {
       Object.assign({ id: 1, kind: 'sofa' }, toCell(sofa)),
       Object.assign({ id: 2, kind: 'plant' }, toCell(plant)),
     ] }, { interior: 1 }, PAL);
+    /* 人は物の**あと**。机やソファの手前に立つ */
+    if (view.away) drawBag(g);
+    drawPeople(g, view);
     if (view.night) drawNight(g, items);
   }
 
@@ -362,6 +458,32 @@ const OfficeRoom = (() => {
           ui.appendChild(t);
         }
       });
+      /* 人の頭（写真の丸）と当たり。**雀荘のフロアと同じ `.jnFlHead`**。
+         顔が分かる必要はない——誰かがそこにいることが伝わればよく、
+         誰かは押せば分かる（名簿のその行へ飛ぶ） */
+      const d = Math.round(11 * scale);
+      (view.people || []).forEach((p) => {
+        if (p.over) return;
+        const q = floorToScreen(p.x + 4.5, p.y - 1);
+        const head = document.createElement('div');
+        head.className = 'jnFlHead';
+        head.style.left = Math.round(q.x - d / 2) + 'px';
+        head.style.top = Math.round(q.y - d) + 'px';
+        head.style.width = head.style.height = d + 'px';
+        head.innerHTML = '<img src="img/' + String(p.id).padStart(3, '0') + '.webp" alt="" onerror="this.remove()">';
+        ui.appendChild(head);
+        /* 当たりは頭から足元まで。**体だけだと 9×7 で押せない** */
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'ofRoomHit ofRoomMate';
+        b.dataset.mate = p.id;
+        b.setAttribute('aria-label', '所属の子');
+        const top = floorToScreen(p.x - 1, p.y - 12);
+        b.style.left = top.x + 'px'; b.style.top = top.y + 'px';
+        b.style.width = (11 * scale) + 'px'; b.style.height = (20 * scale) + 'px';
+        b.addEventListener('click', () => { if (handlers.mate) handlers.mate(p.id); });
+        hits.appendChild(b);
+      });
     }
 
     function render(v) {
@@ -407,7 +529,8 @@ const OfficeRoom = (() => {
     };
   }
 
-  return { mount, layout, hitOf, roomView, TAGS, SAFE, HIT_MIN, HIT_GAP, W, H };
+  return { mount, layout, hitOf, roomView, spotsFor, TAGS, SAFE, HIT_MIN, HIT_GAP,
+           DUTY_SPOTS, REST_SPOTS, MAX_DUTY, MAX_REST, W, H };
 })();
 
 if (typeof module !== 'undefined') {

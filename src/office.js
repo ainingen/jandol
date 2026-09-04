@@ -156,6 +156,34 @@ const Office = (() => {
   }
 
   /* 配置を書く。知らないキーは残す（§10） */
+  /* 部屋にいる人（`room.md` §10 第四段）。**誰がいるかはここが決める**——
+     `assign` の解釈は office.js が持っているので、`office-room.js` には
+     「どこに立つか」だけをやらせる。
+
+     出勤（`parlor`）は扉の脇、休み（`rest`）はソファ、
+     **遠征・依頼の子は部屋にいない**（不在そのものが絵になる）。
+     並びは `rosterOf` の順＝id 順で固定。毎朝入れ替わると誰がどこにいるか
+     覚えられない（雀エイトの「同点は id で固定」と同じ話） */
+  function roomPeopleOf(st) {
+    const assign = assignOf(st);
+    const out = [];
+    rosterOf(st).forEach((c) => {
+      const k = assign[c.id];
+      if (k === 'trip' || k.indexOf('job:') === 0) return;
+      out.push({ id: c.id, name: c.name, where: k === 'rest' ? 'rest' : 'duty' });
+    });
+    return out;
+  }
+
+  /* 部屋から出ている人がいるか（扉の脇の鞄） */
+  function anyAwayOf(st) {
+    const assign = assignOf(st);
+    return rosterOf(st).some((c) => {
+      const k = assign[c.id];
+      return k === 'trip' || k.indexOf('job:') === 0;
+    });
+  }
+
   function setAssign(store, id, kind) {
     const st = store.get();
     store.set({ assign: Object.assign({}, st.assign || {}, { [id]: kind }) });
@@ -801,6 +829,7 @@ const Office = (() => {
     let sheet = null;          // null | 'roster' | 'board' | 'mail' | 'eight' | 'door' | 'report'
     let sheetScroll = 0;       // 描き直しても名簿の位置を保つ
     let reportShown = false;   // 夜に日報を一度は開いた（§6）
+    let mateFocus = null;      // 部屋で押された子。名簿を開いたらその行へ飛ぶ
 
     /* 朝に一度だけやること。描き直しても増えない */
     function morningPrep() {
@@ -868,7 +897,7 @@ const Office = (() => {
           ${note ? `<span class="ofMateWarn">${esc(note)}</span>` : ''}`;
 
         return `
-        <div class="ofMate${at ? '' : ' off'}">
+        <div class="ofMate${at ? '' : ' off'}" data-mate-row="${c.id}">
           <span class="mkFace sil"><img src="img/${pad3(c.id)}.webp" alt="" loading="lazy"
             onerror="this.remove()"></span>
           <span class="ofMateBody">
@@ -1020,6 +1049,16 @@ const Office = (() => {
         </div>`;
       const bodyEl = host.querySelector('.ofSheetBody');
       bodyEl.scrollTop = sheetScroll;
+      /* 部屋で押した子の行へ飛ぶ。**一度だけ**（閉じるまで覚えない） */
+      if (mateFocus != null) {
+        const row = bodyEl.querySelector('[data-mate-row="' + mateFocus + '"]');
+        if (row) {
+          bodyEl.scrollTop = Math.max(0, row.offsetTop - bodyEl.offsetTop - 8);
+          sheetScroll = bodyEl.scrollTop;
+          row.classList.add('lit');
+        }
+        mateFocus = null;
+      }
       bodyEl.addEventListener('scroll', () => { sheetScroll = bodyEl.scrollTop; });
       const close = () => { sheet = null; sheetScroll = 0; renderSheet(); };
       host.querySelector('.ofSheetDim').addEventListener('click', close);
@@ -1115,10 +1154,14 @@ const Office = (() => {
           <p class="ofNote">まだ誰も所属していません。チーム編成から始めてください。</p>`;
       }
       if (open) {
+        /* 部屋に出しきれなかった人数は、必ず数で言う（§10 第四段）。
+           **描かないのと、いないことにするのは違う** */
+        const over = OfficeRoom.roomView(st, { people: roomPeopleOf(st) }).over;
         return `<button type="button" class="ofRunBtn" id="ofRun" ${canRun ? '' : 'disabled'}>
             今日を始める</button>
           <p class="ofNote">${day + 1}日目の営業に降ります。
-            出勤は ${onDuty.length} 人。設備は扉から雀荘へ。</p>`;
+            出勤は ${onDuty.length} 人。設備は扉から雀荘へ。${
+            over ? `<br>部屋に入りきらない ${over} 人は名簿から。` : ''}</p>`;
       }
       return `<button type="button" class="ofRunBtn" id="ofRun">今日を始める</button>
         <p class="ofNote">まだ店がありません。今日は営業しない一日になりますが、
@@ -1169,13 +1212,19 @@ const Office = (() => {
         title: nameOf(st),
         sub: topOf(st, nightView ? `${last ? last.day : day}日目の夜` : `${day + 1}日目の朝`),
       });
-      roomCtl.render(OfficeRoom.roomView(st, { night: nightView }));
+      roomCtl.render(OfficeRoom.roomView(st, {
+        night: nightView, people: roomPeopleOf(st), away: anyAwayOf(st),
+      }));
       roomCtl.idle();
       roomCtl.on('desk', () => openSheet('roster'));
       roomCtl.on('board', () => openSheet('board'));
       roomCtl.on('mail', () => openSheet('mail'));
       roomCtl.on('eight', () => openSheet('eight'));
       roomCtl.on('door', () => openSheet('door'));
+      /* 人を押したら名簿を開いて、その子の行へ飛ぶ（§10 第四段）。
+         **顔が分かる必要はない**——誰かがそこにいることが絵で伝わって、
+         誰かは押せば分かる、という分担 */
+      roomCtl.on('mate', (id) => { mateFocus = id; openSheet('roster'); });
       roomCtl.band.id = 'ofBand';
     }
 
@@ -1939,6 +1988,7 @@ const Office = (() => {
 
   return { mount, defaultName, nameOf, prefOf, rosterOf, prefPickerHtml, bindPicker, NAME_MAX,
            ASSIGN_KINDS, assignFor, assignOf, parlorRoster, setAssign, fatigueOf, condOf,
+           roomPeopleOf, anyAwayOf,
            planTrip, deputyOf, tripOf, tripStart, regionOfPref,
            fireOffers, dismissOffer, acceptOffer, dropQuest, popOf, idolResult,
            ensureShop, callOn, negotiate, favorGain, addFavor, FAVOR_GAIN,

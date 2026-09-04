@@ -1277,6 +1277,69 @@ function eq(a, b, name) {
   ok(!R.roomView({ trip: { dayLeft: 0 } }, {}).trip, '残り0日の遠征は遠征中ではない');
   ok(!R.roomView(null, null).night, 'null でも落ちない');
 
+  /* ---------- 人（第四段） ---------- */
+  {
+    const P = (n, where) => Array.from({ length: n }, (_, i) => ({ id: i + 1, where }));
+    const all = R.DUTY_SPOTS.concat(R.REST_SPOTS.map((s) => [s[0], s[1]]));
+    /* 立ち位置そのもの */
+    ok(R.DUTY_SPOTS.length >= 14, '出勤は14人ぶんの立ち位置がある');
+    eq(new Set(all.map((s) => s[0] + ',' + s[1])).size, all.length, '立ち位置が重なっていない');
+    all.forEach((s) => {
+      ok(s[0] >= R.SAFE.x0 && s[0] + 9 <= R.SAFE.x1, '立ち位置が x 10〜190 の内側: ' + s);
+      ok(s[1] + 7 <= R.H, '立ち位置が床に収まる: ' + s);
+      ok(s[1] >= JansouFloor.CARPET_Y, '立ち位置が床の上: ' + s);
+    });
+    /* 扉（x88〜112・y138〜163）の上に人を置かない */
+    const door = items.find((it) => it.key === 'door');
+    all.forEach((s) => {
+      const hit = s[0] < door.x + door.w && door.x < s[0] + 9 && s[1] < door.y + door.h && door.y < s[1] + 7;
+      ok(!hit, '扉の上に立っていない: ' + s);
+    });
+    /* 前列は片側4人まで（5人目から後列）。行列に見せないため */
+    const front = R.DUTY_SPOTS.slice(0, 8);
+    ok(front.every((s) => s[1] === R.DUTY_SPOTS[0][1]), '先の8人は同じ列');
+    eq(front.filter((s) => s[0] < door.x).length, 4, '前列は左に4人');
+    eq(front.filter((s) => s[0] > door.x).length, 4, '前列は右に4人');
+    ok(R.DUTY_SPOTS[8][1] !== R.DUTY_SPOTS[0][1], '9人目は別の列（後列）');
+
+    /* spotsFor */
+    const s14 = R.spotsFor(P(11, 'duty').concat(P(3, 'rest')));
+    eq(s14.length, 14, '14人ぶん返る');
+    eq(s14.filter((p) => p.over).length, 0, '14人なら全員出る');
+    eq(s14.filter((p) => p.where === 'rest' && p.sit).length, 2, 'ソファに座るのは二人まで');
+    eq(s14[0].x, R.DUTY_SPOTS[0][0], '出勤の一人目は扉の脇');
+    eq(s14[11].x, R.REST_SPOTS[0][0], '休みの一人目はソファ');
+    /* 溢れたら over。**描かないのと、いないことにするのは違う** */
+    const over = R.spotsFor(P(R.MAX_DUTY + 3, 'duty'));
+    eq(over.filter((p) => p.over).length, 3, '入りきらないぶんに印が付く');
+    ok(over.filter((p) => !p.over).every((p) => p.x != null), '出るぶんには位置がある');
+    eq(R.spotsFor(null).length, 0, '空でも落ちない');
+    /* 同じ顔ぶれなら同じ位置（毎朝入れ替わらない） */
+    eq(JSON.stringify(R.spotsFor(P(9, 'duty'))), JSON.stringify(R.spotsFor(P(9, 'duty'))),
+       '同じ顔ぶれなら並びが揺れない');
+
+    /* roomView が人を通す */
+    const rv = R.roomView({}, { people: P(2, 'duty'), away: true });
+    eq(rv.people.length, 2, 'roomView が人を返す');
+    eq(rv.over, 0, '溢れていない');
+    ok(rv.away, '出ている子がいる印');
+    eq(R.roomView({}, {}).people.length, 0, '人を渡さなければ誰もいない');
+
+    /* Office 側：誰が部屋にいるか。**assign の解釈は office.js が持つ** */
+    const roster = JANDOLS.slice(0, 4);
+    const st = { contracted: roster.map((c) => c.id),
+      assign: { [roster[0].id]: 'rest', [roster[1].id]: 'trip', [roster[2].id]: 'job:x' },
+      trip: { pref: 'tokyo', dayLeft: 2, members: [roster[1].id] },
+      offerAccepted: ['x'] };
+    const who = Office.roomPeopleOf(st);
+    eq(who.length, 2, '遠征・依頼の子は部屋にいない');
+    eq(who[0].where, 'rest', '休みはソファ');
+    eq(who[1].where, 'duty', '既定は出勤');
+    ok(Office.anyAwayOf(st), '出ている子がいる');
+    ok(!Office.anyAwayOf({ contracted: roster.map((c) => c.id) }), '全員いれば鞄は出ない');
+    eq(Office.roomPeopleOf({}).length, 0, '所属ゼロでも落ちない');
+  }
+
   /* **部屋の下に一覧を続けない**（room.md §0・§12）。
      `renderMorning` 〜 `renderTrip` に節の見出し（ofSecT）が残っていないこと。
      一つでも続けたら縦並びに戻るので、機械で止める */
