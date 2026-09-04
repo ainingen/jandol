@@ -54,6 +54,8 @@ const UI = {
     if (!g) return;
     this._maxThreat = Math.max(0, ...g.players.slice(1).map((o) => AI.threatLevel(g, o)));
     const bySeat = (r) => g.players[r % 4];
+    /* #info のテンプレートより前に置くこと。後ろに置くと TDZ で落ちる */
+    const KAZE_CH = ['東', '南', '西', '北'];
 
     // 中央情報
     const kyokuLabel = `${KAZE[g.bakaze - 27]}${((g.kyoku - 1) % 4) + 1}局`;
@@ -70,12 +72,12 @@ const UI = {
         return `<div class="${i === 0 ? 'me' : ''} ${i === g.dealer ? 'dealer-dot' : ''}">
           ${i === 0 && p.face ? `<span class="oppFace"><img src="${esc(p.face)}" alt=""
             onerror="this.remove()"></span>` : ''}
+          ${i === 0 ? `<span class="oppKaze">${KAZE_CH[p.jikaze - 27] || ''}</span>` : ''}
           ${esc(p.name)} <b>${p.score}</b></div>`;
       }).join('')}</div>`;
 
     // 対局者
     const c = g.cheat;
-    const KAZE_CH = ['東', '南', '西', '北'];
     const oppHTML = (p, vert) => `
       <div class="opp ${vert ? 'vert' : ''}">
         <div class="oppName">

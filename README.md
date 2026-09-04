@@ -265,8 +265,11 @@ src/debug.js        その中身。build.py は読まない（配布から外す
 大会で自分の卓に当たると `Match.play()` が呼ばれ、卓のDOMを組んで `Game` を走らせる。
 終わると卓を片付けて着順を `taikai.js` に返す。
 
-- **人間は必ず東家（seat 0）**。`game.js` と `ui.js` がそれを前提にしているので、
-  `Match.play` が席順を回してプレイヤーを先頭に持ってくる
+- **人間は必ず seat 0**。`game.js` と `ui.js` がそれを前提にしているので、
+  `Match.play` が席順を回してプレイヤーを先頭に持ってくる。
+  **起家は毎回ランダム**（`Game` が振る。`opts.startDealer` で固定できる）。
+  以前は `dealer = 0` 固定で、プレイヤーが必ず東家から始まっていた
+  （`docs/design/match/spec.md` §1）
 - **卓は `#view` の外（`#matchRoot`）に置く。**`ui.js` は `document` 直下のidを見るため
 - 「自動で処理」にすると `playRealMatch` が何も返さず、`taikai.js` が数値処理に落とす
 
