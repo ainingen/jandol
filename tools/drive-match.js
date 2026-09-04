@@ -172,7 +172,8 @@ const log = (...a) => { process.stdout.write(a.join(' ') + '\n'); };
     }
 
     if (!shots.call && st.melds.some((n) => n > 0)) { await shot('call'); shots.call = true; }
-    if (!shots.late && st.discards.some((n) => n >= 13)) { await shot('late'); shots.late = true; }
+    /* 河が3段に伸びた終盤（§4.6）。結果のオーバーレイが被っていない瞬間を撮る */
+    if (!shots.late && st.discards.some((n) => n >= 13) && !st.overlay) { await shot('late'); shots.late = true; }
 
     if (st.next) { await page.click('#overlay.show #next').catch(() => {}); await sleep(120); continue; }
     if (st.modal) { await page.click('#overlay.show [data-v]').catch(() => {}); await sleep(120); continue; }

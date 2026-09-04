@@ -22,21 +22,35 @@ const Match = (() => {
   const esc = (s) => String(s).replace(/[&<>"']/g,
     (m) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m]));
 
-  /* ui.js が触るidを全部そろえた卓。style.css の指定に合わせてある */
+  /* ui.js が触るidを全部そろえた卓（docs/design/match/spec.md §4）。
+
+     #felt が卓面。四人卓（body.four）では rotateX で寝かせ、河と他家の手牌は
+     その中に置く。河は .rslot（中心に置いたゼロサイズの点）を回して外へ押し出し、
+     そこから外向きに伸ばす——端（left/right）で決めると回転前の箱に効いて、
+     左右の家だけ内側へ引き込まれる（§4.3）。data-angle は ui.js が FLIP の向きを
+     卓の座標に直すために読む。
+     席プレート（#plate-*）は卓面の外。列レイアウト（縦持ち）では
+     #felt / #center / .rslot を display:contents にして、同じ DOM を格子に並べ直す */
   const TABLE_HTML = `
     <div id="app">
       <button type="button" id="giveup">おまかせ</button>
       <div id="table">
-        <div id="top" class="opp"></div>
-        <div id="left" class="opp vert"></div>
-        <div id="right" class="opp vert"></div>
-        <div id="center">
-          <div id="river-top" class="river"></div>
-          <div id="river-left" class="river side"></div>
-          <div id="info"></div>
-          <div id="river-right" class="river side"></div>
-          <div id="river-bottom" class="river"></div>
+        <div id="felt">
+          <div id="top" class="opp" data-angle="180"></div>
+          <div id="left" class="opp vert" data-angle="90"></div>
+          <div id="right" class="opp vert" data-angle="-90"></div>
+          <div id="center">
+            <div class="rslot rs-top" data-angle="180"><div id="river-top" class="river"></div></div>
+            <div class="rslot rs-left" data-angle="90"><div id="river-left" class="river side"></div></div>
+            <div id="info"></div>
+            <div class="rslot rs-right" data-angle="-90"><div id="river-right" class="river side"></div></div>
+            <div class="rslot rs-bottom" data-angle="0"><div id="river-bottom" class="river"></div></div>
+          </div>
         </div>
+        <div id="plate-top" class="seat s-top"></div>
+        <div id="plate-left" class="seat s-left"></div>
+        <div id="plate-right" class="seat s-right"></div>
+        <div id="plate-bottom" class="seat s-bottom mine"></div>
       </div>
       <div id="tachie" aria-hidden="true">
         <div class="tcRow"></div>
@@ -81,8 +95,42 @@ const Match = (() => {
      出したくなったら needRotate を付ける条件を戻すだけでよい */
   function updateRotate() {
     document.body.classList.remove('needRotate');
+    /* 横持ちなら四人卓（body.four）、縦持ちなら列レイアウト（§4・§7.4）。
+       media query ではなく class にしてあるのは、段7の回転表示（縦持ちのまま
+       ラッパーを回す）でも同じ CSS を使うため */
+    document.body.classList.toggle('four', !isPortrait());
     fitTable();
     clampTableScroll();
+  }
+
+  /* 四人卓の辺長。画面の高さから手牌ぶんを引いた残りに収まる正方形（§4.2）。
+     rotateX で寝かせるので、見た目の高さは辺長より短い。
+     CSS だけでは「回した後の高さ」が測れないので、候補を入れて測って詰める。
+     上端（対面の手牌）が切れないこと、上のプレートと重ならないことを見る */
+  function fitFour() {
+    const t = document.getElementById('table');
+    const felt = document.getElementById('felt');
+    const body = document.body;
+    if (!t || !felt) return;
+    const W = t.clientWidth, H = t.clientHeight;
+    if (!W || !H) return;
+    /* 上のプレートは卓面の遠い縁に少し掛かってよい（モックがそうなっている）。
+       掛かってはいけないのは対面の手牌のほうで、それは縁より内側にある */
+    const plateTop = document.getElementById('plate-top');
+    const topPad = plateTop ? Math.max(0, plateTop.offsetTop + plateTop.offsetHeight - 10) : 36;
+    const botPad = 4;
+    const maxW = W - 24;
+    let side = Math.min(maxW, H * 1.3);
+    for (let i = 0; i < 24; i++) {
+      body.style.setProperty('--side', Math.round(side) + 'px');
+      const r = felt.getBoundingClientRect();
+      const tr = t.getBoundingClientRect();
+      const okTop = r.top >= tr.top + topPad;
+      const okBottom = r.bottom <= tr.bottom - botPad;
+      const okWide = r.width <= maxW;
+      if (okTop && okBottom && okWide) break;
+      side *= 0.95;
+    }
   }
 
   /* 向きが変わると卓の中身の高さが変わる。
@@ -98,6 +146,13 @@ const Match = (() => {
     const last = document.getElementById('river-bottom');
     if (!t || !last) return;
     const body = document.body;
+    if (body.classList.contains('four')) {
+      body.style.removeProperty('--rw-fit');
+      body.classList.remove('tableScroll');
+      fitFour();
+      return;
+    }
+    body.style.removeProperty('--side');
 
     /* scrollHeight は四隅の飾りなども拾ってしまうので、
        一番下の行（自分の捨て牌）が卓の底より下に出ているかで判定する */
@@ -204,6 +259,7 @@ const Match = (() => {
        _idleSeat / _idleKyoku も同じ性質で、残っていると
        二戦目の一局目で席がたまたま一致したとき雑談が一度飛ぶ */
     UI._tachieSeat = null;
+    UI._cutinSeat = null;
     UI._idleSeat = null;
     UI._idleKyoku = null;
     UI._sayAt = null;
@@ -256,7 +312,8 @@ const Match = (() => {
 
     clearInterval(watch);
     document.body.style.removeProperty('--rw-fit');
-    document.body.classList.remove('tableScroll');
+    document.body.style.removeProperty('--side');
+    document.body.classList.remove('tableScroll', 'four');
     window.removeEventListener('resize', onOrientationChange);
     if (screen.orientation) screen.orientation.removeEventListener('change', onOrientationChange);
     document.body.classList.remove('needRotate');

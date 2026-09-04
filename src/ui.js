@@ -183,12 +183,26 @@ const UI = {
     }
     return m;
   },
+  /* 画面上の差分を、その牌の座標系に直す（四人卓のとき）。
+     左右の河は 90 度回っているので、画面の横の差は牌にとっては縦の差になる。
+     卓面は rotateX で寝ているので、奥行きの差は cos ぶん詰まって見える。
+     .rslot / .opp の data-angle と body.four から読む */
+  localDelta(el, dx, dy) {
+    const slot = el.closest('[data-angle]');
+    const four = document.body.classList.contains('four');
+    if (!slot || !four) return [dx, dy];
+    const a = (Number(slot.dataset.angle) || 0) * Math.PI / 180;
+    const tilt = 36 * Math.PI / 180;
+    const fx = dx, fy = dy / Math.cos(tilt);
+    return [fx * Math.cos(a) + fy * Math.sin(a), -fx * Math.sin(a) + fy * Math.cos(a)];
+  },
   flip(el, from, to) {
-    const dx = (from.left + from.width / 2) - (to.left + to.width / 2);
-    const dy = (from.top + from.height / 2) - (to.top + to.height / 2);
+    let dx = (from.left + from.width / 2) - (to.left + to.width / 2);
+    let dy = (from.top + from.height / 2) - (to.top + to.height / 2);
     const sx = to.width ? from.width / to.width : 1;
     const sy = to.height ? from.height / to.height : 1;
     if (Math.abs(dx) < 1 && Math.abs(dy) < 1 && Math.abs(sx - 1) < .02 && Math.abs(sy - 1) < .02) return;
+    [dx, dy] = this.localDelta(el, dx, dy);
     el.style.transition = 'none';
     el.style.translate = dx.toFixed(1) + 'px ' + dy.toFixed(1) + 'px';
     el.style.scale = sx.toFixed(3) + ' ' + sy.toFixed(3);
@@ -230,49 +244,56 @@ const UI = {
     /* #info のテンプレートより前に置くこと。後ろに置くと TDZ で落ちる */
     const KAZE_CH = ['東', '南', '西', '北'];
 
-    // 中央情報
+    // 中央のコンパス（spec.md §4.4）。局・本場・残り・ドラ、四辺に各家の自風
     const kyokuLabel = `${KAZE[g.bakaze - 27]}${((g.kyoku - 1) % 4) + 1}局`;
+    const turn = g.currentDraw ? g.currentDraw.seat
+      : (g.lastDiscard ? g.lastDiscard.seat : g.dealer);
+    const windAt = (seat, pos) => {
+      const p = g.players[seat];
+      return `<span class="wind w-${pos}${seat === g.dealer ? ' oya' : ''}${seat === 0 ? ' me' : ''}${
+        seat === turn ? ' turn' : ''}">${KAZE_CH[p.jikaze - 27] || ''}</span>`;
+    };
     $('#info').innerHTML = `
       <div class="kyoku">${kyokuLabel}</div>
       <div class="wall">${g.honba}本場 ・ 残り${g.wall.length}枚</div>
       <div id="dora">${g.doraIndicators.map((d) => tileHTML(d, 'tiny')).join('')}</div>
-      ${g.riichiSticks ? `<div>${'<span class="riichi-stick"></span>'.repeat(Math.min(g.riichiSticks, 4))}</div>` : ''}
+      ${g.riichiSticks ? `<div class="sticks">${'<span class="riichi-stick"></span>'.repeat(Math.min(g.riichiSticks, 4))}</div>` : ''}
       ${g.cheat ? `<div class="cheatinfo">疑い ${'●'.repeat(g.cheat.suspicion) || '無'}
         ／ 技 ${g.cheat.hand.length}枚</div>` : ''}
       ${g.cheat && g.cheat.peek ? `<div class="peek">山 ${g.cheat.peek.map((id) => tileHTML(id, 'tiny')).join('')}</div>` : ''}
-      <div class="scores">${[0, 1, 2, 3].map((i) => {
-        const p = g.players[i];
-        return `<div class="${i === 0 ? 'me' : ''} ${i === g.dealer ? 'dealer-dot' : ''}">
-          ${i === 0 && p.face ? `<span class="oppFace"><img src="${esc(p.face)}" alt=""
-            onerror="this.remove()"></span>` : ''}
-          ${i === 0 ? `<span class="oppKaze">${KAZE_CH[p.jikaze - 27] || ''}</span>` : ''}
-          ${esc(p.name)} <b>${p.score}</b></div>`;
-      }).join('')}</div>`;
+      ${windAt(0, 'b')}${windAt(1, 'r')}${windAt(2, 't')}${windAt(3, 'l')}`;
 
-    // 対局者
+    // 席プレート（§4.5）。名前・自風・点数・顔。自分のぶん（#plate-bottom）は色を反転させてある
     const c = g.cheat;
-    const oppHTML = (p, vert) => `
-      <div class="opp ${vert ? 'vert' : ''}">
-        <div class="oppName">
-          ${p.face ? `<span class="oppFace"><img src="${esc(p.face)}" alt=""
-            onerror="this.remove()"></span>` : ''}
-          <span class="oppKaze">${KAZE_CH[p.jikaze - 27] || ''}</span>
-          <span class="oppWho">${esc(p.name)}</span>
-          <span class="oppScore">${p.score}</span>
-        </div>
-        <div class="backs ${vert ? 'vert' : ''}">${
+    const plateHTML = (p) => `
+      <span class="kz">${KAZE_CH[p.jikaze - 27] || ''}</span>
+      <span class="bust">${p.face ? `<img src="${esc(p.face)}" alt="" onerror="this.remove()">` : ''}</span>
+      <span class="txt"><span class="nm">${esc(p.name)}</span><span class="pt">${p.score}</span></span>
+      ${p.riichi ? '<span class="rc">立</span>' : ''}
+      ${p.suspicion ? '<span class="susp">疑</span>' : ''}`;
+    [['#plate-bottom', 0], ['#plate-right', 1], ['#plate-top', 2], ['#plate-left', 3]].forEach(([sel, seat]) => {
+      const el = $(sel);
+      if (!el) return;
+      const p = bySeat(seat);
+      el.innerHTML = plateHTML(p);
+      el.classList.toggle('dealer', seat === g.dealer);
+      el.classList.toggle('riichi', !!p.riichi);
+      el.classList.toggle('turn', seat === turn);
+      el.classList.toggle('talking', this._cutinSeat === seat);
+    });
+
+    // 他家の手牌（裏）と副露。プレートは別なので、ここは牌だけ
+    const oppHTML = (p) => `
+        <div class="backs">${
           c && c.reveal.has(p.seat)
             ? p.hand.map((id) => tileHTML(id, 'tiny')).join('')
             : Array(Math.max(0, p.hand.length)).fill(backHTML('tiny')).join('')}</div>
         ${c && c.showWaits.has(p.seat) ? `<div class="waits">待${
           Engine.winningTiles(Engine.countsFromIds(p.hand), p.melds).map(jpName).join('') || '無'}</div>` : ''}
-        ${p.suspicion ? '<span class="susp">疑</span>' : ''}
-        <div class="melds">${p.melds.map((m) => meldHTML(m, 'tiny')).join('')}</div>
-        ${p.riichi ? '<span style="color:var(--vermilion)">立</span>' : ''}
-      </div>`;
-    $('#top').innerHTML = oppHTML(bySeat(2), false);
-    $('#left').innerHTML = oppHTML(bySeat(3), true);
-    $('#right').innerHTML = oppHTML(bySeat(1), true);
+        <div class="melds">${p.melds.map((m) => meldHTML(m, 'tiny')).join('')}</div>`;
+    $('#top').innerHTML = oppHTML(bySeat(2));
+    $('#left').innerHTML = oppHTML(bySeat(3));
+    $('#right').innerHTML = oppHTML(bySeat(1));
 
     // 河と手牌（keyed。spec.md §3）
     const me = g.players[0];
@@ -480,6 +501,11 @@ const UI = {
     box.querySelector('.tcBubble').textContent = line;
     box.classList.add('talk');
     box.classList.toggle('riichi', !!p.riichi);
+    /* 喋った人の席プレートも光らせる（§6.1） */
+    this._cutinSeat = seat;
+    document.querySelectorAll('#table .seat').forEach((el) => {
+      el.classList.toggle('talking', el.id === ['plate-bottom', 'plate-right', 'plate-top', 'plate-left'][seat]);
+    });
     /* 放銃の一言（hold）は長めに残す */
     this._sayAt = this.discardCount();
     this._sayFor = hold ? this.BUBBLE_TURNS + 3 : this.BUBBLE_TURNS;
@@ -500,6 +526,8 @@ const UI = {
         box.querySelector('.tcBubble').textContent = '';
         box.querySelectorAll('.tcSlot.on').forEach((el) => el.classList.remove('on'));
         this._sayAt = null;
+        this._cutinSeat = null;
+        document.querySelectorAll('#table .seat.talking').forEach((el) => el.classList.remove('talking'));
       }
     }
 
