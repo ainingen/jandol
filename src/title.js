@@ -30,6 +30,13 @@ const Title = (() => {
   const pad3 = (id) => String(id).padStart(3, '0');
   const yen = (n) => n.toLocaleString('ja-JP') + '円';
 
+  /* 立ち絵 img/NNN.webp が置いてある最大の id。**表紙の顔壁はここまで。**
+     `characters.js` にデータだけ先に足すことがあるので、顔壁は
+     「データがあるか」ではなく「絵があるか」で絞る。絞らないと
+     画像の無い id が並んで、表紙に穴が空く。
+     **画像を足したらここも上げること**（img/ に webp を置くのと対） */
+  const PORTRAIT_MAX_ID = 200;
+
   /* 顔の候補。増やすときはここに足して img/<key>.webp を置くだけ */
   const FACES = [
     { key: 'p01', note: '黒髪のボブ・黒いニット' },
@@ -264,8 +271,11 @@ const Title = (() => {
 
   /* 表紙に並べる顔。発見済みがいればそこから、いなければ全員から選ぶ */
   function wallIds(st, n) {
-    const found = (st.discovered || []).filter((id) => id <= 73);
-    const pool = found.length >= n ? found : JANDOLS.map((c) => c.id);
+    const found = (st.discovered || []).filter((id) => id <= PORTRAIT_MAX_ID);
+    /* 未発見のときの逃げ道も同じ定数で絞る。**両方の経路を守ること** */
+    const pool = found.length >= n
+      ? found
+      : JANDOLS.filter((c) => c.id <= PORTRAIT_MAX_ID).map((c) => c.id);
     const out = [];
     const bag = pool.slice();
     while (out.length < n && bag.length) {
