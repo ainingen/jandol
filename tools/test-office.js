@@ -1378,6 +1378,52 @@ function eq(a, b, name) {
     eq(JSON.stringify(Jansou.shiftOf(null, c0.id)), JSON.stringify([false, false, true]),
        'null でも既定を返す');
     eq(Office.overtimeOf({ contracted: [c0.id] }).length, 1, '店が無くても夜の一人は決まる');
+
+    /* ---------- ホワイトボード（第三段） ---------- */
+    const b3 = JANDOLS.slice(0, 4);
+    const stB = { contracted: b3.map((c) => c.id),
+      assign: { [b3[2].id]: 'rest', [b3[3].id]: 'trip' },
+      trip: { pref: 'tokyo', dayLeft: 1, members: [b3[3].id] },
+      parlor: { open: true, shifts: {
+        [b3[0].id]: [true, true, true], [b3[1].id]: [false, true, true] } } };
+    const bc = Office.boardCountsOf(stB);
+    eq(JSON.stringify(bc.slots), JSON.stringify([1, 2, 2]), '帯ごとの出勤人数');
+    eq(bc.rest, 1, '休みの人数');
+    eq(bc.away, 1, '出ている人数');
+    /* **休みと出は帯に数えない。**店に立っていないので */
+    eq(Office.boardCountsOf({ contracted: [c0.id], assign: { [c0.id]: 'rest' } }).slots[2], 0,
+       '休みの子は夜に数えない');
+    /* シフトを持っていない子の既定は「夜だけ」 */
+    eq(JSON.stringify(Office.boardCountsOf({ contracted: [c0.id] }).slots),
+       JSON.stringify([0, 0, 1]), '既定は夜だけ');
+    eq(JSON.stringify(Office.boardCountsOf({}).slots), JSON.stringify([0, 0, 0]),
+       '所属ゼロでも落ちない');
+    /* 壁の板は数を受け取るだけ */
+    eq(R.roomView({}, { board: bc }).board.rest, 1, 'roomView が板の数を通す');
+    eq(JSON.stringify(R.roomView({}, {}).board.slots), JSON.stringify([0, 0, 0]),
+       '渡さなければ空の板');
+    /* 行の色は癖の印と同じ三色（2ドットでも見分けられることが確かめてある） */
+    ok(JansouFloor.PAL.neonCyan && JansouFloor.PAL.neonYellow && JansouFloor.PAL.neonPink,
+       '板の三色が PAL にある');
+
+    /* **配置とシフトを動かせるのはボードだけ**（二か所で同じことをしない）。
+       名簿は読むだけ。`office.js` の本文を機械的に見て固定する */
+    const src0 = require('fs').readFileSync(require('path').join(__dirname, '../src/office.js'), 'utf8');
+    const cut = (from, to) => {
+      const a2 = src0.indexOf('function ' + from + '(');
+      const b2 = src0.indexOf('function ' + to + '(');
+      return (a2 > 0 && b2 > a2) ? src0.slice(a2, b2).replace(/\/\*[\s\S]*?\*\//g, '') : '';
+    };
+    const rosterSrc = cut('rosterHtml', 'boardHtml');
+    const boardSrc = cut('boardHtml', 'mailHtml');
+    ok(rosterSrc.length > 0 && boardSrc.length > 0, '名簿とボードの本文が取れる');
+    ok(rosterSrc.indexOf('data-where') < 0, '名簿に配置の釦が残っていない');
+    ok(rosterSrc.indexOf('data-shift') < 0, '名簿にシフトの釦が残っていない');
+    ok(boardSrc.indexOf('data-where') > 0, 'ボードに配置の釦がある');
+    ok(boardSrc.indexOf('data-shift') > 0, 'ボードにシフトの釦がある');
+    /* 書くのは今までと同じ関数（データは動かしていない） */
+    ok(boardSrc.indexOf('Jansou.shiftOf') > 0, 'ボードは Jansou.shiftOf で読む');
+    ok(src0.indexOf('Jansou.setShift(store') > 0, '書くのは Jansou.setShift のまま');
   }
 
   /* **部屋の下に一覧を続けない**（room.md §0・§12）。

@@ -221,6 +221,22 @@ const Office = (() => {
     return best ? [{ id: best.id, name: best.name, where: 'late' }] : [];
   }
 
+  /* 今日の並び（`room.md` §10 第三段）。**壁の板は読むだけ**なので数だけ返す。
+     昼・夕・夜は「その帯に出勤している人数」、休みと出は人数。純関数 */
+  function boardCountsOf(st) {
+    const parlor = parlorOf(st);
+    const assign = assignOf(st);
+    const slots = [0, 0, 0];
+    let rest = 0, away = 0;
+    rosterOf(st).forEach((c) => {
+      const k = assign[c.id];
+      if (k === 'trip' || k.indexOf('job:') === 0) { away++; return; }
+      if (k === 'rest') { rest++; return; }
+      Jansou.shiftOf(parlor, c.id).forEach((on, i) => { if (on) slots[i] += 1; });
+    });
+    return { slots, rest, away };
+  }
+
   /* 部屋から出ている人がいるか（扉の脇の鞄） */
   function anyAwayOf(st) {
     const assign = assignOf(st);
@@ -924,10 +940,12 @@ const Office = (() => {
         const at = kind === 'parlor';
         const sh = Jansou.shiftOf(parlor, c.id);
         const busy = kind === 'trip' || kind.indexOf('job:') === 0;
-        const chips = Jansou.SLOTS.map((sl) => `
-          <button type="button" class="ofChip${at && sh[sl.key] ? ' on' : ''}"
-            data-shift="${c.id}" data-slot="${sl.key}" ${at ? '' : 'disabled'}
-            aria-pressed="${!!(at && sh[sl.key])}">${sl.name}</button>`).join('');
+        /* **配置とシフトは名簿から外した**（第三段）。動かすのはボードだけ——
+           二か所で同じことができると、どちらが正か分からなくなる。
+           ここは「いまどこにいるか」を読むだけの一行にする */
+        const where = busy ? (kind === 'trip' ? '遠征中' : '依頼中')
+          : at ? ('店　' + (Jansou.SLOTS.filter((sl) => sh[sl.key]).map((sl) => sl.name).join('・') || '出番なし'))
+          : '休み';
         /* 疲労と調子（§9）。**きょうの増減も出す**——
            「休み」に切り替えると +1 が −15 に変わり、**抜け方がその場で見える** */
         const fat = fatigueOf(st, c.id);
@@ -951,10 +969,7 @@ const Office = (() => {
           <span class="ofMateBody">
             <span class="ofMateName">${esc(c.name)}</span>
             <span class="ofMateSub">${esc(c.rank)}級　完成度 ${c.comp}　日当 ${yen(Jansou.wageOf(c))}</span>
-            <span class="ofMateShift">${busy
-              ? `<span class="ofBusy">${kind === 'trip' ? '遠征中' : '依頼中'}</span>`
-              : `<button type="button" class="ofWhere" data-where="${c.id}"
-                   aria-pressed="${at}">${at ? '店' : '休み'}</button>${chips}`}</span>
+            <span class="ofMateShift"><span class="ofWhereRO${at ? '' : ' off'}">${esc(where)}</span></span>
             ${state}
           </span>
           <span class="ofMateNums">
@@ -965,9 +980,61 @@ const Office = (() => {
       }).join('')
         : '<p class="ofEmpty">まだ誰も所属していません。チーム編成から始めてください。</p>';
       return `${list.length ? `<p class="ofNote">
-          <b>配置は変えるまで続きます。</b>毎朝きき直しません。
-          ${open ? `いま店に立つのは ${onDuty.length} 人。` : ''}</p>` : ''}
+          ${open ? `いま店に立つのは ${onDuty.length} 人。` : ''}
+          <b>配置と出番はホワイトボードから。</b></p>` : ''}
         <div class="ofMates">${mates}</div>`;
+    }
+
+    /* ホワイトボード（第三段）。**顔の磁石を三つの列に並べ、押すと動く。**
+       書くのは `setAssign` と `Jansou.setShift` のまま——データは動かしていない。
+
+       壁の板は「今日の並び」を数で言うだけ（`drawBoard`）で、**操作はここ**。
+       写真の丸は 62×28 の板には載らない（§10 第三段） */
+    function boardHtml(st) {
+      const list = rosterOf(st);
+      const parlor = parlorOf(st);
+      const assign = assignOf(st);
+      if (!list.length) return '<p class="ofEmpty">まだ誰も所属していません。</p>';
+      const cols = { parlor: [], rest: [], away: [] };
+      list.forEach((c) => {
+        const k = assign[c.id];
+        if (k === 'trip' || k.indexOf('job:') === 0) cols.away.push(c);
+        else if (k === 'rest') cols.rest.push(c);
+        else cols.parlor.push(c);
+      });
+      const face = (c) => `<span class="mkFace sil"><img src="img/${pad3(c.id)}.webp" alt=""
+        loading="lazy" onerror="this.remove()"></span>`;
+      /* 磁石。**顔を押すと店 ⇄ 休みが入れ替わる。**帯の札は店の列にだけ出す */
+      const mag = (c, kind) => {
+        const sh = Jansou.shiftOf(parlor, c.id);
+        const bands = Jansou.SLOTS.map((sl) => `
+          <button type="button" class="ofChip${sh[sl.key] ? ' on' : ''}"
+            data-shift="${c.id}" data-slot="${sl.key}"
+            aria-pressed="${!!sh[sl.key]}">${sl.name}</button>`).join('');
+        return `<div class="ofMag k-${kind}">
+          ${kind === 'away'
+            ? `<span class="ofMagFace ro">${face(c)}</span>`
+            : `<button type="button" class="ofMagFace" data-where="${c.id}"
+                 aria-label="${esc(c.name)}の配置を変える">${face(c)}</button>`}
+          <span class="ofMagName">${esc(c.name)}</span>
+          ${kind === 'parlor' ? `<span class="ofMagBands">${bands}</span>` : ''}
+          ${kind === 'away' ? `<span class="ofMagNote">${
+            assign[c.id] === 'trip' ? '遠征中' : '依頼中'}</span>` : ''}
+        </div>`;
+      };
+      const col = (key, name, note, arr) => `
+        <div class="ofBoardCol c-${key}">
+          <div class="ofBoardHead"><span class="ofBoardT">${name}</span>
+            <span class="ofBoardN">${arr.length}</span>
+            ${note ? `<span class="ofBoardNote">${note}</span>` : ''}</div>
+          <div class="ofBoardMags">${arr.length ? arr.map((c) => mag(c, key)).join('')
+            : '<span class="ofBoardEmpty">いません</span>'}</div>
+        </div>`;
+      return `<p class="ofNote"><b>顔を押すと、店と休みが入れ替わります。</b>
+          店の子は昼・夕・夜の札で出番を決めます。<b>配置は変えるまで続きます。</b></p>
+        ${col('parlor', '店', '昼・夕・夜', cols.parlor)}
+        ${col('rest', '休み', '疲労が抜ける', cols.rest)}
+        ${cols.away.length ? col('away', '出', '帰るまで動かせません', cols.away) : ''}`;
     }
 
     /* メール。届いている依頼（§8）。遠征中は受けられない（代表が留守なので、
@@ -1058,7 +1125,7 @@ const Office = (() => {
 
     const SHEETS = {
       roster: { title: '名簿', note: '所属と今日の配置' },
-      board:  { title: 'ホワイトボード', note: '配置とシフト' },
+      board:  { title: 'ホワイトボード', note: '配置と出番' },
       mail:   { title: 'メール', note: '届いている話' },
       eight:  { title: '雀エイト', note: '全国上位八人' },
       door:   { title: '出かける', note: '' },
@@ -1076,7 +1143,8 @@ const Office = (() => {
       const def = SHEETS[sheet] || { title: '', note: '' };
       const night = screen === 'night';
       let body = '';
-      if (sheet === 'roster' || sheet === 'board') body = rosterHtml(st);
+      if (sheet === 'roster') body = rosterHtml(st);
+      else if (sheet === 'board') body = boardHtml(st);
       else if (sheet === 'mail') body = mailHtml(st, !night);
       else if (sheet === 'eight') body = eightHtml(st);
       else if (sheet === 'door') body = doorHtml(st);
@@ -1146,6 +1214,9 @@ const Office = (() => {
           b.classList.toggle('on', sh[slot]);
           b.setAttribute('aria-pressed', String(!!sh[slot]));
           paintBand();
+          /* **壁の板も描き直す。**シートで変えたのに板が古いままだと、
+             どちらが正か分からなくなる */
+          paintRoom();
         });
       });
       /* 依頼を受ける／見送る（§8.1） */
@@ -1264,6 +1335,7 @@ const Office = (() => {
         away: anyAwayOf(st),
         tired: tiredOf(st),
         mine8: mine8Of(st),
+        board: boardCountsOf(st),
       };
     }
 
@@ -2056,7 +2128,7 @@ const Office = (() => {
 
   return { mount, defaultName, nameOf, prefOf, rosterOf, prefPickerHtml, bindPicker, NAME_MAX,
            ASSIGN_KINDS, assignFor, assignOf, parlorRoster, setAssign, fatigueOf, condOf,
-           roomPeopleOf, anyAwayOf, markMailRead, tiredOf, mine8Of, overtimeOf,
+           roomPeopleOf, anyAwayOf, markMailRead, tiredOf, mine8Of, overtimeOf, boardCountsOf,
            planTrip, deputyOf, tripOf, tripStart, regionOfPref,
            fireOffers, dismissOffer, acceptOffer, dropQuest, popOf, idolResult,
            ensureShop, callOn, negotiate, favorGain, addFavor, FAVOR_GAIN,

@@ -148,6 +148,8 @@ const OfficeRoom = (() => {
       /* 誰かが出ている（遠征・依頼）。扉の脇に鞄を置く印になる */
       away: !!ctx.away,
       /* ---- 印（§5） ---- */
+      /* 今日の並び（第三段）。**壁の板は読むだけ**なので、要るのは数だけ */
+      board: ctx.board || { slots: [0, 0, 0], rest: 0, away: 0 },
       unread,                       // パソコンの画面が光る＋件数
       tired: !!ctx.tired,           // 机に赤い付箋
       mine8: !!ctx.mine8,           // 額が金になる
@@ -222,17 +224,50 @@ const OfficeRoom = (() => {
     g.appendChild(rect(it.x + 2, it.y + Math.floor(it.h / 2), it.w - 4, 2, PAL.ink));
   }
 
-  /* ホワイトボード（62×28）。白い面に三本の列線。磁石は第三段 */
-  function drawBoard(g, it) {
+  /* ホワイトボード（62×28）。**今日の並びを一目で言うだけの板**（第三段）。
+     動かすのはボードのシートの中——**壁の板は読むもの、シートが操作**。
+
+     **写真の丸は載せない。**11px の丸は 62px の板に5つしか並ばず、
+     14人だと二段でも足りない。しかも 380px（倍率2）では 22px の丸で、
+     **顔として読めない**（実機で並べて見た。§10 第三段）。
+     板に要るのは「誰か」ではなく「何人がどこか」で、誰かは部屋の人が言っている。
+
+     四行。上から**昼・夕・夜**（出勤している人数ぶんの印）と、
+     **休み・出**（灰と金）。左端の色札が行の意味を持つ */
+  /* **癖の印と同じ三色**（シアン・黄・ピンク）。2ドットでも見分けられることが
+     四型の店で確かめてある色なので、3px の点でも効く。
+     黄と金は近すぎて並べると分からなかった（実機で見た） */
+  const BOARD_ROWS = [
+    { key: 0, col: 'neonCyan' }, { key: 1, col: 'neonYellow' }, { key: 2, col: 'neonPink' },
+  ];
+  function drawBoard(g, it, view) {
+    const b = view.board || { slots: [0, 0, 0], rest: 0, away: 0 };
     g.appendChild(rect(it.x, it.y, it.w, it.h, PAL.ink));
     g.appendChild(rect(it.x + 1, it.y + 1, it.w - 2, it.h - 2, PAL.tileLow));
     g.appendChild(rect(it.x + 2, it.y + 2, it.w - 4, it.h - 4, PAL.tile));
-    /* 見出しの帯（店／休み／出）。文字は置かない */
-    g.appendChild(rect(it.x + 4, it.y + 4, it.w - 8, 3, PAL.neonPink));
-    const col = Math.floor((it.w - 8) / 3);
-    for (let i = 1; i < 3; i++) g.appendChild(rect(it.x + 4 + i * col, it.y + 4, 1, it.h - 8, PAL.tileLow));
-    /* 行線（昼／夕／夜） */
-    for (let i = 1; i < 4; i++) g.appendChild(rect(it.x + 4, it.y + 7 + i * 5, it.w - 8, 1, PAL.tileLow));
+    const x0 = it.x + 4, dx = it.x + 12, max = Math.floor((it.w - 16) / 3);
+    const dot = (n, y, col) => {
+      for (let i = 0; i < Math.min(n, max); i++) {
+        g.appendChild(rect(dx + i * 3, y, 2, 3, col));
+      }
+      /* 入りきらないぶんは末尾を切って、切れたことを一つの点で言う */
+      if (n > max) g.appendChild(rect(dx + max * 3, y, 1, 3, PAL.ink));
+    };
+    /* **行ごとに色を変える。**長さだけで分けると、どの行が何の帯なのかを
+       左端の5pxの札だけで見分けることになる（実機で並べたら分からなかった）。
+       色と長さの二つで言う——癖の印で覚えたことと同じ */
+    BOARD_ROWS.forEach((r, i) => {
+      const y = it.y + 5 + i * 4;
+      g.appendChild(rect(x0, y, 5, 3, PAL[r.col]));
+      dot(b.slots[r.key] | 0, y, PAL[r.col]);
+    });
+    /* 四行目は休み（灰）と出（金）。**同じ行に並べる**——どちらも「店にいない」 */
+    const y3 = it.y + 5 + 3 * 4;
+    g.appendChild(rect(x0, y3, 5, 3, PAL.closed));
+    dot(b.rest | 0, y3, PAL.closedTop);
+    for (let i = 0; i < Math.min(b.away | 0, 4); i++) {
+      g.appendChild(rect(dx + (Math.min(b.rest | 0, max) + i) * 3, y3, 2, 3, PAL.gold));
+    }
     /* ペン受け */
     g.appendChild(rect(it.x + 10, it.y + it.h - 2, it.w - 20, 2, PAL.closed));
     g.appendChild(rect(it.x + 14, it.y + it.h - 3, 6, 1, PAL.neonCyan));
@@ -425,7 +460,7 @@ const OfficeRoom = (() => {
         case 'eight': drawEight(g, it, view); break;
         case 'cert': drawCert(g, it); break;
         case 'window': drawWindow(g, it, view); break;
-        case 'board': drawBoard(g, it); break;
+        case 'board': drawBoard(g, it, view); break;
         case 'pc': drawPc(g, it, view); break;
         case 'desk': drawDesk(g, it); break;
         case 'door': drawDoor(g, it, view); break;

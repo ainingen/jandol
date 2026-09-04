@@ -121,6 +121,62 @@
 /* 名簿の行はそのまま。シートの中では既定の行間で */
 .ofSheetBody .ofMates{gap:5px}
 
+/* ------------------------------------------------------------
+   ホワイトボードのシート（room.md §10 第三段）
+   **顔の磁石を三つの列（店／休み／出）に並べる。**
+   壁の板は数で言うだけで、動かすのはここ。
+   書くのは `setAssign` と `Jansou.setShift` のまま（データは動かしていない）
+------------------------------------------------------------ */
+.ofBoardCol{margin:0 0 12px}
+.ofBoardHead{
+  display:flex;align-items:baseline;gap:8px;
+  padding:0 0 4px;border-bottom:1px solid rgba(201,162,74,.22);margin-bottom:8px;
+}
+.ofBoardT{font-family:var(--maru);font-size:13px;letter-spacing:.16em;color:var(--gold)}
+.ofBoardN{
+  font-family:var(--maru);font-size:12px;color:var(--ivory);
+  border:1px solid var(--gold-dim);border-radius:9px;padding:0 7px;
+}
+.ofBoardNote{font-size:10.5px;color:var(--muted);margin-left:auto}
+.ofBoardEmpty{font-size:11px;color:var(--muted)}
+/* 磁石の並び。**380px で三つ**（一つ 104px）。顔44px は指で押せる大きさ */
+.ofBoardMags{display:flex;flex-wrap:wrap;gap:8px}
+.ofMag{
+  width:104px;display:flex;flex-direction:column;align-items:center;gap:3px;
+  padding:7px 4px 6px;border-radius:7px;
+  border:1px solid var(--gold-dim);background:rgba(255,255,255,.03);
+}
+.ofMag.k-rest{opacity:.78;border-style:dashed}
+.ofMag.k-away{opacity:.6}
+/* 顔＝磁石そのもの。押すと店 ⇄ 休み */
+.ofMagFace{
+  width:48px;height:48px;padding:0;border-radius:50%;cursor:pointer;
+  border:2px solid var(--gold);background:transparent;
+  display:block;
+}
+.ofMagFace.ro{cursor:default;border-color:var(--gold-dim)}
+.ofMag.k-rest .ofMagFace{border-color:var(--gold-dim)}
+.ofMagFace:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
+/* **`.mkFace` は meikan.css が position:absolute を持たせている**ので戻す
+   （引き継ぎ書 §5。借りるたびに踏む罠） */
+.ofMagFace .mkFace,.ofMagFace.ro .mkFace{
+  position:relative;inset:auto;
+  display:block;width:100%;height:100%;border-radius:50%;overflow:hidden;background:var(--sil);
+}
+.ofMagFace .mkFace img{width:100%;height:100%;object-fit:cover;object-position:center top}
+.ofMagName{
+  font-size:10.5px;color:var(--ivory-2);max-width:100%;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+}
+.ofMagNote{font-size:10px;color:var(--gold)}
+/* 昼・夕・夜。**指で押せる大きさを保つ**（26×24） */
+.ofMagBands{display:flex;gap:3px}
+.ofMagBands .ofChip{min-width:26px;padding:4px 0;text-align:center}
+
+/* 名簿のほうは読むだけ（配置は名簿から外した） */
+.ofWhereRO{font-size:10.5px;color:var(--gold)}
+.ofWhereRO.off{color:var(--muted)}
+
 /* 夜。日報のシートは開いた状態で出る（room.md §6）。中身は既存の .ofRep */
 .ofSheetBody .ofRep{margin-top:0}
 .ofSheetBody .ofRep + .ofRep{margin-top:8px}
