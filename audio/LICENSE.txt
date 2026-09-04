@@ -8,20 +8,21 @@
 | ファイル | 出典 |
 | --- | --- |
 | discard1〜4.wav | ElevenLabs Text to Sound Effects で生成。Starter プラン、生成日 2026-09-04 |
+| draw / call / riichi / agari / deal / dora / ryuukyoku / tap .wav | ElevenLabs Text to Sound Effects で生成。Starter プラン、生成日 2026-09-04 |
 | discard.wav | 自作（tools/make-sfx.py の合成） |
-| draw / call / riichi / agari / deal / dora / ryuukyoku / tap .wav | 自作（tools/make-sfx.py の合成・仮） |
 
-**discard1〜4 は生成音。**生成したままの WAV は `audio_raw/`（コミットしない）に置き、
-切り出しと整形は `tools/prep-sfx.py` が回す。プロンプトと採否の理由は
-`audio_raw/discard/README.txt` にある。
+**鳴る音は12本とも生成音になった**（2026年9月4日）。生成したままの WAV は
+`audio_raw/`（コミットしない）に置き、切り出しと整形は `tools/prep-sfx.py` が回す。
+プロンプトと採否の理由は `audio_raw/discard/README.txt` と
+`audio_raw/sfx/README.txt` にある。
 
-**discard.wav（単数）だけは合成のまま。**四本が一本も読めなかったときの
-控えなので消さないこと（`src/sound.js` の逃げ道）。
+**合成のまま残っているのは discard.wav（単数）だけ。**discard1〜4 が
+一本も読めなかったときの控えなので消さないこと（`src/sound.js` の逃げ道）。
+**他の8つには控えが無い**——一本しか持たない名前なので、落とす先が要らない。
 
 他所のゲームや配布素材からは採っていない（docs/design/match/spec.md §2.1）。
-残りの8つを差し替えるときも、そのサービス名と利用条件（商用可か、
-帰属表示が要るか）をこの表に書くこと。書き換え忘れると
-「自作」と書いてあるまま他人の音が入る。
+差し替えるときは、そのサービス名と利用条件（商用可か、帰属表示が要るか）を
+この表に書くこと。書き換え忘れると「自作」と書いてあるまま他人の音が入る。
 
 --------------------------------------------------------------------
 差し替えかた
@@ -36,12 +37,13 @@
 
 生成音を入れ直すときは `audio_raw/` に置いて `python3 tools/prep-sfx.py`
 （切り出し・モノラル・フェード・A特性RMSで音量合わせまで通す）。
-合成の8つを作り直すときは `python3 tools/make-sfx.py`
-（**こちらは discard1〜4 を書かない。**回しても生成音は潰れない）。
+切り出す位置と音の大きさの目標は、あの道具の SOURCES に一行ずつ書いてある。
+**`tools/make-sfx.py` は控えの discard.wav しか書かない**
+（回しても生成音は潰れない。prep-sfx.py と名前が重なったらその場で止まる）。
 どちらのあとも `node tools/check-sound.js` を回す。
 
 --------------------------------------------------------------------
 このリポジトリでの扱い
 --------------------------------------------------------------------
-合成の音（discard.wav と残り8つ）は自作なので、他の部分と同じ扱いで使ってよい。
-生成音（discard1〜4）は上の表の条件に従う。
+合成の音（discard.wav）は自作なので、他の部分と同じ扱いで使ってよい。
+生成音（鳴る12本）は上の表の条件に従う。

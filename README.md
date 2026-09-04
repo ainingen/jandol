@@ -98,8 +98,8 @@ index.html          ビルド結果。これを配布する（500KB以下に保�
 shell.html          外枠。表紙・タブ・セーブ。ビルド時にCSS/JSが差し込まれる
 build.py            index.html を組み立てる（約13KB。CSS/JSは src/ のまま読む）
 tools/make-font.py  表紙の丸ゴシックを作り直す
-tools/make-sfx.py   効果音を合成して audio/ に書く（打牌以外の8つ。打牌の四本は書かない）
-tools/prep-sfx.py   生成した音源（audio_raw/）を切り出して整形し audio/ に書く
+tools/make-sfx.py   控えの discard.wav だけを合成して書く（鳴る12本は書かない）
+tools/prep-sfx.py   生成した音源（audio_raw/）を切り出して整形し audio/ に書く（鳴る12本）
 tools/check-sound.js 打牌の鳴らし分けをブラウザで確かめる（音源を差し替えたら回す）
 tools/drive-match.js 対局画面をブラウザで回す。配牌・鳴き・河3段・終局を撮り、--video で録画
 
@@ -242,10 +242,11 @@ src/debug.js        その中身。build.py は読まない（配布から外す
 | 吹き出しの地を差し色にする場面 | `src/ui.js` の `HOT_KINDS`（リーチ・ツモ・ロン） |
 | 卓の傾き・牌の厚み・河と手牌の押し出し | `src/match.css` の `rotateX(36deg)` `--th` `.rslot` `.413`/`.186` |
 | 牌の移動の速さ | `src/match.css` の `.tile.moving`（.24s） |
-| 効果音の音量の既定・素材 | `src/sound.js` の `DEFAULT_VOLUME`、`audio/*.wav`（`tools/make-sfx.py`） |
+| 効果音の音量の既定・素材 | `src/sound.js` の `DEFAULT_VOLUME`、`audio/*.wav`（`tools/prep-sfx.py`） |
 | どの名前が何本の音源を持つか | `src/sound.js` の `FILES`（打牌だけ四本） |
 | 音を耳で確かめる場所 | `debug.html` の「音」の区画（`src/debug.js` の `soundPanel`） |
 | 生成音の切り出しと音量合わせ | `tools/prep-sfx.py` の `SOURCES` `GROUPS`、`HEAD_MS` `LOUD_MS` `PEAK_CEIL_DB` |
+| 場面ごとの音の大きさ | `tools/prep-sfx.py` の `SOURCES` の `target_db`（和了 −25 … ツモ・ボタン −36） |
 | 打牌の操作の既定（一度押し） | `src/ui.js` の `discardMode`、スワイプの長さは `SWIPE_PX` |
 | セリフ | `src/serifu.js` の `LINES`（性格名が鍵） |
 | 雑談が出る確率 | `src/ui.js` の `maybeIdle` の `0.18` |
@@ -307,11 +308,17 @@ src/debug.js        その中身。build.py は読まない（配布から外す
   ——`tools/drive-match.js` は `NAMES` の側を数えている
 - **四本そろっていなくてよい。**読めたものだけで鳴り、一本も無ければ `discard.wav`
   に落ちる（差し替えの途中で無音にならないため）
-- **打牌の四本は ElevenLabs の生成音**（2026年9月4日に差し替え）。生成したままの WAV は
+- **鳴る12本は全部 ElevenLabs の生成音**（2026年9月4日に差し替え終わり）。生成したままの WAV は
   `audio_raw/`（**コミットしない**）に置き、切り出しと整形は `tools/prep-sfx.py` が回す
-  ——単発に切り、**主ピークの8ms手前**から頭を切り、モノラル、末尾20msフェード、
-  **A特性RMS**で四本の聞こえを揃えてピーク −3dBFS 以下。48kHz のまま
-- **残りの8つは `tools/make-sfx.py` の合成**（仮）。**この道具は打牌の四本を書かない**
+  ——単発に切り、モノラル、頭1ms・末尾20msフェード、**A特性RMS**で聞こえを揃えて
+  ピーク −3dBFS 以下。48kHz のまま。頭を切る位置は、打牌は**主ピークの8ms手前**を
+  道具が自分で探し、残りの8つは**測って決めた範囲**（`SOURCES` の `cut`）
+- **大きさは一本ずつ違えてある**（`target_db`）。局が終わる音は前へ、
+  よく鳴る音は後ろへ。打牌の −30.1dB が基準
+- **流局だけ均してある**（`compress`）。連続音なので、大きい当たりだけが飛び出すと
+  「途切れた洗牌」に聞こえる。**単発の7本には掛けない**——立ち上がりが命
+- **`tools/make-sfx.py` が書くのは控えの `discard.wav` 一本だけ。**
+  `prep-sfx.py` が持っている名前を書こうとしたらその場で止まる
   ——回すと生成音を潰してしまうため
 - 差し替えるときは同じ名前で上書きし、**`audio/LICENSE.txt` の出典欄を書き換えること。**
   差し替えたら `node tools/check-sound.js`

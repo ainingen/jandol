@@ -32,9 +32,9 @@ keyed なのは手牌と四つの河だけ。席プレート・コンパス・�
 ### ボイス
 
 200人ぶんは現実的でない。効果音だけ。
-**打牌の四本は ElevenLabs の生成音に差し替え済み**（2026年9月4日）。
-**残る8つはまだ合成の仮。**差し替えは `audio_raw/` に置いて `tools/prep-sfx.py` を回すだけ
-（`SOURCES` に行を足す）。`audio/LICENSE.txt` の出典欄も一緒に直すこと。
+**鳴る12本は ElevenLabs の生成音に差し替え済み**（2026年9月4日）。
+差し替えは `audio_raw/` に置いて `tools/prep-sfx.py` を回すだけ（`SOURCES` に行を足す）。
+`audio/LICENSE.txt` の出典欄も一緒に直すこと。
 
 ---
 

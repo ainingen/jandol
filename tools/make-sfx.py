@@ -2,12 +2,24 @@
 """
 効果音を合成して audio/ に書く（docs/design/match/spec.md §2.1）
 
-  python3 tools/make-sfx.py            audio/*.wav を9本書き直す
+  python3 tools/make-sfx.py            audio/discard.wav（控えの一本）だけを書き直す
 
-なぜ合成か：
+**この道具が書くのは discard.wav 一本だけになった**（2026年9月4日）。
+9本とも合成音だったが、13本すべてを ElevenLabs で生成したものへ差し替えたため。
+いま audio/ を作るのは `tools/prep-sfx.py`（`audio_raw/` から切り出して整形する）。
+残っている discard.wav は、**discard1〜4 が一本も読めなかったときの控え**
+（`src/sound.js` の落とし先）で、生成音の側には対応するものが無い。
+
+**下の9つの関数は消していない。**合成でどう作っていたかの記録であり、
+素材が無い環境でも音を鳴らせる最後の道でもある。ただし**呼ばない**
+——`main()` は `WRITES` に書いた名前しか書かず、しかも `prep-sfx.py` が
+持っている名前は書こうとした時点で止める（下の `owned_by_prep`）。
+**ここに名前を足して回すと、生成音が合成音で黙って潰れる。**
+
+なぜ合成だったか：
   他所のゲームから採らない、という決めごと（§2.1）。CC0 の素材を集めるか
   実際に牌を録るのが本筋だが、どちらも手元に無いときに空のままにしないため、
-  ここで全部を自前で作る。出典が自分なので `audio/LICENSE.txt` は迷わない。
+  ここで全部を自前で作った。出典が自分なので `audio/LICENSE.txt` は迷わない。
   **差し替えるときは同じ名前で上書きするだけ**でよい（`src/sound.js` は名前しか見ない）。
 
 作り：
@@ -17,13 +29,10 @@
 
   22050Hz・16bit・モノラル。全部で 330KB ほど。index.html の500KB制限とは無関係。
 
-  **打牌の四本（discard1〜4）はここでは作らない。**2026年9月4日に
-  ElevenLabs で生成したものへ差し替えた。あちらは `tools/prep-sfx.py` が
-  `audio_raw/` から作る。**この道具で上書きしないこと**——回すと生成音が消える。
-  ここが作る discard.wav は、四本が一本も読めなかったときの控え（消さないこと）。
 
 依存：標準ライブラリだけ（numpy を要らないようにしてある）。
 """
+import importlib.util
 import math
 import os
 import random
@@ -32,6 +41,10 @@ import wave
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 OUT = os.path.join(HERE, '..', 'audio')
+
+# **この道具が書いてよい名前。**ここに足すときは、その名前を prep-sfx.py が
+# 持っていないことを確かめること（持っていれば下の錠が止める）
+WRITES = ['discard']
 SR = 22050
 rng = random.Random(20260904)      # 種を固定。回すたびに音が変わらないように
 
@@ -124,14 +137,13 @@ def write(name, data, peak=0.9):
     print('%-10s %5.2f秒 %6.1fKB' % (name, len(data) / SR, os.path.getsize(path) / 1024))
 
 
-# ---------- 9つ ----------
+# ---------- 9つ（記録。書くのは discard だけ） ----------
+# ---- 下の9つのうち、いま書いているのは discard だけ（上の WRITES）----
 def discard():
     """打牌。一番よく鳴るので、短く・硬く・後を引かない。
 
        **これは discard1〜4 が一本も読めなかったときの控え。**
        ふだん鳴るのは生成音の四本のほう（src/sound.js の FILES を見ること）。
-       四本は tools/prep-sfx.py が作る。**この道具は四本を書かない**
-       ——回すと生成音を合成音で潰してしまう。
        控えを消さないこと——音源を差し替える途中で打牌が無音になる"""
     return click(bright=1.0, size=1.0)
 
@@ -225,14 +237,31 @@ def tap():
     return [v * 0.6 for v in out]
 
 
+def owned_by_prep():
+    """prep-sfx.py が audio/ に書く名前。**そこと重なったら書かない**。
+       名前を数え直さずに向こうの表から読む——書き写すと、片方を直したときにずれる"""
+    src = os.path.join(HERE, 'prep-sfx.py')
+    spec = importlib.util.spec_from_file_location('prep_sfx', src)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return set(mod.SOURCES)
+
+
 def main():
     os.makedirs(OUT, exist_ok=True)
+    taken = owned_by_prep() & set(WRITES)
+    if taken:
+        raise SystemExit('prep-sfx.py が作っている音を上書きしようとしている: '
+                         + ' '.join(sorted(taken))
+                         + '\nWRITES から外すこと（回すと生成音が合成音で潰れる）')
     # 正規化の頭。打牌を 1 として、ツモとボタンはそれより小さく（§2.1「discard より小さく、軽く」）
     peaks = {'draw': 0.5, 'tap': 0.55, 'dora': 0.75, 'agari': 0.95, 'deal': 0.9}
-    for fn in (discard, draw, call, riichi, agari, deal, dora, ryuukyoku, tap):
-        write(fn.__name__, fn(), peaks.get(fn.__name__, 0.9))
-    print('\n打牌の四本（discard1〜4）は書いていない。'
-          'あれは生成音で、tools/prep-sfx.py が作る')
+    made = dict(discard=discard, draw=draw, call=call, riichi=riichi, agari=agari,
+                deal=deal, dora=dora, ryuukyoku=ryuukyoku, tap=tap)
+    for name in WRITES:
+        write(name, made[name](), peaks.get(name, 0.9))
+    print('\n書いたのは控えの discard.wav だけ。'
+          'ほかの12本は生成音で、tools/prep-sfx.py が audio_raw/ から作る')
 
 
 if __name__ == '__main__':

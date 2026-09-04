@@ -244,7 +244,17 @@ const JandolDebug = (() => {
 
     /* ---- 鳴らす ---- */
     const opts = () => (shake ? { rate: jitter() } : undefined);
-    const ready = () => { Sound.init(); return Sound.load(); };
+    /* 読み込みは押されるまで始めない（AudioContext はユーザー操作の中で作る）。
+       **読み終わったら一度だけ一覧を描き直す**——さもないと、マウント時に組んだ
+       「読めていない」の札が、鳴っているのに残る（一本ずつの ▶ は refresh を呼ばないため） */
+    let shown = false;
+    const ready = () => {
+      Sound.init();
+      return Sound.load().then((r) => {
+        if (!shown) { shown = true; refresh(); }
+        return r;
+      });
+    };
 
     mash.addEventListener('click', () => { ready().then(() => { say(Sound.play('discard', opts())); refresh(); }); });
     runs.addEventListener('click', () => {
