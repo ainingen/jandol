@@ -612,6 +612,36 @@ const Office = (() => {
   const FATIGUE_PULL = 0.25;
   const COND_SHIFT = 2;             // 調子1段ぶんの comp
 
+  /* ---- 見せかた（§9）。**数値そのままより帯のほうが読める** ----
+     言葉は「調子が落ちる」ではなく**「ラスを引きやすくなる」**方向で書く。
+     実測で目に見えるのは平均着順（+0.21）より
+     **四着率（19.8% → 26.8%）と平均点（−1,900点）**のほうなので、
+     そちらのほうがプレイヤーの実感と合う（§9.2） */
+  const FATIGUE_BANDS = [
+    { max: 24, key: 'ok', name: '元気' },
+    { max: 49, key: 'mid', name: 'やや疲れ' },
+    { max: 74, key: 'tired', name: '疲労' },
+    { max: 100, key: 'limit', name: '限界' },
+  ];
+  function fatigueBand(v) {
+    const n = Math.min(100, Math.max(0, v | 0));
+    return FATIGUE_BANDS.find((b) => n <= b.max) || FATIGUE_BANDS[FATIGUE_BANDS.length - 1];
+  }
+  /* 疲れている子への一言。**「ラスを引きやすくなる」**で書く */
+  const FATIGUE_NOTES = {
+    ok: '', mid: '',
+    tired: 'ラスを引きやすくなっています。休ませると抜けます。',
+    limit: 'かなりラスを引きやすくなっています。休ませること。',
+  };
+  function fatigueNote(v) { return FATIGUE_NOTES[fatigueBand(v).key] || ''; }
+
+  /* 調子は −2〜+2 の五段。**段が分かる形で見せる** */
+  const COND_LABELS = ['空回り', '重い', 'ふつう', '悪くない', '冴えている'];
+  function condLabel(v) {
+    const i = Math.min(2, Math.max(-2, v | 0)) + 2;
+    return COND_LABELS[i];
+  }
+
   /* 実効 comp。**疲労0・調子0なら素の comp と一致する**（第五段の入口で
      基準が動かないこと）。`st.comp` が無ければ元データの comp */
   function compEffOf(st, c) {
@@ -889,6 +919,22 @@ const Office = (() => {
           <button type="button" class="ofChip${at && sh[sl.key] ? ' on' : ''}"
             data-shift="${c.id}" data-slot="${sl.key}" ${at ? '' : 'disabled'}
             aria-pressed="${!!(at && sh[sl.key])}">${sl.name}</button>`).join('');
+        /* 疲労と調子（§9）。**きょうの増減も出す**——
+           「休み」に切り替えると +1 が −15 に変わり、**抜け方がその場で見える** */
+        const fat = fatigueOf(st, c.id);
+        const band = fatigueBand(fat);
+        const delta = fatigueDelta(actOf(st, c));
+        const cond = condOf(st, c.id);
+        const note = fatigueNote(fat);
+        const state = `
+          <span class="ofMateState">
+            <span class="ofBand b-${band.key}">${esc(band.name)}
+              <i>${fat}</i><em>${delta >= 0 ? '+' : '−'}${Math.abs(delta)}／日</em></span>
+            <span class="ofCond c${cond >= 0 ? 'p' : 'm'}${Math.abs(cond)}">調子
+              <i>${cond > 0 ? '+' : ''}${cond}</i>${esc(condLabel(cond))}</span>
+          </span>
+          ${note ? `<span class="ofMateWarn">${esc(note)}</span>` : ''}`;
+
         return `
         <div class="ofMate${at ? '' : ' off'}">
           <span class="mkFace sil"><img src="img/${pad3(c.id)}.webp" alt="" loading="lazy"
@@ -900,6 +946,7 @@ const Office = (() => {
               ? `<span class="ofBusy">${kind === 'trip' ? '遠征中' : '依頼中'}</span>`
               : `<button type="button" class="ofWhere" data-where="${c.id}"
                    aria-pressed="${at}">${at ? '店' : '休み'}</button>${chips}`}</span>
+            ${state}
           </span>
           <span class="ofMateNums">
             <span class="ofNum">人気 <b>${c.pop}</b></span>
@@ -1744,7 +1791,8 @@ const Office = (() => {
            RANK_TITLE, TIER_POINT, POWER_MIX, FAME_MIX, agencyTitle, EIGHT_N,
            FATIGUE, FATIGUE_PULL, COND_SHIFT, fatigueDelta, stepFatigue,
            compEffOf, tableCardOf, condWeights, rollCond, ensureCond,
-           actOf, ensureFatigue };
+           actOf, ensureFatigue,
+           FATIGUE_BANDS, fatigueBand, fatigueNote, condLabel, COND_LABELS };
 })();
 
 if (typeof module !== 'undefined' && module.exports) {
