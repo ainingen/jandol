@@ -429,11 +429,39 @@ body.inMatch.four #left {transform:translate(-50%,-50%) rotate(90deg)  translate
 body.inMatch.four .backs,body.inMatch.four .backs.vert{
   display:flex;flex-direction:row;flex-wrap:nowrap;gap:1.5px;max-height:none;transform-style:preserve-3d;
 }
-/* 他家の手牌の背。段4では卓面に寝かせたまま（厚みが無いと、立てても
-   左右の家は真横から見ることになって線にしか見えない）。段5で立てて厚みを付ける */
+/* ---------- 牌の厚み（§5） ----------
+   麻雀牌は幅21mmに対して奥行17mm。薄く描くとカードに見えるので、
+   卓の上の牌には面をもう一枚足して立体で持たせる。
+   見えるのは「立っている牌の上面」と「寝ている牌の手前の面」の二つだけ。
+   box-shadow でごまかすと、左右の河は90度回っているぶん影が横に出て破綻する。
+   数値は --th。傾き（rotateX(36deg)）を変えたら見直すこと。
+   #center から牌までの経路に overflow:hidden や filter を挟まないこと
+   ——挟んだ瞬間に 3D が潰れ、厚みだけが平らな板として貼り付く */
+body.inMatch.four .backs .tile::before,
+body.inMatch.four .river .tile::before,
+body.inMatch.four .opp .melds .tile::before{
+  content:"";position:absolute;left:.5px;right:.5px;height:var(--th);border-radius:2px;
+  background:linear-gradient(var(--tile-ivory),var(--back-a));
+  box-shadow:0 0 0 1.2px var(--line);
+}
+/* 立っている牌（他家の手牌）：上の面が奥へ伸びる。
+   手前に見えているのは背面なので、上面も手前側がオレンジ。
+   左右の家は真横から見ることになるが、この上面があるので列として読める */
 body.inMatch.four .backs .tile{
   width:calc(var(--rw)*.76);height:calc(var(--rw)*1.1);
-  transform:none;transform-origin:bottom center;
+  transform:rotateX(-74deg);transform-origin:bottom center;
+  transform-style:preserve-3d;--th:calc(var(--rw)*.52);
+}
+body.inMatch.four .backs .tile::before{
+  bottom:100%;transform-origin:center bottom;transform:rotateX(90deg);
+  background:linear-gradient(var(--back-a),var(--tile-ivory));
+}
+/* 寝ている牌（河と副露）：手前の面が卓へ落ちる。面は象牙、胴はオレンジ */
+body.inMatch.four .river .tile,body.inMatch.four .opp .melds .tile{
+  transform-style:preserve-3d;--th:calc(var(--rw)*.43);
+}
+body.inMatch.four .river .tile::before,body.inMatch.four .opp .melds .tile::before{
+  top:100%;transform-origin:center top;transform:rotateX(-90deg);
 }
 body.inMatch.four .opp .melds{display:flex;gap:4px;margin-left:4px}
 body.inMatch.four .melds .tile{width:calc(var(--rw)*.76);height:calc(var(--rw)*1.0)}
