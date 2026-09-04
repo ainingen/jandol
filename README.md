@@ -244,6 +244,7 @@ src/debug.js        その中身。build.py は読まない（配布から外す
 | 牌の移動の速さ | `src/match.css` の `.tile.moving`（.24s） |
 | 効果音の音量の既定・素材 | `src/sound.js` の `DEFAULT_VOLUME`、`audio/*.wav`（`tools/make-sfx.py`） |
 | どの名前が何本の音源を持つか | `src/sound.js` の `FILES`（打牌だけ四本） |
+| 音を耳で確かめる場所 | `debug.html` の「音」の区画（`src/debug.js` の `soundPanel`） |
 | 生成音の切り出しと音量合わせ | `tools/prep-sfx.py` の `SOURCES` `GROUPS`、`HEAD_MS` `LOUD_MS` `PEAK_CEIL_DB` |
 | 打牌の操作の既定（一度押し） | `src/ui.js` の `discardMode`、スワイプの長さは `SWIPE_PX` |
 | セリフ | `src/serifu.js` の `LINES`（性格名が鍵） |
