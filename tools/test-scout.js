@@ -460,6 +460,60 @@ function fakeStore(st) {
     eq(shop.seats[0].quirk.length, state.guests[0].quirk.length - 1, '床へ渡すのは写し');
   }
 
+  /* --- 男女（§4.4）。母集団を絞るための一手 --- */
+  {
+    const G = JansouGuests;
+    /* 絵が男女で分かれる。**`sex` を渡さなければいままでどおり** */
+    const plain = G.grid('kaisha', 0).join('|');
+    eq(G.grid('kaisha', 0).join('|'), plain, 'sex 無しは何度呼んでも同じ');
+    ok(G.grid('kaisha', 0, 'male').join('|') !== G.grid('kaisha', 0, 'female').join('|'),
+       '男と女で絵が違う');
+    ok(G.FEMALE_HAIR.every((h) => G.HAIR[h]), '女の髪型が全部ある');
+    ok(G.MALE_HAIR.every((h) => G.HAIR[h]), '男の髪型が全部ある');
+    eq(G.FEMALE_HAIR.filter((h) => G.MALE_HAIR.indexOf(h) >= 0).length, 0,
+       '男女で髪型が重ならない');
+    /* 髪型は typeKey から決まる＝描き直しても変わらない */
+    eq(G.hairFor('kaisha', 'female'), G.hairFor('kaisha', 'female'), '同じ客なら同じ髪型');
+
+    /* タイプ自身の sex が決まっていればそれに従う */
+    const always = () => 0;          // 必ず female 側に倒れる乱数
+    const never = () => 0.99;
+    eq(ScoutShop.sexFor('shachou', always), 'male', "sex:'male' のタイプは常に男");
+    eq(ScoutShop.sexFor('shachou', never), 'male', '乱数によらず男');
+    eq(ScoutShop.sexFor('motojandol', never), 'female', "sex:'female' のタイプは常に女");
+    eq(ScoutShop.sexFor('kaisha', always), 'female', "sex:'both' は割合で振る（女）");
+    eq(ScoutShop.sexFor('kaisha', never), 'male', "sex:'both' は割合で振る（男）");
+    ok(ScoutShop.FEMALE_RATE > 0 && ScoutShop.FEMALE_RATE < 1, '割合は0と1のあいだ');
+
+    /* 店の中で。**雀ドルは必ず女**、女は総当たりできない数 */
+    let shops = 0, fem = 0, thin = 0;
+    for (let d = 0; d < 60; d++) {
+      const st = { discovered: [], contracted: [], comp: {}, agency: 2,
+                   officePref: 'tokyo', money: 5000000 };
+      const trip = { pref: 'fukuoka', purpose: 'find', days: 5, dayLeft: 5 };
+      const shop = ScoutShop.buildShop(st, trip, ScoutShop.seeded(d * 7919 + 613));
+      shops++;
+      const f = shop.seats.filter((x) => x.sex === 'female');
+      fem += f.length;
+      if (f.length <= 1) thin++;
+      shop.seats.forEach((x) => {
+        ok(x.sex === 'male' || x.sex === 'female', '全席に男女がある');
+        if (x.charaId != null) eq(x.sex, 'female', '**雀ドルは必ず女の見た目**');
+      });
+    }
+    ok(fem / shops >= 3, '女は平均3人以上いる（' + (fem / shops).toFixed(1) + '）');
+    ok(fem / shops > ScoutShop.CALLS_PER_DAY,
+       '**女の数が一日の上限を超える**＝総当たりできない（だから癖を見る意味がある）');
+    ok(thin / shops < 0.15, '女が0〜1人しかいない店は稀（' + Math.round(thin * 100 / shops) + '%）');
+
+    /* 床へ渡る形 */
+    const st2 = { discovered: [], contracted: [], comp: {}, agency: 2,
+                  officePref: 'tokyo', money: 5000000 };
+    const shop2 = ScoutShop.buildShop(st2, { pref: 'fukuoka', purpose: 'find', days: 3, dayLeft: 3 },
+      ScoutShop.seeded(11));
+    ok(ScoutShop.stateOf(shop2, st2).guests.every((g) => g.sex), '床には男女が渡る');
+  }
+
   /* --- **自分の店の床には出さない**（§4） ---
      `jansou.js` は `guests` に `quirk` を入れない。入れた瞬間に
      自分の店の客にまで印が付くので、機械的に見て固定しておく
@@ -467,6 +521,15 @@ function fakeStore(st) {
   {
     const src = require('fs').readFileSync(__dirname + '/../src/jansou.js', 'utf8');
     ok(!/quirk/.test(src), 'jansou.js は quirk を扱わない（自分の店の床には出ない）');
+    /* **男女の出し分けも自分の店には持ち込まない。**
+       `jansou.js` の `sex` は**名前を作るためのもの**（`names[f.id]`）で、
+       床に渡す `guests` には入れない。入れた瞬間に自分の店の髪型が変わる。
+       名前の側の用途と混ざらないよう、行ごと見て固定する */
+    const sexLines = src.split('\n').filter((l) => /\bsex\b/.test(l));
+    eq(sexLines.length, 1, 'jansou.js が sex に触るのは一行だけ');
+    ok(/names\[/.test(sexLines[0]), 'その一行は名前を作るところ（床へは渡さない）',
+       sexLines[0].trim());
+    ok(!/guests[\s\S]{0,200}?\bsex:/.test(src), '床へ渡す guests に sex を入れていない');
   }
 
   /* --- ただの客にも癖が付いていること（複数の店で見る） ---

@@ -269,12 +269,30 @@ const JansouGuests = (() => {
   /* ---------- スプライトを組む ----------
      BODY に deco を重ねて、12×16の文字グリッドを返す。
      色の解決は描画側（jansou-floor.js）が INK と type を見て行う */
-  function grid(typeKey, frame) {
+  /* 男女で分ける髪型（`scout/spec.md` §4.4）。
+     **絵で男女が分かるようにするため**——`sex` は名前の生成にしか
+     使われておらず、遠征先の店では「男か女かすら分からない」状態だった。
+     長い髪は女、短い髪は男。3倍表示でも輪郭で読める */
+  const FEMALE_HAIR = ['bob', 'long', 'bun', 'pony'];
+  const MALE_HAIR = ['short', 'parted', 'bald', 'spiky'];
+  /* どれを使うかは typeKey から決める。**乱数を引かない**——
+     同じ客が描き直すたび髪型を変えては困る */
+  function hairFor(typeKey, sex) {
+    const pool = sex === 'female' ? FEMALE_HAIR : MALE_HAIR;
+    let h = 0;
+    for (let i = 0; i < typeKey.length; i++) h = (h * 31 + typeKey.charCodeAt(i)) >>> 0;
+    return pool[h % pool.length];
+  }
+
+  /* `sex` を渡すと髪型が男女で分かれる。**渡さなければいままでどおり**
+     ——自分の店の絵は1ドットも変わらない（`scout/spec.md` §4.4） */
+  function grid(typeKey, frame, sex) {
     const t = BY_KEY[typeKey];
     const base = (frame === 1 ? BODY_WALK : BODY).slice();
     if (!t) return base;
     /* 髪 → 帽子・持ち物 の順。帽子は髪の上に乗る */
-    const overlay = (HAIR[t.style] || HAIR.short).concat(DECO[t.deco] || []);
+    const style = sex ? hairFor(typeKey, sex) : t.style;
+    const overlay = (HAIR[style] || HAIR.short).concat(DECO[t.deco] || []);
     overlay.forEach(([row, c0, c1, key]) => {
       if (row < 0 || row >= base.length) return;
       const line = base[row].split('');
@@ -592,6 +610,7 @@ const JansouGuests = (() => {
   return {
     TYPES, BY_KEY, CAT, INK, SHADOW, BODY, HAIR, DECO, STAGE, MAX_REGULARS, MAX_SEEN, FACES,
     SEI, MEI_M, MEI_F, NIJINA,
+    FEMALE_HAIR, MALE_HAIR, hairFor,
     grid, makeGuest, displayName, bumpVisit, stageOf, stageInfo, trim, trimSeen,
     faceId, typeOfFace, pickFace, likeOf, bumpRegulars,
     BOTTLES, BOTTLE_SPRITE, CHALLENGES, bottleOf, pickChallenge, arashiTier, resolveBottle,

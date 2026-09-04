@@ -195,6 +195,30 @@ const ScoutShop = (() => {
   /* ただの客に癖が付く割合。**初期値。§8 で実機を見てから決める** */
   const PLAIN_QUIRK = 0.25;
 
+  /* ------------------------------------------------------------
+     男女（spec.md §4.4）— 母集団を絞るための一手
+
+     **雀ドルは必ず女性の見た目。ただの客は大半が男。**
+     16席の店なら女性は3〜5人になり、そこだけ見ればいい。
+     20人から3人選ぶのは運だが、4人から3人なら判断になる
+     ——**一日3回の上限が初めて生きる**。
+
+     タイプ自身の `sex` が決まっているものはそれに従い、
+     `both` のものだけをこの割合で振る。
+  ------------------------------------------------------------ */
+  /* **0.45。実測で決めた**（`spec.md` §4.4）。この値だと店の女性は平均4.6人で、
+     「女が0〜1人しかいない店」は5%、「3人以上いる店」は85%。
+     **一日3回では総当たりできない**——だから癖を見る意味が出る。
+     0.22 だと平均2.7人で、癖を見る前に全員押せてしまった */
+  const FEMALE_RATE = 0.45;
+  function sexFor(typeKey, rng) {
+    const G = typeof JansouGuests !== 'undefined' ? JansouGuests : null;
+    const t = G && G.BY_KEY[typeKey];
+    const own = t && t.sex;
+    if (own === 'male' || own === 'female') return own;
+    return rng() < FEMALE_RATE ? 'female' : 'male';
+  }
+
   /* 席一つぶんの癖を配る（純関数。`rng` は buildShop から）。
      `styleKey` が無ければただの客。
 
@@ -303,7 +327,9 @@ const ScoutShop = (() => {
     for (let ti = 0; ti < tables; ti++) {
       for (let si = 0; si < 4; si++) {
         if (rng() > fill) continue;
-        seats.push({ table: ti, seat: si, typeKey: weighted(pool, rng), charaId: null, quirk: null });
+        const typeKey = weighted(pool, rng);
+        seats.push({ table: ti, seat: si, typeKey, sex: sexFor(typeKey, rng),
+                     charaId: null, quirk: null });
       }
     }
 
@@ -323,7 +349,9 @@ const ScoutShop = (() => {
       if (!free.length) break;
       const s = free[Math.floor(rng() * free.length)];
       s.charaId = c.id;
-      /* **雀ドルは二拍**（打ち筋から来る癖＋もう一方の系統の癖。§4.4） */
+      /* **雀ドルは必ず女性の見た目**（§4.4）。母集団を絞る一手 */
+      s.sex = 'female';
+      /* **雀ドルは二つ付く**（頭の上の印＋体まわりの物。§4.5） */
       s.quirk = quirksFor(c.style, rng);
     }
 
@@ -376,7 +404,8 @@ const ScoutShop = (() => {
       /* **癖はここでだけ渡す。**自分の店の `Jansou` は `guests` に
          `quirk` を入れないので、床は何も描かない（§4 の「自分の店には出さない」） */
       guests: shop.seats.map((s) => ({
-        table: s.table, seat: s.seat, typeKey: s.typeKey, quirk: (s.quirk || []).slice(),
+        table: s.table, seat: s.seat, typeKey: s.typeKey, sex: s.sex || null,
+        quirk: (s.quirk || []).slice(),
       })),
       staff: [],
       closedTables: 0, myTable: -1,
@@ -399,7 +428,7 @@ const ScoutShop = (() => {
   return {
     SHOP_TYPES, TYPE_BY_KEY, PALETTES, ANY_CHANCE, TWO_CHANCE, CALLS_PER_DAY,
     QUIRKS, QUIRK_BY_KEY, STYLE_QUIRK, BEATS, MARKS, PLAIN_QUIRK, AISHO_LINES,
-    aishoLine,
+    FEMALE_RATE, sexFor, aishoLine,
     seeded, palOf, pickType, jandolCount, nameOf, buildShop, stateOf, seatOfGuestId,
     quirkOf, quirksFor,
   };

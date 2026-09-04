@@ -1391,22 +1391,24 @@ const JansouFloor = (() => {
       applyPan();
     }
 
-    function guestDef(typeKey, frame) {
-      const id = 'jnc-' + typeKey + '-' + frame;
+    /* `sex` は遠征先の店だけが渡す（`scout/spec.md` §4.4）。
+       **キャッシュの鍵に混ぜること**——混ぜないと男女で同じ絵が出る */
+    function guestDef(typeKey, frame, sex) {
+      const id = 'jnc-' + typeKey + '-' + frame + (sex ? '-' + sex : '');
       if (!made[id]) {
         const t = G.BY_KEY[typeKey];
         const gg = el('g', { id });
-        gridRects(G.grid(typeKey, frame), guestColor(t)).forEach((r) => gg.appendChild(r));
+        gridRects(G.grid(typeKey, frame, sex), guestColor(t)).forEach((r) => gg.appendChild(r));
         defs.appendChild(gg);
         made[id] = true;
       }
       return '#' + id;
     }
-    function putGuest(typeKey, x, y, frame) {
+    function putGuest(typeKey, x, y, frame, sex) {
       const sh = el('g', { transform: 'translate(' + Math.round(x) + ',' + (Math.round(y) + SEAT_H) + ')' });
       shadowRects(SEAT_W).forEach((r) => sh.appendChild(r));
       actG.appendChild(sh);
-      actG.appendChild(el('use', { href: guestDef(typeKey, frame), x: Math.round(x), y: Math.round(y) }));
+      actG.appendChild(el('use', { href: guestDef(typeKey, frame, sex), x: Math.round(x), y: Math.round(y) }));
     }
 
     /* ---------- 照明（帯で変わる。§4.3「ピンクを差す」） ---------- */
@@ -1442,57 +1444,91 @@ const JansouFloor = (() => {
       });
     }
 
-    /* ---------- 癖（`scout/spec.md` §4.4。遠征先の店だけ） ----------
-       **`live.clock` だけから決める。乱数を混ぜない**（§4.2。常時アニメと同じ扱い）。
-       同じ時刻に描き直せば同じ絵になるので、朝の描き直しで癖が動かない。
+    /* ---------- 癖（`scout/spec.md` §4.5。遠征先の店だけ） ----------
+       **スプライトの箱の外へ出す。**最初は 12×16 の中に 1〜3ドットの印を
+       置いていたが、**店に20人ばらばらに座っていると見つけられなかった**
+       （並べて比べれば違うが、探す状況ではまるで効かない）。
+       離れて効くのは**シルエットが崩れているかどうか**なので、
+       頭の上に浮かべるか、体の横・足元に輪郭からはみ出す大きさで置く。
 
-       系統は二つ。**beat は振りかた、mark は印**で、互いを潰さない
-       （`ScoutShop.QUIRKS` の `kind`）。雀ドルは二つ、ただの客は一つか無し。 */
+       系統は二つのまま。**`beat` は頭の上の印、`mark` は体まわりの物。**
+       雀ドルは両方付き、ただの客はどちらか一つ。
+       **遠目に「二つ付いている子」を探す**のがこの画面でやること。
+
+       描くのは `live.clock` の位相だけから（乱数を混ぜない）が、
+       **動きに判別を担わせない。**動くのは飾りで、効くのは形と色。
+
+       色は `PAL`（＝ PAL0）から。**`pal` を使わない**——
+       店の型で印の色まで変わると、型をまたいで癖を覚えられない。 */
     const BEAT_DEFAULT = 1.6;      // 既定の打牌。3拍に1回なので周期は約1.9秒
     const BEAT_FAST = 6.7;         // 手が速い。同じ勘定で約0.45秒
-    const SLOW_CYCLE = 3.6;        // 長考。3.0秒止まって、そこから0.3秒だけ手が上がる
-    const SLOW_HOLD = 3.0;         // 止まっているあいだ
-    const SLOW_LIFT = 0.3;         // 手が上がっているあいだ
 
+    /* 手の上がりかた。**`fast` は上がりっぱなし**（頭の上の速度線と対で読む） */
     function beatFrame(quirk, c, ph) {
       const has = (k) => quirk && quirk.indexOf(k) >= 0;
       if (has('still')) return 0;
-      if (has('fast')) return (Math.floor(c * BEAT_FAST + ph) % 3) === 0 ? 1 : 0;
-      if (has('slow')) {
-        /* **一周期に一度だけ上げて下ろす**（4秒で2回。癖なしは4回）。
-           以前は 0.6秒のあいだ 6Hz で振っていたので、4秒で数えると
-           癖なしと同じ4回になり、**間の長さでしか区別できなかった**
-           （`scout/spec.md` §7 の実測）。振る回数そのものを半分にする */
-        const t = (c + ph) % SLOW_CYCLE;
-        return t > SLOW_HOLD && t <= SLOW_HOLD + SLOW_LIFT ? 1 : 0;
-      }
+      if (has('fast')) return 1;                       // 上げたまま
+      if (has('slow')) return 0;
       return (Math.floor(c * BEAT_DEFAULT + ph) % 3) === 0 ? 1 : 0;
     }
 
-    /* 印は 12×16 の中に収める（§4.4「1〜3ドットの印」）。
-       **席の向きでは動かさない。**この大きさでは「体のどこに付いているか」が
-       読み取れる唯一の手がかりなので、どの席でも同じ場所に出す。
-
-       色は `PAL`（＝ PAL0）から取る。**`pal` を使わないこと**——
-       店の型で印の色まで変わると、型をまたいで癖を覚えられない */
-    function drawQuirkMark(quirk, p, c, ph) {
+    /* 頭の上の印（`beat`）。**箱の上に出す**ので、行は負の値になる */
+    function drawBeatSign(quirk, p, c, ph) {
       const x = Math.round(p.x), y = Math.round(p.y);
-      if (quirk.indexOf('bou') >= 0) {
-        /* 立直棒。足元に白い3ドット。真ん中の1ドットだけ赤くして
-           「河が伸びる」（同じ場所に出る）と形で見分けられるようにする */
-        actG.appendChild(rect(x + 4, y + SEAT_H, 3, 1, PAL.tile));
-        actG.appendChild(rect(x + 5, y + SEAT_H, 1, 1, PAL.felt));
+      const has = (k) => quirk.indexOf(k) >= 0;
+      if (has('fast')) {
+        /* 速度線2本。シアン。少し左右に揺れる（飾り） */
+        const w = (Math.floor(c * 4 + ph) % 2) ? 1 : 0;
+        actG.appendChild(rect(x + 1 + w, y - 4, 7, 1, PAL.neonCyan));
+        actG.appendChild(rect(x + 3 + w, y - 2, 7, 1, PAL.neonCyan));
       }
-      if (quirk.indexOf('meld') >= 0) {
-        /* 晒し牌。体の右に3×2。**時々1枚増える**（左へ伸ばす。箱から出さない） */
+      if (has('slow')) {
+        /* 縦に三点（…）。黄。下から順に灯る（飾り） */
+        const n = 1 + (Math.floor(c * 1.6 + ph) % 3);
+        for (let i = 0; i < n; i++) {
+          actG.appendChild(rect(x + 5, y - 2 - i * 2, 2, 1, PAL.neonYellow));
+        }
+      }
+      if (has('still')) {
+        /* 横一本の長い線（凪）。灰。動かない */
+        actG.appendChild(rect(x, y - 3, 12, 1, PAL.closedTop));
+      }
+    }
+
+    /* 体まわりの物（`mark`）。**箱からはみ出す大きさで置く**
+
+       **細い線にしないこと。**最初は 1ドット幅の棒にしていたが、
+       客の持ち物（`DECO` の 瓶・本・マイク・鞄）が同じ列に同じ細さで
+       描かれていて、**印として立たなかった**（実機の全景で見つけられなかった）。
+
+       だから二つ守る。
+         ・**2ドット以上の太さ**にする
+         ・**暗い縁で浮かせる**（`outlined`）。床の色が店の型で変わっても、
+           縁があれば必ず背景から分離する */
+    function outlined(x, y, w, h, fill) {
+      actG.appendChild(rect(x - 1, y - 1, w + 2, h + 2, PAL.ink));
+      actG.appendChild(rect(x, y, w, h, fill));
+    }
+
+    function drawMark(quirk, p, c, ph) {
+      const x = Math.round(p.x), y = Math.round(p.y);
+      const has = (k) => quirk.indexOf(k) >= 0;
+      if (has('bou')) {
+        /* 立直棒が立っている。席の右に**2ドット幅で8ドット**。上端が赤 */
+        outlined(x + 13, y + 3, 2, 8, PAL.tile);
+        actG.appendChild(rect(x + 13, y + 3, 2, 2, PAL.felt));
+      }
+      if (has('meld')) {
+        /* 晒し牌の塊。体の右下に**5×4**で張り出す。時々1枚増える */
         const more = (Math.floor(c * 0.5 + ph) % 4) === 0 ? 1 : 0;
-        actG.appendChild(rect(x + 9 - more, y + 10, 3 + more, 2, PAL.tile));
-        actG.appendChild(rect(x + 9 - more, y + 11, 3 + more, 1, PAL.tileLow));
+        outlined(x + 12, y + 8, 5 + more, 4, PAL.tile);
+        actG.appendChild(rect(x + 12, y + 10, 5 + more, 2, PAL.tileLow));
       }
-      if (quirk.indexOf('guard') >= 0) {
-        /* 河が横に伸びる。足元の列が1ドットずつ伸びて、5つで戻る */
-        const n = 1 + (Math.floor(c * 1.2 + ph) % 5);
-        for (let i = 0; i < n; i++) actG.appendChild(rect(x + 2 + i * 2, y + SEAT_H, 1, 1, PAL.tileLow));
+      if (has('guard')) {
+        /* 河が横に長い。足元に**13ドット×3**の列。ゆっくり伸び縮みする（飾り） */
+        const n = 11 + (Math.floor(c * 0.8 + ph) % 3);
+        outlined(x - 1, y + SEAT_H, n, 3, PAL.tile);
+        actG.appendChild(rect(x - 1, y + SEAT_H + 1, n, 2, PAL.tileLow));
       }
     }
 
@@ -1511,11 +1547,10 @@ const JansouFloor = (() => {
           const ph = (s.table * 4 + s.seat) * 0.7;
           const q = g.quirk;
           const frame = beatFrame(q, c, ph);
-          /* `still` は打牌を振らないかわりに肩が1ドット上下する
-             ——**動かないことが見えるように**、まったくの静止にはしない */
-          const lift = q && q.indexOf('still') >= 0 ? (Math.floor(c * 1.1 + ph) % 2) : 0;
-          putGuest(g.look || g.typeKey, p.x, p.y - lift, frame);
-          if (q) drawQuirkMark(q, p, c, ph);
+          putGuest(g.look || g.typeKey, p.x, p.y, frame, g.sex);
+          /* **物を先、頭の印をあと**。物は体に隠れてよいが、
+             頭の印は何にも隠れてはいけない（遠目に効くのはこちら） */
+          if (q) { drawMark(q, p, c, ph); drawBeatSign(q, p, c, ph); }
         });
       });
       /* 歩いている客（入る／出る）。足は進み具合から */
@@ -1999,6 +2034,7 @@ const JansouFloor = (() => {
            自分の店の `Jansou` は入れないので null のまま＝何も描かれない */
         live.seated.set('p' + i, { typeKey: g.typeKey, count: 1,
           quirk: (g.quirk && g.quirk.length) ? g.quirk : null,
+          sex: g.sex || null,
           seats: [{ table: g.table, seat: g.seat }] });
       });
       /* スタッフは空いている席に。埋まっていれば通路に */
