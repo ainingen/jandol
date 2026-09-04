@@ -98,7 +98,8 @@ index.html          ビルド結果。これを配布する（500KB以下に保�
 shell.html          外枠。表紙・タブ・セーブ。ビルド時にCSS/JSが差し込まれる
 build.py            index.html を組み立てる（約13KB。CSS/JSは src/ のまま読む）
 tools/make-font.py  表紙の丸ゴシックを作り直す
-tools/make-sfx.py   効果音を合成して audio/ に書く（いまの音はこれで作った仮の音）
+tools/make-sfx.py   効果音を合成して audio/ に書く（打牌以外の8つ。打牌の四本は書かない）
+tools/prep-sfx.py   生成した音源（audio_raw/）を切り出して整形し audio/ に書く
 tools/check-sound.js 打牌の鳴らし分けをブラウザで確かめる（音源を差し替えたら回す）
 tools/drive-match.js 対局画面をブラウザで回す。配牌・鳴き・河3段・終局を撮り、--video で録画
 
@@ -243,6 +244,7 @@ src/debug.js        その中身。build.py は読まない（配布から外す
 | 牌の移動の速さ | `src/match.css` の `.tile.moving`（.24s） |
 | 効果音の音量の既定・素材 | `src/sound.js` の `DEFAULT_VOLUME`、`audio/*.wav`（`tools/make-sfx.py`） |
 | どの名前が何本の音源を持つか | `src/sound.js` の `FILES`（打牌だけ四本） |
+| 生成音の切り出しと音量合わせ | `tools/prep-sfx.py` の `SOURCES` `GROUPS`、`HEAD_MS` `LOUD_MS` `PEAK_CEIL_DB` |
 | 打牌の操作の既定（一度押し） | `src/ui.js` の `discardMode`、スワイプの長さは `SWIPE_PX` |
 | セリフ | `src/serifu.js` の `LINES`（性格名が鍵） |
 | 雑談が出る確率 | `src/ui.js` の `maybeIdle` の `0.18` |
@@ -304,8 +306,13 @@ src/debug.js        その中身。build.py は読まない（配布から外す
   ——`tools/drive-match.js` は `NAMES` の側を数えている
 - **四本そろっていなくてよい。**読めたものだけで鳴り、一本も無ければ `discard.wav`
   に落ちる（差し替えの途中で無音にならないため）
-- **いまの音は `tools/make-sfx.py` で合成した仮の音**（出典は `audio/LICENSE.txt`）。
-  差し替えるときは同じ名前で上書きし、**`audio/LICENSE.txt` の出典欄を書き換えること。**
+- **打牌の四本は ElevenLabs の生成音**（2026年9月4日に差し替え）。生成したままの WAV は
+  `audio_raw/`（**コミットしない**）に置き、切り出しと整形は `tools/prep-sfx.py` が回す
+  ——単発に切り、**主ピークの8ms手前**から頭を切り、モノラル、末尾20msフェード、
+  **A特性RMS**で四本の聞こえを揃えてピーク −3dBFS 以下。48kHz のまま
+- **残りの8つは `tools/make-sfx.py` の合成**（仮）。**この道具は打牌の四本を書かない**
+  ——回すと生成音を潰してしまうため
+- 差し替えるときは同じ名前で上書きし、**`audio/LICENSE.txt` の出典欄を書き換えること。**
   差し替えたら `node tools/check-sound.js`
 - **ZIP に `audio/` を含めること。**無くても対局は止まらないが、無音になる
 

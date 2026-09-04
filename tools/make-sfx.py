@@ -17,9 +17,10 @@
 
   22050Hz・16bit・モノラル。全部で 330KB ほど。index.html の500KB制限とは無関係。
 
-  **打牌だけ四本ある**（discard1〜4）。一番よく鳴るので、一本だと一局十七回で
-  機械音に聞こえる。どれを鳴らすかは src/sound.js が決める（FILES）。
-  discard.wav は四本が一本も読めなかったときの控えなので、消さないこと。
+  **打牌の四本（discard1〜4）はここでは作らない。**2026年9月4日に
+  ElevenLabs で生成したものへ差し替えた。あちらは `tools/prep-sfx.py` が
+  `audio_raw/` から作る。**この道具で上書きしないこと**——回すと生成音が消える。
+  ここが作る discard.wav は、四本が一本も読めなかったときの控え（消さないこと）。
 
 依存：標準ライブラリだけ（numpy を要らないようにしてある）。
 """
@@ -128,21 +129,11 @@ def discard():
     """打牌。一番よく鳴るので、短く・硬く・後を引かない。
 
        **これは discard1〜4 が一本も読めなかったときの控え。**
-       ふだん鳴るのは下の DISCARDS のほう（src/sound.js の FILES を見ること）。
+       ふだん鳴るのは生成音の四本のほう（src/sound.js の FILES を見ること）。
+       四本は tools/prep-sfx.py が作る。**この道具は四本を書かない**
+       ——回すと生成音を合成音で潰してしまう。
        控えを消さないこと——音源を差し替える途中で打牌が無音になる"""
     return click(bright=1.0, size=1.0)
-
-
-# 打牌の四本。**一番よく鳴るので一本だと機械音に聞こえる**（spec.md §2.2）。
-# 硬さ（bright）・胴の鳴り（size）・長さ（sec）を少しずつ変えるだけで、
-# 「同じ動作の別のひと打ち」に聞こえる。振りすぎると別の物に当たった音になる。
-# ノイズは rng が呼ぶたび別の目を引くので、四本は自然に違う当たりを持つ。
-DISCARDS = [
-    ('discard1', dict(bright=1.00, size=1.00, sec=0.16)),
-    ('discard2', dict(bright=1.12, size=0.85, sec=0.15)),   # 硬く、軽い
-    ('discard3', dict(bright=0.88, size=1.15, sec=0.18)),   # 鈍く、胴が鳴る
-    ('discard4', dict(bright=1.05, size=1.05, sec=0.17)),
-]
 
 
 def draw():
@@ -240,10 +231,8 @@ def main():
     peaks = {'draw': 0.5, 'tap': 0.55, 'dora': 0.75, 'agari': 0.95, 'deal': 0.9}
     for fn in (discard, draw, call, riichi, agari, deal, dora, ryuukyoku, tap):
         write(fn.__name__, fn(), peaks.get(fn.__name__, 0.9))
-    # 打牌の四本。**頭を discard と揃える。**揃えないと、鳴らし分けが
-    # 音色の違いではなく音量のふらつきに聞こえる
-    for name, kw in DISCARDS:
-        write(name, click(**kw), peaks.get('discard', 0.9))
+    print('\n打牌の四本（discard1〜4）は書いていない。'
+          'あれは生成音で、tools/prep-sfx.py が作る')
 
 
 if __name__ == '__main__':
