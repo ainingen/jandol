@@ -475,6 +475,55 @@ function fakeStore(st) {
     /* 髪型は typeKey から決まる＝描き直しても変わらない */
     eq(G.hairFor('kaisha', 'female'), G.hairFor('kaisha', 'female'), '同じ客なら同じ髪型');
 
+    /* ---------- 服の色と裾（A7-1。`spec.md` §10.1） ----------
+       **髪型だけでは実機で読めなかった。**色（紺／えんじ）と
+       裾の形（ズボン／スカート）の二つを重ねる */
+    const male0 = G.grid('kaisha', 0, 'male');
+    const female0 = G.grid('kaisha', 0, 'female');
+    const bare0 = G.grid('kaisha', 0);
+    /* **`sex` 無しは裾が素のまま**（自分の店の絵。髪は元から型ごとに乗る） */
+    eq(bare0.slice(-3).join('|'), G.BODY.slice(-3).join('|'), 'sex 無しは裾が素の体のまま');
+    ok(male0.join('|') !== female0.join('|'), '男女で絵が違う');
+    /* 裾。**女は広がり、男は割れる** */
+    const hemW = (g) => g[g.length - 1].replace(/\./g, '').length;
+    ok(hemW(female0) > hemW(male0), '女の裾のほうが広い',
+       'female ' + hemW(female0) + ' / male ' + hemW(male0));
+    eq(hemW(female0), 12, '女の裾は12幅');
+    ok(/o\.+o/.test(male0[male0.length - 1]), '男の裾は割れている（足が二本）',
+       male0[male0.length - 1]);
+    /* 歩く絵でも裾が入る */
+    ok(G.grid('kaisha', 1, 'female')[15].replace(/\./g, '').length === 12, '歩く絵にも裾が効く');
+    /* 服の色。**癖の三色とぶつからない**（あちらは明るいネオンで箱の外） */
+    const F2 = require('../src/jansou-floor.js').JansouFloor;
+    const quirkCols = [F2.PAL.neonCyan, F2.PAL.neonYellow, F2.PAL.neonPink, F2.PAL.gold, F2.PAL.goldHi];
+    ['male', 'female'].forEach((sx) => {
+      const c = G.clothFor(sx);
+      ok(c && c.cloth && c.clothDark, sx + ' の服の色がある');
+      ok(quirkCols.indexOf(c.cloth) < 0, sx + ' の服は癖の色と別');
+      /* 暗い色であること（明るいと床で沈む型が出る。癖の印で学んだこと） */
+      const lum = parseInt(c.cloth.slice(1, 3), 16) * 0.3 + parseInt(c.cloth.slice(3, 5), 16) * 0.6
+        + parseInt(c.cloth.slice(5, 7), 16) * 0.1;
+      ok(lum < 110, sx + ' の服は暗い（床より沈まない）', String(Math.round(lum)));
+    });
+    ok(G.clothFor('male').cloth !== G.clothFor('female').cloth, '男女で服の色が違う');
+    eq(G.clothFor(null), null, 'sex が無ければ服の色も無い');
+    /* 四型の床のどれとも十分に離れている */
+    ['old', 'back', 'girls', 'lux'].forEach((k) => {
+      const pal = ScoutShop.palOf(k);
+      ['male', 'female'].forEach((sx) => {
+        const a = G.clothFor(sx).cloth, b = pal.plankA || pal.carpetA;
+        const d = [1, 3, 5].reduce((acc, i) =>
+          acc + Math.abs(parseInt(a.slice(i, i + 2), 16) - parseInt(b.slice(i, i + 2), 16)), 0);
+        ok(d > 120, k + ' の床と ' + sx + ' の服が離れている', String(d));
+      });
+    });
+    /* 床の描画が `sex` を色にも渡していること（渡さなければ型の色のまま） */
+    const fsrc = require('fs').readFileSync(require('path').join(__dirname, '../src/jansou-floor.js'), 'utf8');
+    ok(/function guestColor\(t, sex\)/.test(fsrc), 'guestColor が sex を受け取る');
+    ok(/guestColor\(t, sex\)/.test(fsrc), '床のスプライトが sex を色に渡す');
+    ok(/gridRects\(G\.grid\(t\.key, 0\), guestColor\(t\)\)/.test(fsrc),
+       '客カード（自分の店）は sex を渡さない＝いままでどおり');
+
     /* タイプ自身の sex が決まっていればそれに従う */
     const always = () => 0;          // 必ず female 側に倒れる乱数
     const never = () => 0.99;

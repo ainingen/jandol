@@ -275,6 +275,40 @@ const JansouGuests = (() => {
      長い髪は女、短い髪は男。3倍表示でも輪郭で読める */
   const FEMALE_HAIR = ['bob', 'long', 'bun', 'pony'];
   const MALE_HAIR = ['short', 'parted', 'bald', 'spiky'];
+
+  /* ------------------------------------------------------------
+     男女の服と裾（`scout/spec.md` §10.1）— A7-1
+
+     **髪型だけでは実機で読めなかった。**12×16 の頭の中の1〜2ドットの差でしかなく、
+     癖の印で学んだこと（離れて効くのはシルエットが崩れているかどうか）が
+     そのまま当てはまる。**男女が読めなければ「あえて男に声をかける」が
+     判断にならず、ただの誤タップになる。**
+
+     だから**二つ重ねる。**
+
+       色    … 男は紺、女はえんじ。癖の三色（シアン・黄・ピンク）は
+               明るいネオンで**箱の外**に出ているので、明度でも位置でも重ならない。
+               四型の床はどれも中間の明るさなので、暗い二色はどちらも沈まない。
+               赤と青にしたのは色覚の型を選ばないため（赤と緑は避ける）
+       裾    … 女はスカート（12幅）、男はズボン（8幅で二本に割れる）。
+               **色は覚えないと効かないが、形は覚えなくても効く**
+
+     **`sex` を渡したときだけ効く。**`jansou.js` は床へ渡す `guests` に
+     `sex` を入れていないので、**自分の店の絵は1ドットも変わらない**
+     （`tools/test-scout.js` が固定している）
+  ------------------------------------------------------------ */
+  const SEX_CLOTH = {
+    male:   { cloth: '#2f4a72', clothDark: '#1e3350' },   // 紺
+    female: { cloth: '#a03050', clothDark: '#77203c' },   // えんじ
+  };
+  function clothFor(sex) { return SEX_CLOTH[sex] || null; }
+
+  /* 裾の3行（行13〜15）。**行13は両方とも手が出たまま**で、
+     割れるのは行14から——腰から下だけが違う、という形にする */
+  const HEM = {
+    female: ['soccccccccos', 'oCCCCCCCCCCo', 'oooooooooooo'],
+    male:   ['soccccccccos', '..oCCCCCCo..', '..oo....oo..'],
+  };
   /* どれを使うかは typeKey から決める。**乱数を引かない**——
      同じ客が描き直すたび髪型を変えては困る */
   function hairFor(typeKey, sex) {
@@ -290,6 +324,12 @@ const JansouGuests = (() => {
     const t = BY_KEY[typeKey];
     const base = (frame === 1 ? BODY_WALK : BODY).slice();
     if (!t) return base;
+    /* 裾を差し替える（`sex` があるときだけ）。歩く絵は裾の行が
+       もう一段ずれているので、**最後の3行**として扱う */
+    if (HEM[sex]) {
+      const n = base.length;
+      HEM[sex].forEach((line, i) => { base[n - 3 + i] = line; });
+    }
     /* 髪 → 帽子・持ち物 の順。帽子は髪の上に乗る */
     const style = sex ? hairFor(typeKey, sex) : t.style;
     const overlay = (HAIR[style] || HAIR.short).concat(DECO[t.deco] || []);
@@ -610,7 +650,7 @@ const JansouGuests = (() => {
   return {
     TYPES, BY_KEY, CAT, INK, SHADOW, BODY, HAIR, DECO, STAGE, MAX_REGULARS, MAX_SEEN, FACES,
     SEI, MEI_M, MEI_F, NIJINA,
-    FEMALE_HAIR, MALE_HAIR, hairFor,
+    FEMALE_HAIR, MALE_HAIR, hairFor, SEX_CLOTH, HEM, clothFor,
     grid, makeGuest, displayName, bumpVisit, stageOf, stageInfo, trim, trimSeen,
     faceId, typeOfFace, pickFace, likeOf, bumpRegulars,
     BOTTLES, BOTTLE_SPRITE, CHALLENGES, bottleOf, pickChallenge, arashiTier, resolveBottle,

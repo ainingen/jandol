@@ -1078,15 +1078,18 @@ const JansouFloor = (() => {
   /* ============================================================
      スプライト
      ============================================================ */
-  function guestColor(t) {
+  /* `sex` を渡すと服の色が男女で分かれる（`scout/spec.md` §10.1）。
+     **渡さなければいままでどおり**——自分の店の絵は1ドットも変わらない */
+  function guestColor(t, sex) {
     const ink = G.INK;
+    const sc = (G.clothFor && G.clothFor(sex)) || null;
     return (ch) => {
       switch (ch) {
         case '.': case ' ': return null;
         case 'h': return t.hair;
         case 'H': return t.hairDark;
-        case 'c': return t.cloth;
-        case 'C': return t.clothDark;
+        case 'c': return sc ? sc.cloth : t.cloth;
+        case 'C': return sc ? sc.clothDark : t.clothDark;
         case 'd': return t.decoColor;
         case 'D': return t.decoDark;
         default: return ink[ch] || null;
@@ -1398,7 +1401,7 @@ const JansouFloor = (() => {
       if (!made[id]) {
         const t = G.BY_KEY[typeKey];
         const gg = el('g', { id });
-        gridRects(G.grid(typeKey, frame, sex), guestColor(t)).forEach((r) => gg.appendChild(r));
+        gridRects(G.grid(typeKey, frame, sex), guestColor(t, sex)).forEach((r) => gg.appendChild(r));
         defs.appendChild(gg);
         made[id] = true;
       }
