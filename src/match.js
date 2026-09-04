@@ -336,6 +336,7 @@ const Match = (() => {
     UI._lastRank = null;
     UI.speed = opts.speed === undefined ? 520 : opts.speed;
     UI.showHints = opts.showHints !== false;
+    UI.discardMode = opts.discardMode === 'double' ? 'double' : 'single';   // 無ければ一度押し
 
     await g.run();
     const rank = UI._lastRank || g.rankings();

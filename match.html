@@ -36,6 +36,7 @@
        ?seed=123      Math.random を固定する（同じ並びを何度も見るため）
        ?dealer=2      起家を固定する（Game の opts.startDealer）
        ?sfx=0.5       効果音の音量（0 で無音）
+       ?discard=double 打牌を二度押しにする（既定は一度押し）
        ?start=1       開いた瞬間に始める（撮影用） -->
 <div class="dbg">
   <span>対局の単体ページ：</span>
@@ -91,7 +92,7 @@
   async function start(auto, speed, length) {
     Sound.init(); Sound.volume(num('sfx', 1)); Sound.load();
     document.body.classList.add('inMatch');
-    const opts = { title: '単体の対局', speed, length, showHints: true };
+    const opts = { title: '単体の対局', speed, length, showHints: true, discardMode: q.get('discard') || 'single' };
     if (q.has('dealer')) opts.startDealer = Number(q.get('dealer'));
     const seats = pickSeats();
     const p = Match.play(document.getElementById('matchRoot'), seats, opts);

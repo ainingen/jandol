@@ -147,6 +147,7 @@ body.inMatch #matchRoot{flex:1;min-height:0}
       agency: 1, beaten: [],
       autoMatch: false, matchSpeed: 520, showHints: true,
       sfxVolume: 1,              // 効果音の音量 0〜1（docs/design/match/spec.md §2.4）
+      discardMode: 'single',     // 打牌の操作 'single'（一度押し）| 'double'（二度押し）（§8）
       /* 事務所ハブ（docs/design/office/spec.md §10）。
          **最上位に持つ。parlor の下ではない**（Jansou.normalize() が
          知らないキーを捨てるため。引き継ぎ書 §5）。
@@ -202,6 +203,7 @@ body.inMatch #matchRoot{flex:1;min-height:0}
         matchSpeed: typeof s.matchSpeed === 'number' ? s.matchSpeed : 520,
         showHints: s.showHints !== false,
         sfxVolume: typeof s.sfxVolume === 'number' ? s.sfxVolume : 1,
+        discardMode: s.discardMode === 'double' ? 'double' : 'single',
         /* 事務所。**既存セーブには無い。**officePref が null のままなら、
            事務所を初めて開いたときに一度だけ選ばせる（office/spec.md §5）。
            既定を勝手に決めない——本拠地は一度きりの選択なので */
@@ -304,6 +306,7 @@ body.inMatch #matchRoot{flex:1;min-height:0}
         title: ctx.tier.name + '　' + ctx.name,
         speed: state.matchSpeed || 520,
         showHints: state.showHints !== false,
+        discardMode: state.discardMode,
         /* 遠征先の常連との一局は 'ikkyoku'（scout/spec.md §10.3）。
            渡さなければ既定の東風のまま */
         length: ctx.length || undefined,

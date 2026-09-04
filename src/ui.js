@@ -48,6 +48,9 @@ const UI = {
   riichiSelect: false,
   showHints: true,
   speed: 520,
+  /* 打牌の操作（spec.md §8）。'single' … 押した牌をそのまま切る（既定）。
+     'double' … 一度目で選び、二度目で切る。上へスワイプはどちらでも常に効く */
+  discardMode: 'single',
 
   /* ---------- 音 ----------
      鳴らすのは io 層（ここ）だけ。game.js には一行も足さない（spec.md §2.3）。
@@ -355,9 +358,11 @@ const UI = {
     const handrow = $('#handrow');
     if (!handrow.onclick) {
       handrow.onclick = (e) => {
+        if (this._swipedAt && Date.now() - this._swipedAt < 400) return;   // スワイプの余波
         const t = e.target.closest('.tile.selectable');
         if (t) this.onTileClick(+t.dataset.id);
       };
+      this.bindSwipe(handrow);
     }
     this.renderCutin();
     this.renderHintText();
@@ -375,7 +380,7 @@ const UI = {
   renderHintText() {
     const g = this.game, me = g.players[0];
     if (!this.pending || this.pending.type !== 'turn') { $('#hintbox').textContent = ''; return; }
-    if (this._selected !== null && this._selected !== undefined) {
+    if (this._selected !== null && this._selected !== undefined && this.discardMode === 'double') {
       $('#hintbox').textContent = `${jpName(kindOf(this._selected))} — もう一度たたくと切る`;
       return;
     }
@@ -419,12 +424,13 @@ const UI = {
     return set;
   },
 
-  onTileClick(id) {
+  onTileClick(id, force) {
     if (!this.pending || this.pending.type !== 'turn') return;
     if (!this.game.players[0].hand.includes(id)) return;     // 河の牌は押せない
     const allowed = this.allowedDiscards();
     if (allowed && !allowed.has(id)) return;
-    if (this._selected !== id) {      // 一度目は選ぶだけ
+    /* 二度押しの設定では一度目は選ぶだけ。スワイプ（force）は設定に関係なく切る */
+    if (this.discardMode === 'double' && !force && this._selected !== id) {
       this._selected = id;
       this.render();
       return;
@@ -433,6 +439,35 @@ const UI = {
     this.riichiSelect = false;
     this._selected = null;
     this.resolve({ type, tile: id });
+  },
+
+  /* 上へスワイプで切る。#handrow に一度だけ仕掛ける（牌のノードは使い回されるので、
+     牌ごとに付けると付け忘れが出る）。スワイプの直後に飛んでくる click は捨てる */
+  SWIPE_PX: 24,
+  bindSwipe(handrow) {
+    if (handrow._swipeBound) return;
+    handrow._swipeBound = true;
+    let start = null;
+    handrow.addEventListener('pointerdown', (e) => {
+      const t = e.target.closest('.tile.selectable');
+      if (!t) { start = null; return; }
+      start = { id: +t.dataset.id, x: e.clientX, y: e.clientY, pid: e.pointerId };
+    }, { passive: true });
+    const end = (e) => {
+      if (!start || e.pointerId !== start.pid) return;
+      const dx = e.clientX - start.x, dy = e.clientY - start.y;
+      const id = start.id;
+      start = null;
+      /* 回転表示のあいだは画面の「上」がレイアウトの「右」になる（rotate(90deg)） */
+      const up = document.body.classList.contains('rotated') ? dx : -dy;
+      const side = document.body.classList.contains('rotated') ? Math.abs(dy) : Math.abs(dx);
+      if (up >= this.SWIPE_PX && up > side) {
+        this._swipedAt = Date.now();
+        this.onTileClick(id, true);
+      }
+    };
+    handrow.addEventListener('pointerup', end);
+    handrow.addEventListener('pointercancel', () => { start = null; });
   },
 
   /* ============================================================
