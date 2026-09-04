@@ -242,6 +242,9 @@ console.log('\n## 5. 一回の遠征の実り（A4.5 の再測）\n');
 const TRIPS = 100;                       // 各マスで回す遠征の数
 const SCALES = [1, 3, 5];
 const STAYS = [2, 4, 7];
+/* 認められた度合い（A7-3）。`--local` を立てると 0／50／100 の三枚を出す。
+   **`local` は土地に馴染んだ度合い**で、上がると雀ドルが出やすくなる（§10.4） */
+const LOCALS = process.argv.includes('--local') ? [0, 50, 100] : [0];
 
 /* 測るときのプレイヤー像。**全マスで同じ**にして、
    動く変数を「県の規模」と「滞在日数」だけに絞る */
@@ -278,10 +281,11 @@ function pickSeats(shop, calls, smart, rng) {
 
 /* 遠征一回。**`Office.ensureShop` と同じ種の作りかた**を写す
    （あちらは store を触るので、ここでは buildShop を直に回す） */
-function runTrip(scale, days, smart, seed0) {
+function runTrip(scale, days, smart, seed0, local) {
   const { st, roster } = scoutState();
   const pref = prefOfScale(scale);
   const prefIdx = Geo.PREFS.findIndex((p) => p.key === pref.key);
+  st.local = { [pref.key]: local || 0 };
   const trip = { pref: pref.key, purpose: 'find', days, dayLeft: days };
   const pick = seeded(seed0);
   let calls = 0, found = [];
@@ -316,14 +320,16 @@ function runTrip(scale, days, smart, seed0) {
 
 function avg(rows, key) { return rows.reduce((a, r) => a + r[key], 0) / rows.length; }
 
-[false, true].forEach((smart) => {
+LOCALS.forEach((local) => {
+ if (LOCALS.length > 1) console.log('\n## 認められた度合い ' + local + '\n');
+ [false, true].forEach((smart) => {
   console.log('### ' + (smart ? '癖を読む（二拍の席から押す）' : '無作為（癖を見ていない）') + '\n');
   console.log('| 規模 | 滞在 | 声をかけた | 見つかった | うち条件が揃っている | 費用 |');
   console.log('| --- | --- | --- | --- | --- | --- |');
   SCALES.forEach((scale) => {
     STAYS.forEach((days) => {
       const rows = [];
-      for (let i = 0; i < TRIPS; i++) rows.push(runTrip(scale, days, smart, SEED * 1009 + i * 31));
+      for (let i = 0; i < TRIPS; i++) rows.push(runTrip(scale, days, smart, SEED * 1009 + i * 31, local));
       /* 費用は `planTrip` と同じ形。滞在日数は `2 + far` なので、
          ここでは滞在から far を戻して掛ける（同行者なし） */
       const far = Math.max(0, days - 2);
@@ -335,6 +341,7 @@ function avg(rows, key) { return rows.reduce((a, r) => a + r[key], 0) / rows.len
     });
   });
   console.log('');
+ });
 });
 
 console.log('※ 「うち条件が揃っている」は、その場で契約できる人数ではない。');

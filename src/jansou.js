@@ -795,7 +795,10 @@ const Jansou = (() => {
       if (deputy) {
         const mates = plan.dayWorkers.filter((c) => c.id !== deputy.id).slice(0, 2);
         /* 疲れた子は打ち筋が鈍る（§9）。荒らしは疲れない */
-        const table = [carded(st, deputy), ev.chara].concat(mates.map((c) => carded(st, c)));
+        /* **`st0`。**`st` はこの関数のどこにも無い——留守中に荒らしが来て、
+           かつ留守番がいる日にだけ通る枝なので、A5 から気づかれずに残っていた
+           （A7-3 で遠征を何度も回して踏んだ）。落ちると遠征中の昼が丸ごと止まる */
+        const table = [carded(st0, deputy), ev.chara].concat(mates.map((c) => carded(st0, c)));
         while (table.length < 4) table.push(Object.assign({}, deputy, { id: 9400 + table.length }));
         const rank = simulateTable(table, STYLES);
         const hers = rank.find((r) => r.chara.id === deputy.id);

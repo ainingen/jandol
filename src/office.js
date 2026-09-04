@@ -622,6 +622,31 @@ const Office = (() => {
       { [charaId]: Math.min(100, base + favorGain(won)) });
   }
 
+  /* ------------------------------------------------------------
+     認められた度合い（`scout/spec.md` §10.4）— A7-3
+
+     **県ごとの 0〜100。減らない。**上がるのは遠征先で人と関わったときだけ。
+     効くのは**二つだけ**——雀ドルの出やすさ（`ScoutShop.anyChance`）と
+     誘われやすさ（`ScoutShop.inviteChance`）。
+
+     **契約金や条件は緩めない。**それは好感度（`favor`）の役目。
+     **`local` は土地、`favor` は人。**二重にすると、片方を直したときにずれる。
+
+     置き場所は**最上位の `st.local`**（`parlor` の下ではない）。既定は
+     `shell.html` の `blankState` / `loadState` / `onStart` の三箇所に書いてある
+     （`condDay` と `mailRead` で二度踏んだ罠）
+  ------------------------------------------------------------ */
+  const LOCAL_GAIN = { win: 8, lose: 3, talk: 1 };
+  const LOCAL_MAX = 100;
+  function localOf(st, pref) { return Math.max(0, (((st && st.local) || {})[pref]) | 0); }
+  /* 足した新しい表を返す（純関数）。上限100、**減らさない** */
+  function addLocal(st, pref, kind) {
+    const g = LOCAL_GAIN[kind] || 0;
+    if (!pref || !g) return Object.assign({}, (st && st.local) || {});
+    return Object.assign({}, (st && st.local) || {},
+      { [pref]: Math.min(LOCAL_MAX, localOf(st, pref) + g) });
+  }
+
   /* 交渉の一行。**「性格の一言」＋「既存の `detail`」の合成**（§5.4）。
 
      **条件文をここに書かないこと。**「事務所ランク5が必要です」は
@@ -1652,7 +1677,11 @@ const Office = (() => {
       const seat = r.seat;
       const left = `　あと ${r.calls} 回`;
       if (seat.reply === 'talk') {
-        shopNote = ScoutShop.hintOf(shop, seat) + left;
+        const st0 = store.get();
+        const trip0 = tripOf(st0);
+        /* **話が返ったぶんだけ土地に馴染む**（§10.4）。呼ばれかたはこの値で決まる */
+        shopNote = ScoutShop.hintOf(shop, seat, localOf(st0, trip0 && trip0.pref)) + left;
+        if (trip0) store.set({ local: addLocal(st0, trip0.pref, 'talk') });
         render();
         return;
       }
@@ -1704,12 +1733,19 @@ const Office = (() => {
       if (who.id !== 0 && matched.indexOf(who.id) < 0) matched.push(who.id);
       const line = `${Geo.prefOf(t2.pref).name}の${shop.name}で、常連と一局打って`
         + (won ? '勝った' : '負けた') + `（${who.id === 0 ? '代表' : who.name}）`;
-      store.set({ trip: Object.assign({}, t2, {
+      /* **負けても積む**（§10.4）。空手で帰らせないのは口説くと同じ姿勢 */
+      const before = localOf(st, t2.pref);
+      const local = addLocal(st, t2.pref, won ? 'win' : 'lose');
+      const after = local[t2.pref];
+      store.set({ local, trip: Object.assign({}, t2, {
         matched, log: (t2.log || []).concat(line),
       }) });
-      shopNote = won
+      /* 帯が上がった瞬間だけ言う。**一度きりの出来事にする**（§10.2 の末尾） */
+      const grew = ScoutShop.localBand(before).key !== ScoutShop.localBand(after).key;
+      shopNote = (won
         ? `「やるじゃないか」　常連に勝った。　あと ${callsLeft} 回`
-        : `「まだまだだな」　常連に負けた。　あと ${callsLeft} 回`;
+        : `「まだまだだな」　常連に負けた。　あと ${callsLeft} 回`)
+        + (grew ? `　この土地で顔が知られてきた（${after}）` : '');
       render();
     }
 
@@ -2262,6 +2298,7 @@ const Office = (() => {
            planTrip, deputyOf, tripOf, tripStart, regionOfPref,
            fireOffers, dismissOffer, acceptOffer, dropQuest, popOf, idolResult,
            ensureShop, callOn, negotiate, favorGain, addFavor, FAVOR_GAIN,
+           LOCAL_GAIN, LOCAL_MAX, localOf, addLocal,
            eightTable, eightNext, powerOf, mightOf, charaTitle, rivalOf, RIVALS,
            RANK_TITLE, TIER_POINT, POWER_MIX, FAME_MIX, agencyTitle, EIGHT_N,
            FATIGUE, FATIGUE_PULL, COND_SHIFT, fatigueDelta, stepFatigue,

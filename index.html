@@ -192,6 +192,9 @@ body.inMatch #matchRoot{flex:1;min-height:0}
          未読 ＝ offers のうちここに無いもの。**三箇所に書くこと**
          （blankState / loadState / onStart）——落とすと毎回ぜんぶ未読に戻る */
       mailRead: [],
+      /* 県ごとの「認められた度合い」0〜100（scout/spec.md §10.4）。
+         **最上位。減らない。**三箇所に書くこと（blankState / loadState / onStart） */
+      local: {},
       offerFired: [],            // once の依頼で既に発火した id
       offerAccepted: [],         // 受けた依頼の id（RULES.event が見る）
       popUp: {},                 // { [charaId]: 人気の底上げ }。アイドル活動で貯まる
@@ -244,6 +247,7 @@ body.inMatch #matchRoot{flex:1;min-height:0}
         trip: s.trip && typeof s.trip === 'object' ? s.trip : null,
         offers: Array.isArray(s.offers) ? s.offers : [],
         mailRead: Array.isArray(s.mailRead) ? s.mailRead : [],
+        local: s.local && typeof s.local === 'object' ? s.local : {},
         offerFired: Array.isArray(s.offerFired) ? s.offerFired : [],
         offerAccepted: Array.isArray(s.offerAccepted) ? s.offerAccepted : [],
         popUp: s.popUp && typeof s.popUp === 'object' ? s.popUp : {},
@@ -310,6 +314,8 @@ body.inMatch #matchRoot{flex:1;min-height:0}
       /* mailRead は進行なので持ち越さない。**blankState が空で入れる**
          ——ここで書き忘れても消えるだけだが、三箇所を揃えておく */
       keep.mailRead = [];
+      /* 土地に馴染んだぶんも進行なので持ち越さない（blankState が空で入れる） */
+      keep.local = {};
       state = Object.assign(blankState(), keep);
       saveState(state);
       go('team');

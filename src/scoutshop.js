@@ -135,10 +135,24 @@ const ScoutShop = (() => {
   const ANY_CHANCE = [0.35, 0.45, 0.55, 0.62, 0.70];    // その日一人でもいる確率
   const TWO_CHANCE = [0.10, 0.15, 0.22, 0.30, 0.38];    // 一人いたとき、二人目もいる確率
 
-  function jandolCount(scale, rng) {
+  /* 認められた度合いの上乗せ（`spec.md` §10.4）— A7-3。
+     **規模1の県で 0.35 → 0.55。**「まだ誰にも見つかっていない県」が、
+     通えば見つかる県になる。上限は 0.85（毎日必ずいる状態は作らない） */
+  const LOCAL_ANY = 0.20;
+  const LOCAL_TWO = 0.15;
+  const ANY_MAX = 0.85;
+
+  function anyChance(scale, local) {
     const i = Math.min(4, Math.max(0, (scale | 0) - 1));
-    if (rng() >= ANY_CHANCE[i]) return 0;
-    return rng() < TWO_CHANCE[i] ? 2 : 1;
+    return Math.min(ANY_MAX, ANY_CHANCE[i] + LOCAL_ANY * ((local || 0) / 100));
+  }
+  function twoChance(scale, local) {
+    const i = Math.min(4, Math.max(0, (scale | 0) - 1));
+    return TWO_CHANCE[i] + LOCAL_TWO * ((local || 0) / 100);
+  }
+  function jandolCount(scale, rng, local) {
+    if (rng() >= anyChance(scale, local)) return 0;
+    return rng() < twoChance(scale, local) ? 2 : 1;
   }
 
   /* 声をかけられる回数（初期値）。滞在が長いほど機会が増える
@@ -241,15 +255,50 @@ const ScoutShop = (() => {
      返すのは二つだけ——**雀ドルがいるかどうか**と、いるなら**癖の系統を片方。**
      **両方言わない。**両方言うと二拍がその場で特定でき、観察が要らなくなる
      （§10.2）。どちらの系統を言うかは席ごとに `buildShop` が決めてある */
-  function hintOf(shop, seat) {
+  /* 通うと話の中身が変わる（`spec.md` §10.2 の末尾）— A7-3。
+     **返す情報の量は増やさない**（癖の系統は片方だけのまま）。
+     変わるのは**言いかたと呼ばれかた**で、`local` が上がったことを
+     プレイヤーは会話の距離で知る。**帯は三つだけ**——
+     上がった瞬間が一度きりの出来事になるように */
+  const LOCAL_BANDS = [
+    { min: 0,  key: 'yoso',   call: '兄ちゃん',   side: false, deep: false },
+    { min: 25, key: 'kao',    call: '兄ちゃん',   side: true,  deep: false },
+    { min: 60, key: 'joren',  call: '社長さん',   side: true,  deep: true },
+  ];
+  function localBand(local) {
+    let b = LOCAL_BANDS[0];
+    LOCAL_BANDS.forEach((x) => { if ((local || 0) >= x.min) b = x; });
+    return b;
+  }
+  /* 常連にだけ付く一言。**その日の中では使えない**（滞在はその日で終わる）
+     ので、情報としては効かず、関係としてだけ効く——それでいい */
+  const DEEP_LINES = [
+    'あの子なら夕方にも顔を出すよ',
+    'あの子は奥の卓に着くことが多いな',
+    '今日はもう帰ったが、明日も来るだろう',
+    'ここいらじゃ見ない打ちかたをするよ',
+  ];
+
+  function hintOf(shop, seat, local) {
+    const band = localBand(local);
+    const head = '「' + band.call + '、';
     const jd = (shop.seats || []).filter((s) => s.charaId != null);
-    if (!jd.length) return '「今日は、見ない顔はいないな」';
+    if (!jd.length) {
+      return head + '今日は見ない顔はいないな」'
+        + (band.deep ? '　「また明日にでも来なよ」' : '');
+    }
+    /* **顔を知られるまでは、いるかどうかしか言わない** */
+    if (!band.side) return head + '一人、見ない顔がいたよ」';
     const side = seat && seat.hintSide === 'mark' ? 'mark' : 'beat';
     const q = (jd[0].quirk || []).find((k) =>
       QUIRK_BY_KEY[k] && QUIRK_BY_KEY[k].kind === side);
     const def = q && QUIRK_BY_KEY[q];
-    if (!def) return '「一人、見ない顔がいたよ」';
-    return '「さっき、' + def.hint + 'が来てたな」';
+    if (!def) return head + '一人、見ない顔がいたよ」';
+    const line = head + 'さっき、' + def.hint + 'が来てたな」';
+    if (!band.deep) return line;
+    /* 席から決める（乱数を引かない）。日をまたいでも同じ客なら同じことを言う */
+    const i = (shop.seats || []).indexOf(seat);
+    return line + '　「' + DEEP_LINES[Math.abs(i) % DEEP_LINES.length] + '」';
   }
 
   /* ------------------------------------------------------------
@@ -395,7 +444,8 @@ const ScoutShop = (() => {
     /* **「昨日いた子」を除外しない**（§3.6）。母集団は毎回まるごと */
     const cand = (typeof Scout !== 'undefined' && Scout.findCandidates)
       ? Scout.findCandidates(region, st) : [];
-    const want = Math.min(jandolCount(scale, rng), seats.length, cand.length);
+    const local = ((st.local || {})[trip.pref]) | 0;
+    const want = Math.min(jandolCount(scale, rng, local), seats.length, cand.length);
     const taken = [];
     for (let i = 0; i < want; i++) {
       const c = drawWeighted(cand, taken, st, rng);
@@ -419,7 +469,6 @@ const ScoutShop = (() => {
        3回の上限も見抜く余地も意味を失う。**打てる常連はいる** */
     seats.forEach((s) => { if (!s.quirk) s.quirk = quirksFor(null, rng); });
     /* 男だけ。**女は雀ドルか、ただの客か**という既存の二値のまま */
-    const local = ((st.local || {})[trip.pref]) | 0;
     seats.forEach((s) => {
       if (s.charaId != null || s.sex !== 'male') return;
       s.reply = replyFor((s.quirk || []).length > 0, local, rng);
@@ -497,7 +546,8 @@ const ScoutShop = (() => {
     FEMALE_RATE, sexFor, aishoLine,
     INVITE_BASE, INVITE_QUIRK, INVITE_LOCAL, INVITE_MAX, TALK_SHARE,
     inviteChance, replyFor, hintOf, styleForQuirk,
-    seeded, palOf, pickType, jandolCount, nameOf, buildShop, stateOf, seatOfGuestId,
+    seeded, palOf, pickType, jandolCount, anyChance, twoChance, nameOf, buildShop,
+    stateOf, seatOfGuestId, LOCAL_ANY, LOCAL_TWO, ANY_MAX, LOCAL_BANDS, localBand, DEEP_LINES,
     quirkOf, quirksFor,
   };
 })();

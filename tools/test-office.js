@@ -1218,6 +1218,38 @@ function eq(a, b, name) {
 }
 
 /* ============================================================
+   留守番の日（`office/spec.md` §7.4）
+   **荒らしが来て留守番が打つ枝**は、A5 から `st` の綴り違いで落ちていた。
+   遠征を何度も回して初めて踏んだので、ここで回して固定する
+   ============================================================ */
+{
+  global.JansouGuests = require('../src/jansou-guests.js').JansouGuests;
+  const roster = JANDOLS.slice(0, 6);
+  let fought = 0, ran = 0;
+  for (let seed = 1; seed <= 120; seed++) {
+    let saved = {
+      contracted: roster.map((c) => c.id), comp: {}, favor: {}, money: 3000000,
+      parlor: { open: true, day: 40 + seed, rep: 60, tables: 4, interior: 3,
+                auto: 2, sign: 2, shifts: {} },
+      fatigue: {}, cond: {}, assign: {},
+    };
+    const store = { get: () => saved, set: (p2) => { saved = Object.assign({}, saved, p2); } };
+    let r = null;
+    try { r = Jansou.runAwayDay(store, roster, roster[0]); ran++; }
+    catch (e) { ok(false, '留守の日が落ちた（seed ' + seed + '）', e.message); break; }
+    if (r && r.out && r.out.lines.some((l) => /守った|警察|荒らし/.test(l))) fought++;
+  }
+  eq(ran, 120, '留守の日が120回とも通る');
+  ok(fought > 0, '荒らしが来て留守番が打つ日が実際にあった', String(fought));
+  /* 綴りの錠。`resolveAway` の中に、その関数が持っていない `st` を書かない */
+  const jsrc = require('fs').readFileSync(require('path').join(__dirname, '../src/jansou.js'), 'utf8');
+  const a2 = jsrc.indexOf('function resolveAway(');
+  const b2 = jsrc.indexOf('function runAwayDay(');
+  const body2 = jsrc.slice(a2, b2).replace(/\/\*[\s\S]*?\*\//g, '');
+  ok(!/\bcarded\(st,/.test(body2), 'resolveAway は st0 を使う（st は無い）');
+}
+
+/* ============================================================
    事務所の部屋（office/room.md）— A6 第一段
    `layout()` と `roomView()` は純関数。描画そのものはブラウザで見る
    ============================================================ */

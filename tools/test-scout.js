@@ -807,17 +807,83 @@ function fakeStore(st) {
   eq(again.seats.map((x) => x.reply || '-').join(''),
      shop.seats.map((x) => x.reply || '-').join(''), '同じ種なら返事も同じ');
 
-  /* ヒント。**癖の系統は片方だけ**——両方言うと二拍が特定できてしまう */
+  /* ヒント。**癖の系統は片方だけ**——両方言うと二拍が特定できてしまう。
+     `local` は「顔は知られた」帯（25〜59）で見る */
   const noJd = { seats: [{ charaId: null }] };
-  ok(/見ない顔はいない/.test(ScoutShop.hintOf(noJd, { hintSide: 'beat' })),
+  ok(/見ない顔はいない/.test(ScoutShop.hintOf(noJd, { hintSide: 'beat' }, 30)),
      '雀ドルがいない日はそう言う');
   const withJd = { seats: [{ charaId: 1, quirk: ['slow', 'meld'] }] };
-  const hb = ScoutShop.hintOf(withJd, { hintSide: 'beat' });
-  const hm = ScoutShop.hintOf(withJd, { hintSide: 'mark' });
+  const hb = ScoutShop.hintOf(withJd, { hintSide: 'beat' }, 30);
+  const hm = ScoutShop.hintOf(withJd, { hintSide: 'mark' }, 30);
   ok(/長考/.test(hb), '頭の印の側を聞けば、頭の印を言う', hb);
   ok(/鳴く/.test(hm), '体の物の側を聞けば、体の物を言う', hm);
   ok(!/鳴く/.test(hb) && !/長考/.test(hm), '**両方は言わない**');
   ok(hb !== hm, '系統で中身が変わる');
+
+  /* ---------- 認められた度合い（A7-3。§10.4） ---------- */
+  /* 帯は三つだけ。**上がった瞬間が一度きりの出来事になるように** */
+  eq(ScoutShop.LOCAL_BANDS.length, 3, '帯は三つ');
+  eq(ScoutShop.localBand(0).key, 'yoso', '0 はよそ者');
+  eq(ScoutShop.localBand(24).key, 'yoso', '24 まではよそ者');
+  eq(ScoutShop.localBand(25).key, 'kao', '25 から顔は知られた');
+  eq(ScoutShop.localBand(59).key, 'kao', '59 までは顔は知られた');
+  eq(ScoutShop.localBand(60).key, 'joren', '60 から常連');
+  eq(ScoutShop.localBand(100).key, 'joren', '100 も常連');
+  /* 呼ばれかたが変わる。**一度言われれば覚える** */
+  const h0 = ScoutShop.hintOf(withJd, { hintSide: 'beat' }, 0);
+  const h1 = ScoutShop.hintOf(withJd, { hintSide: 'beat' }, 30);
+  const h2 = ScoutShop.hintOf(withJd, { hintSide: 'beat' }, 80);
+  ok(/兄ちゃん/.test(h0) && /兄ちゃん/.test(h1), 'よそ者と顔見知りは「兄ちゃん」');
+  ok(/社長さん/.test(h2), '常連は「社長さん」', h2);
+  /* **返す情報の量は増やさない。**よそ者には有無だけ、上の二段は系統を片方 */
+  ok(!/長考/.test(h0), 'よそ者には癖を言わない', h0);
+  ok(/長考/.test(h1) && /長考/.test(h2), '顔が知られたら癖の系統を片方だけ');
+  ok(!/鳴く/.test(h2), '常連になっても両方は言わない');
+  ok(h2.length > h1.length, '常連には一言多い（情報ではなく関係）');
+  /* 雀ドルの出やすさ。**規模の小さい県ほど伸びしろが大きい** */
+  eq(ScoutShop.anyChance(1, 0), ScoutShop.ANY_CHANCE[0], 'local 0 は素のまま');
+  ok(ScoutShop.anyChance(1, 100) > ScoutShop.anyChance(1, 0), 'local で出やすくなる');
+  eq(Math.round(ScoutShop.anyChance(1, 100) * 100) / 100, 0.55, '規模1は 0.35 → 0.55');
+  ok(ScoutShop.anyChance(5, 100) <= ScoutShop.ANY_MAX, '上限を超えない');
+  ok(ScoutShop.anyChance(1, 100) < ScoutShop.anyChance(5, 0),
+     '**通っても大きい県には届かない**（規模の意味を消さない）');
+  ok(ScoutShop.twoChance(3, 100) > ScoutShop.twoChance(3, 0), '二人目も出やすくなる');
+  /* buildShop が `st.local` を読む */
+  const stL = { discovered: [], contracted: [], comp: {}, agency: 2, local: { tokyo: 100 } };
+  const cnt = (state, seed) => {
+    let n = 0;
+    for (let i = 0; i < 300; i++) {
+      const sh = ScoutShop.buildShop(state, trip, ScoutShop.seeded(seed + i));
+      n += sh.seats.filter((x) => x.charaId != null).length;
+    }
+    return n;
+  };
+  ok(cnt(stL, 500) > cnt(st, 500), 'local が高いほど雀ドルが出る',
+     cnt(stL, 500) + ' vs ' + cnt(st, 500));
+
+  /* Office 側：足し算は純関数、**減らない** */
+  const O = require('../src/office.js').Office;
+  eq(O.LOCAL_GAIN.win, 8, '勝ちは +8');
+  eq(O.LOCAL_GAIN.lose, 3, '負けても +3（空手で帰らせない）');
+  eq(O.LOCAL_GAIN.talk, 1, '話が返れば +1');
+  eq(O.localOf({}, 'tokyo'), 0, '無ければ 0');
+  eq(O.addLocal({}, 'tokyo', 'win').tokyo, 8, '勝つと上がる');
+  eq(O.addLocal({ local: { tokyo: 96 } }, 'tokyo', 'win').tokyo, 100, '上限は100');
+  eq(O.addLocal({ local: { tokyo: 40 } }, 'akita', 'win').tokyo, 40, '他の県は動かない');
+  eq(Object.keys(O.addLocal({ local: { tokyo: 40 } }, null, 'win')).length, 1,
+     '県が無ければ何も足さない');
+  /* **契約金や条件は緩めない**（それは favor の役目。local は土地、favor は人） */
+  const osrc0 = require('fs').readFileSync(require('path').join(__dirname, '../src/office.js'), 'utf8');
+  ok(!/local[\s\S]{0,80}cost/.test(osrc0), 'local は契約金に触らない');
+  const scsrc = require('fs').readFileSync(require('path').join(__dirname, '../src/scout.js'), 'utf8');
+  /* `'local'` は大会の格（地方リーグ）の鍵なので、**セーブの `local` を
+     読んでいないこと**を見る */
+  ok(!/st\.local|localOf\(/.test(scsrc), 'scout.js（RULES と costOf）は認められた度合いを読まない');
+  /* セーブの三箇所 */
+  const sh2 = require('fs').readFileSync(require('path').join(__dirname, '../shell.html'), 'utf8');
+  eq((sh2.match(/local: \{\}/g) || []).length + (sh2.match(/keep\.local = \{\}/g) || []).length, 2,
+     'blankState と onStart に既定がある');
+  ok(/local: s\.local && typeof s\.local === 'object'/.test(sh2), 'loadState が拾い直す');
 
   /* 癖 → 打ち筋。観察が対局にも効く（誘ってきた客の打ち筋になる） */
   ScoutShop.QUIRKS.forEach((q) => {
