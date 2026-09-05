@@ -746,6 +746,12 @@ A3 でできたが、中身は `drawOne` 一回の二値のままだった。こ
   FLIP は画面の差を `(sy, -sx)` でレイアウトに戻してから牌の座標系に直す
 - **保存の既定**：`sfxVolume` 1・`discardMode` 'single'。`undefined` でも落ちる
   （`shell.html` の `blankState` / `loadState`）
+- **打牌の確定は「離した瞬間」。**押している間は持ち上がる牌が指に追随する
+  （`bindHand`）。**当たり判定を広げても直らない**——指の接地は9〜10mmあり、
+  牌幅（横43px／SE 30px／縦26px）より広いので、広げれば隣が狭くなるだけ。
+  **`click` の口を消さないこと**——`element.click()` の合成クリックで
+  `drive-match.js --play` が打っている。ポインタで片づけた直後の click は
+  `_handledAt` で捨てる
 
 ## 局の締め（2026年9月5日・完了）
 
@@ -817,6 +823,12 @@ A3 でできたが、中身は `drawOne` 一回の二値のままだった。こ
 `RULES_DEFAULT` の前方互換（渡さない／`undefined`／`null`／部分指定のどれでも既定に落ちる）。
 **`game.js` が `this.rules` を読み始めたら、そのときここに分岐の錠を足すこと**
 ——いまは「まだ読んでいない」ことまで固定してある。
+
+`node tools/check-hand.js` … 15件。**打牌の操作**（`bindHand`）。押した瞬間に持ち上がり、
+横へずらすと追随し、離した牌が切れること。帯の外で離したら取り消し。上へ払うのはそのまま。
+二度押しは二度目で切ること。`element.click()` の合成クリックでも切れること
+（`drive-match.js --play` がこれを使う）。**pointer と `elementFromPoint` は node から
+呼べない**ので、`test-match.js` とは別に要る。**打牌まわりを触ったら回すこと。**
 
 `node tools/check-sound.js` … 打牌の鳴らし分け（四本すべて出るか・同じものが続かないか・
 一本欠けても鳴るか・`discard.wav` だけでも鳴るか）。**音源を差し替えたら回す。**

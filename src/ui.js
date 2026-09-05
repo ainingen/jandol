@@ -368,12 +368,14 @@ const UI = {
 
     const handrow = $('#handrow');
     if (!handrow.onclick) {
+      /* ポインタで片づけた直後の click は捨てる（実クリックは pointerup のあとに来る）。
+         残してあるのは `element.click()` の合成クリックとポインタを持たない環境のため */
       handrow.onclick = (e) => {
-        if (this._swipedAt && Date.now() - this._swipedAt < 400) return;   // スワイプの余波
+        if (this._handledAt && Date.now() - this._handledAt < this.HANDLED_MS) return;
         const t = e.target.closest('.tile.selectable');
         if (t) this.onTileClick(+t.dataset.id);
       };
-      this.bindSwipe(handrow);
+      this.bindHand(handrow);
     }
     this.renderCutin();
     this.renderHintText();
@@ -391,8 +393,11 @@ const UI = {
   renderHintText() {
     const g = this.game, me = g.players[0];
     if (!this.pending || this.pending.type !== 'turn') { $('#hintbox').textContent = ''; return; }
-    if (this._selected !== null && this._selected !== undefined && this.discardMode === 'double') {
-      $('#hintbox').textContent = `${jpName(kindOf(this._selected))} — もう一度たたくと切る`;
+    /* 掴んでいる牌の名前。**一度押しでも出す**——押している間に何を掴んだかが
+       見えることが、離して確定する形の要（spec.md §8） */
+    if (this._selected !== null && this._selected !== undefined) {
+      $('#hintbox').textContent = jpName(kindOf(this._selected))
+        + (this.discardMode === 'double' ? ' — もう一度たたくと切る' : ' — 指を離すと切る');
       return;
     }
     if (!this.showHints) { $('#hintbox').textContent = ''; return; }
@@ -452,33 +457,106 @@ const UI = {
     this.resolve({ type, tile: id });
   },
 
-  /* 上へスワイプで切る。#handrow に一度だけ仕掛ける（牌のノードは使い回されるので、
-     牌ごとに付けると付け忘れが出る）。スワイプの直後に飛んでくる click は捨てる */
+  /* 打牌の操作（spec.md §8）。**確定は「押した瞬間」ではなく「離した瞬間」。**
+
+     実機で出た問題：指の接地は 9〜10mm あり、**横持ちの牌幅（43px。SE では 30px、
+     縦持ちは 26px）より広い。**当たり判定を広げても隣が狭くなるだけで直らない。
+     いまは離した瞬間に初めて何を切ったか分かるので、気づいたときには終わっている。
+
+     そこで、押している間は選び直せるようにした。
+
+       pointerdown … 指の下の牌が持ち上がる（**切る前に何を掴んだか見える**）
+       pointermove … 持ち上がる牌が指の下の牌に追随する（横へずらせば直せる）
+       pointerup   … そのとき持ち上がっている牌を切る
+       帯の外で離す … 取り消し（特に下方向）
+       上へ払う     … いままでどおり即座に切る
+
+     **一動作で切れる手触りは変わらない。**iOS のキーボードと同じ仕組み。
+     `discardMode` の `single` / `double` の関係は変えていない——これは `single` の中身。
+     `double` は「押している間は選び直せる」が乗るだけで、確定はいままでどおり二度目。
+
+     #handrow に一度だけ仕掛ける（牌のノードは使い回されるので、牌ごとに付けると
+     付け忘れが出る）。**click は残してある**——`element.click()` の合成クリック
+     （`tools/drive-match.js` が使う）と、ポインタを持たない環境のため。
+     ポインタで片づけた直後の click は `_handledAt` で捨てる */
   SWIPE_PX: 24,
-  bindSwipe(handrow) {
-    if (handrow._swipeBound) return;
-    handrow._swipeBound = true;
-    let start = null;
+  HANDLED_MS: 500,
+
+  /* 指の下にある「切れる牌」。帯の外なら null。
+     **座標から引くこと**——pointermove の e.target は最初に触れた牌のままになる */
+  tileAt(x, y) {
+    if (typeof document.elementFromPoint !== 'function') return null;
+    const el = document.elementFromPoint(x, y);
+    const t = el && el.closest ? el.closest('#handrow .tile.selectable') : null;
+    return t ? +t.dataset.id : null;
+  },
+
+  bindHand(handrow) {
+    if (handrow._handBound) return;
+    handrow._handBound = true;
+    let drag = null;
+
+    const lift = (id) => {
+      if (this._selected === id) return;
+      this._selected = id;
+      this.render();
+    };
+
     handrow.addEventListener('pointerdown', (e) => {
-      const t = e.target.closest('.tile.selectable');
-      if (!t) { start = null; return; }
-      start = { id: +t.dataset.id, x: e.clientX, y: e.clientY, pid: e.pointerId };
-    }, { passive: true });
-    const end = (e) => {
-      if (!start || e.pointerId !== start.pid) return;
-      const dx = e.clientX - start.x, dy = e.clientY - start.y;
-      const id = start.id;
-      start = null;
+      if (!this.pending || this.pending.type !== 'turn') { drag = null; return; }
+      const id = this.tileAt(e.clientX, e.clientY);
+      if (id === null) { drag = null; return; }
+      /* **gesture の前に何が選ばれていたか**を控える。二度押しの判定に使う */
+      drag = { pid: e.pointerId, x: e.clientX, y: e.clientY, was: this._selected, last: id };
+      lift(id);
+      try { handrow.setPointerCapture(e.pointerId); } catch (err) { /* 無くても動く */ }
+    });
+
+    handrow.addEventListener('pointermove', (e) => {
+      if (!drag || e.pointerId !== drag.pid) return;
+      const id = this.tileAt(e.clientX, e.clientY);
+      if (id !== null) drag.last = id;
+      lift(id);                       // 帯の外へ出たら null＝持ち上がりが消える
+    });
+
+    const finish = (e) => {
+      if (!drag || e.pointerId !== drag.pid) return;
+      const d = drag;
+      drag = null;
+      this._handledAt = Date.now();
+      const dx = e.clientX - d.x, dy = e.clientY - d.y;
       /* 回転表示のあいだは画面の「上」がレイアウトの「右」になる（rotate(90deg)） */
       const up = document.body.classList.contains('rotated') ? dx : -dy;
       const side = document.body.classList.contains('rotated') ? Math.abs(dy) : Math.abs(dx);
       if (up >= this.SWIPE_PX && up > side) {
-        this._swipedAt = Date.now();
-        this.onTileClick(id, true);
+        this._selected = null;
+        this.onTileClick(d.last, true);            // 上へ払う＝設定に関係なく切る
+        return;
       }
+      const over = this.tileAt(e.clientX, e.clientY);
+      if (over === null) {                         // 帯の外で離した＝取り消し
+        this._selected = d.was;
+        this.render();
+        return;
+      }
+      /* 二度押しは「この gesture の前から選ばれていた牌」でだけ確定する */
+      if (this.discardMode === 'double' && d.was !== over) {
+        this._selected = over;
+        this.render();
+        return;
+      }
+      this._selected = null;
+      this.onTileClick(over, true);
     };
-    handrow.addEventListener('pointerup', end);
-    handrow.addEventListener('pointercancel', () => { start = null; });
+    handrow.addEventListener('pointerup', finish);
+    handrow.addEventListener('pointercancel', (e) => {
+      if (!drag || e.pointerId !== drag.pid) return;
+      const was = drag.was;
+      drag = null;
+      this._handledAt = Date.now();
+      this._selected = was;
+      this.render();
+    });
   },
 
   /* ============================================================
