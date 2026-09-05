@@ -829,6 +829,9 @@ const UI = {
       ? `<span class="who">${esc(sayer.name)}</span><span class="say">${esc(line)}</span>` : '';
 
     band.dataset.kind = kind;
+    /* 他家同士は「和了った人の点」を先頭にする（§B-1）。
+       自分の増減は ±0 のとき消える——**何も起きていないことを大きく言わない** */
+    band.classList.toggle('scoreLead', kind === 'other');
     band.hidden = false;
     /* 自分の席プレートが帯に食われる（点数が動くのはそこなので隠れてはいけない）。
        **帯の高さ − 手牌の帯の高さ**だけ持ち上げる。決め打ちにすると端末で食われる */
