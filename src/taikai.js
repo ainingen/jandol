@@ -317,6 +317,10 @@ const Taikai = (() => {
                   aria-pressed="${(st.sfxVolume === undefined ? 1 : st.sfxVolume) === v}">${n}</button>`).join('')}
             </span>
           </div>
+          <!-- **iOS の Safari は WebAudio を本体の消音スイッチで黙らせる。**
+               実装が正しくても鳴らないので、遊ぶ人は「音が無いゲーム」だと思う（実際にそうなった）。
+               常時出す小さな注記。警告として目立たせない——音量を触りにきた人の目に入れば足りる -->
+          <p class="tkSetNote">音が出ないときは、端末のマナーモードを確認してください</p>
           <div class="tkSetRow">
             <span class="tkSetLabel">補助表示</span>
             <span class="tkSeg">

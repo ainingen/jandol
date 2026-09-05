@@ -160,6 +160,10 @@
 }
 .tkSettings .tkSecT{margin-top:0}
 .tkSetRow{display:flex;align-items:center;gap:10px;margin:7px 0}
+/* 効果音の行のすぐ下に出す注記。**警告にしない**——地の色も枠も付けず、
+   ラベルと同じ大きさで、音量を触りにきた人の目にだけ入ればよい。
+   ラベルのぶん字下げして、どの行に掛かっているかを見せる */
+.tkSetNote{font-size:11.5px;color:var(--muted);margin:-2px 0 9px;padding-left:calc(5em + 10px);line-height:1.6}
 .tkSetLabel{font-size:12px;color:var(--muted);min-width:5em}
 .tkSeg{display:flex;gap:4px;flex-wrap:wrap;margin-left:auto}
 .tkSeg button{
