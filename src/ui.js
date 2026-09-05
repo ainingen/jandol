@@ -262,7 +262,7 @@ const UI = {
     };
     $('#info').innerHTML = `
       <div class="kyoku">${kyokuLabel}</div>
-      <div class="wall">${g.honba}本場 ・ 残り${g.wall.length}枚</div>
+      <div class="wall"><span>${g.honba}本場</span><span>残り${g.wall.length}枚</span></div>
       <div id="dora">${g.doraIndicators.map((d) => tileHTML(d, 'tiny')).join('')}</div>
       ${g.riichiSticks ? `<div class="sticks">${'<span class="riichi-stick"></span>'.repeat(Math.min(g.riichiSticks, 4))}</div>` : ''}
       ${g.cheat ? `<div class="cheatinfo">疑い ${'●'.repeat(g.cheat.suspicion) || '無'}

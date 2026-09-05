@@ -162,6 +162,19 @@ const Match = (() => {
      rotateX で寝かせるので、見た目の高さは辺長より短い。
      CSS だけでは「回した後の高さ」が測れないので、候補を入れて測って詰める。
      上端（対面の手牌）が切れないこと、上のプレートと重ならないことを見る */
+  /* 卓面をいっぱいまで大きくする。
+
+     **数値を決め打ちしないこと。**36度倒したうえに透視（perspective:820px）が
+     掛かっているので、手前側が広がって `cos(36°)` の計算値とは合わない。
+     `--side` を入れて**実際に描かれた外接矩形を測り**、収まる最大を二分探索で探す。
+
+     縛っているのは三つ。
+       ・幅が卓に収まること
+       ・下の縁が卓の底より内側にいること
+       ・**対面の手牌が上のプレートに隠れないこと**
+     上のプレートが卓面の遠い縁に少し掛かるのはよい（モックがそうなっている）。
+     掛かってはいけないのは対面の手牌のほうで、それは縁より内側にある
+     ——**プレートの高さで卓を縛ると、その半分ぶん卓が小さくなる**（実測で50px近い） */
   function fitFour() {
     const t = document.getElementById('table');
     const felt = document.getElementById('felt');
@@ -169,22 +182,34 @@ const Match = (() => {
     if (!t || !felt) return;
     const W = t.clientWidth, H = t.clientHeight;
     if (!W || !H) return;
-    /* 上のプレートは卓面の遠い縁に少し掛かってよい（モックがそうなっている）。
-       掛かってはいけないのは対面の手牌のほうで、それは縁より内側にある */
     const plateTop = document.getElementById('plate-top');
-    const topPad = plateTop ? Math.max(0, plateTop.offsetTop + plateTop.offsetHeight - 10) : 36;
-    const botPad = 4;
+    const plateBottom = plateTop ? plateTop.offsetTop + plateTop.offsetHeight : 52;
+    const backs = document.querySelector('#top .backs');
     const maxW = W - 24;
-    let side = Math.min(maxW, H * 1.3);
-    for (let i = 0; i < 24; i++) {
+    const botPad = 4;
+
+    const fits = (side) => {
       body.style.setProperty('--side', Math.round(side) + 'px');
       const b = layoutBox(felt, t);
-      const okTop = b.top >= topPad;
-      const okBottom = b.bottom >= botPad;
-      const okWide = b.width <= maxW;
-      if (okTop && okBottom && okWide) break;
-      side *= 0.95;
+      if (b.width > maxW) return false;
+      if (b.bottom < botPad) return false;
+      if (b.top < 0) return false;
+      /* 対面の手牌の上端。まだ描かれていなければ卓面の縁で代用する */
+      const top = backs && backs.getBoundingClientRect().height
+        ? layoutBox(backs, t).top : b.top;
+      return top >= plateBottom - 6;
+    };
+
+    /* **卓面を上へずらして稼ぐことは考えなくてよい。**下の縁が先に詰まるので、
+       上に余白があってもそこは使えない（五つの画面幅で測って、
+       上の余りは常に対面の手牌の側で埋まっていた）。二分探索だけで足りる */
+    let lo = 120, hi = Math.min(maxW, H * 2.4);
+    if (fits(hi)) return;
+    for (let i = 0; i < 16; i++) {
+      const mid = (lo + hi) / 2;
+      if (fits(mid)) lo = mid; else hi = mid;
     }
+    body.style.setProperty('--side', Math.floor(lo) + 'px');
   }
 
   /* 向きが変わると卓の中身の高さが変わる。
