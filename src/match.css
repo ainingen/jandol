@@ -82,6 +82,27 @@ body.inMatch #dora .tile{
   box-shadow:0 0 0 1.6px var(--line),0 0 0 4px var(--sun),0 2px 0 var(--line),0 3px 5px rgba(0,0,0,.45);
 }
 
+/* ---------- 副露の横向き（§C-1） ----------
+   鳴いた牌は卓に横に倒す。**牌そのものを回す**ので、厚みの面（::before）は
+   牌のローカル座標のまま付いてきて、見える面が自動的に側面へ変わる。
+   `.rslot` の四方向が自動で正しくなったのと同じ理屈。
+
+   回した牌は見かけの幅と高さが入れ替わるが、**レイアウトの箱は回らない。**
+   箱を --mh 幅で取り直し、中で牌を絶対配置して下端にそろえる。
+   加槓の四枚目（.add）はその上へ重ねる */
+body.inMatch .meld{display:inline-flex;align-items:flex-end;gap:1px}
+body.inMatch .meldSide{
+  position:relative;display:inline-block;flex:none;
+  width:var(--mh);height:var(--mh);
+}
+body.inMatch .meldSide .tile{
+  position:absolute;left:50%;bottom:0;margin:0;
+  transform:translateX(-50%) translateY(calc((var(--mh) - var(--mw))/2)) rotate(-90deg);
+}
+body.inMatch .meldSide .tile.add{
+  transform:translateX(-50%) translateY(calc((var(--mh) - var(--mw))/2 - var(--mw))) rotate(-90deg);
+}
+
 /* ---------- 牌の移動（§3） ----------
    FLIP と飛ばし込みは translate / scale の個別プロパティで動かす。
    transform は .picked と河の横向きが使うので触らない。
@@ -334,7 +355,9 @@ body.inMatch:not(.four) .backs,body.inMatch:not(.four) .backs.vert{
 body.inMatch:not(.four) .backs .tile{
   height:calc(var(--rw)*1.15);width:calc(var(--rw)*.85);transform:none;
 }
-body.inMatch:not(.four) .opp .melds{display:flex;gap:5px;margin-left:6px}
+body.inMatch:not(.four) .opp .melds{display:flex;gap:5px;margin-left:6px;
+  --mw:calc(var(--rw)*.85);--mh:calc(var(--rw)*1.15)}
+body.inMatch:not(.four) #melds-row{--mw:var(--rw);--mh:calc(var(--rw)*1.35)}
 
 /* 河は全員おなじ向き・おなじ組み方 */
 body.inMatch:not(.four) .river,body.inMatch:not(.four) .river.side{
@@ -487,8 +510,14 @@ body.inMatch.four .river .tile,body.inMatch.four .opp .melds .tile{
 body.inMatch.four .river .tile::before,body.inMatch.four .opp .melds .tile::before{
   top:100%;transform-origin:center top;transform:rotateX(-90deg);
 }
-body.inMatch.four .opp .melds{display:flex;gap:4px;margin-left:4px}
-body.inMatch.four .melds .tile{width:calc(var(--rw)*.76);height:calc(var(--rw)*1.0)}
+/* **3D の連鎖をここで切らないこと**（§5.1 と同じ罠）。
+   `.melds` と `.meld` が transform-style:flat のままだと、牌に付けた厚みが
+   親の面に潰れて**平らな板として貼り付く**（実際に副露だけ厚みが消えていた）。
+   `#left` と `#felt` は preserve-3d なので、間のこの二つだけが抜けていた */
+body.inMatch.four .opp .melds{display:flex;gap:4px;margin-left:4px;transform-style:preserve-3d}
+body.inMatch.four .meld,body.inMatch.four .meldSide{transform-style:preserve-3d}
+body.inMatch.four .melds .tile{width:calc(var(--mw));height:calc(var(--mh))}
+body.inMatch.four .opp .melds{--mw:calc(var(--rw)*.76);--mh:calc(var(--rw)*1.0)}
 body.inMatch.four .opp .waits{position:absolute;bottom:100%;left:0;font-size:10px;color:var(--sun)}
 
 /* 中央のコンパス */
@@ -530,7 +559,8 @@ body.inMatch.four #handrow{min-height:calc(var(--tw)*1.36);align-items:flex-end}
 body.inMatch.four #melds-row{
   position:absolute;right:120px;bottom:12px;margin:0;gap:6px;
 }
-body.inMatch.four #melds-row .tile{width:calc(var(--tw)*.6);height:calc(var(--tw)*.82)}
+body.inMatch.four #melds-row{--mw:calc(var(--tw)*.6);--mh:calc(var(--tw)*.82)}
+body.inMatch.four #melds-row .tile{width:var(--mw);height:var(--mh)}
 body.inMatch.four #actions{
   position:absolute;right:14px;bottom:calc(100% + 8px);margin:0;min-height:0;
   flex-direction:column;align-items:flex-end;gap:8px;z-index:6;
@@ -687,8 +717,9 @@ body.inMatch .ebTiles .tile{
   width:calc(var(--tw)*.54);height:calc(var(--tw)*.72);margin:0;flex:none;
   box-shadow:0 0 0 1.4px var(--line),0 2px 0 var(--line);
 }
-body.inMatch .ebMeld{display:inline-flex;gap:4px;margin-left:8px}
-body.inMatch .ebMeld .meld{display:inline-flex;gap:1px}
+body.inMatch .ebMeld{display:inline-flex;gap:4px;margin-left:8px;
+  --mw:calc(var(--tw)*.54);--mh:calc(var(--tw)*.72)}
+body.inMatch:not(.four) .ebMeld{--mw:calc(var(--tw)*.62);--mh:calc(var(--tw)*.84)}
 body.inMatch .ebWin{margin-left:9px;display:inline-flex}
 body.inMatch .ebWin .tile{
   box-shadow:0 0 0 1.4px var(--line),0 0 0 3.5px var(--sun),0 2px 0 var(--line),0 0 12px rgba(255,201,60,.7);

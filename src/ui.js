@@ -306,14 +306,14 @@ const UI = {
             : Array(Math.max(0, p.hand.length)).fill(backHTML('tiny')).join('')}</div>
         ${c && c.showWaits.has(p.seat) ? `<div class="waits">待${
           Engine.winningTiles(Engine.countsFromIds(p.hand), p.melds).map(jpName).join('') || '無'}</div>` : ''}
-        <div class="melds">${p.melds.map((m) => meldHTML(m, 'tiny')).join('')}</div>`;
+        <div class="melds">${p.melds.map((m) => meldHTML(m, 'tiny', p.seat)).join('')}</div>`;
     $('#top').innerHTML = oppHTML(bySeat(2));
     $('#left').innerHTML = oppHTML(bySeat(3));
     $('#right').innerHTML = oppHTML(bySeat(1));
 
     // 河と手牌（keyed。spec.md §3）
     const me = g.players[0];
-    $('#melds-row').innerHTML = me.melds.map((m) => meldHTML(m, 'small')).join('');
+    $('#melds-row').innerHTML = me.melds.map((m) => meldHTML(m, 'small', 0)).join('');
     const drawn = g.currentDraw && g.currentDraw.seat === 0 ? g.currentDraw.id : null;
     const hand = me.hand.filter((id) => id !== drawn);
     const selectable = this.pending && this.pending.type === 'turn';
@@ -752,7 +752,7 @@ const UI = {
       /* ツモは和了牌が data.hand に入っている。離して出すので手牌の側からは外す */
       const rest = data.hand.filter((id) => id !== data.winId).sort((a, b) => kindOf(a) - kindOf(b));
       tiles = rest.map((id) => tileHTML(id, 'small')).join('')
-        + (data.melds.length ? `<span class="ebMeld">${data.melds.map((m) => meldHTML(m, 'small')).join('')}</span>` : '')
+        + (data.melds.length ? `<span class="ebMeld">${data.melds.map((m) => meldHTML(m, 'small', data.winner.seat)).join('')}</span>` : '')
         + `<span class="ebWin">${tileHTML(data.winId, 'small', 'last')}</span>`;
     }
     band.querySelector('.ebTiles').innerHTML = tiles;
@@ -1045,12 +1045,34 @@ function jpName(k) {
   return ['東', '南', '西', '北', '白', '發', '中'][k - 27];
 }
 
-function meldHTML(m, size) {
+/* 副露（agari-spec.md §C-1）。**鳴いた牌は横に倒す。**
+   `game.js` は `tiles` の**末尾**に鳴いた牌を入れ（`used.concat([tileId])`）、
+   `from` に出した人の席を持っている。加槓は そのあとにもう一枚 push されるので、
+   末尾から二番目が鳴いた牌になる。
+
+   倒す位置は麻雀の作法どおり——**上家は左端・対面は真ん中・下家は右端。**
+   `seat`（副露した人の席）を渡さなければ位置は決めず、右端に置く。
+
+   暗槓は倒さない（両端が裏のまま）。 */
+function meldHTML(m, size, seat) {
   if (m.type === 'ankan') {
     return `<span class="meld">${backHTML(size)}${tileHTML(m.tiles[1], size)}${tileHTML(m.tiles[2], size)}${backHTML(size)}</span>`;
   }
-  const tiles = m.tiles.slice().sort((a, b) => kindOf(a) - kindOf(b));
-  return `<span class="meld">${tiles.map((id) => tileHTML(id, size)).join('')}</span>`;
+  const t = m.tiles.slice();
+  const kakan = m.type === 'kakan';
+  const calledAt = kakan ? t.length - 2 : t.length - 1;
+  const called = t[calledAt];
+  const added = kakan ? t[t.length - 1] : null;
+  const rest = t.filter((_, i) => i !== calledAt && !(kakan && i === t.length - 1))
+    .sort((a, b) => kindOf(a) - kindOf(b));
+  const side = `<span class="meldSide">${tileHTML(called, size, 'side')}${
+    added !== null ? tileHTML(added, size, 'side add') : ''}</span>`;
+  const cells = rest.map((id) => tileHTML(id, size));
+  /* 上家(3)=左端 / 対面(2)=真ん中 / 下家(1)=右端 */
+  const dir = (seat === undefined || m.from === undefined) ? 1 : (m.from - seat + 4) % 4;
+  const at = dir === 3 ? 0 : (dir === 2 ? Math.min(1, cells.length) : cells.length);
+  cells.splice(at, 0, side);
+  return `<span class="meld">${cells.join('')}</span>`;
 }
 
 /* ---------- 汎用モーダル ---------- */
