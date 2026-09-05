@@ -242,6 +242,8 @@ src/debug.js        その中身。build.py は読まない（配布から外す
 | 吹き出しの地を差し色にする場面 | `src/ui.js` の `HOT_KINDS`（リーチ・ツモ・ロン） |
 | 卓の傾き・牌の厚み・河と手牌の押し出し | `src/match.css` の `rotateX(36deg)` `--th` `.rslot` `.413`/`.186` |
 | 牌の移動の速さ | `src/match.css` の `.tile.moving`（.24s） |
+| 局の締めの帯の高さ・立ち絵の大きさ | `src/match.css` の `--ebh`、`#endbust` の `width`/`height` |
+| 一番大きい数字（自分の増減）の色 | `src/match.css` の `.ebDelta[data-dir]`、`--lose` |
 | 効果音の音量の既定・素材 | `src/sound.js` の `DEFAULT_VOLUME`、`audio/*.wav`（`tools/prep-sfx.py`） |
 | どの名前が何本の音源を持つか | `src/sound.js` の `FILES`（打牌だけ四本） |
 | 音を耳で確かめる場所 | `debug.html` の「音」の区画（`src/debug.js` の `soundPanel`） |

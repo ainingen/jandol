@@ -31,6 +31,12 @@ const Match = (() => {
      卓の座標に直すために読む。
      席プレート（#plate-*）は卓面の外。列レイアウト（縦持ち）では
      #felt / #center / .rslot を display:contents にして、同じ DOM を格子に並べ直す */
+  /* 顔の置き場所。プレイヤーは p01〜p12、雀ドルは3桁の番号。
+     **席プレートと対局終了の順位表が同じ式を通ること**——書き写すと片方だけ古びる */
+  const faceOf = (c) => (c && c.id === 0
+    ? `img/${c.face || 'p01'}.webp`
+    : `img/${String(c.id).padStart(3, '0')}.webp`);
+
   const TABLE_HTML = `
     <div id="app">
       <div id="topbar">
@@ -65,6 +71,25 @@ const Match = (() => {
         <div id="hintbox"></div>
         <div id="actions"></div>
       </div>
+      <!-- 局の締め（agari-spec.md）。箱ではなく帯。**卓には掛からない**
+           ——#myarea のぶんだけを下から覆う。立ち絵は左右の端で帯の上端に立つ -->
+      <div id="endbust" class="endbust" hidden><img alt=""></div>
+      <div id="endband" class="endband" hidden>
+        <div class="ebLeft">
+          <div class="ebHead"></div>
+          <div class="ebLine"></div>
+          <div class="ebTiles"></div>
+          <div class="ebDora"></div>
+        </div>
+        <div class="ebRight">
+          <div class="ebDelta"></div>
+          <div class="ebScore"></div>
+          <div class="ebYaku"></div>
+        </div>
+      </div>
+      <!-- 冷たくする膜（§4）。filter を使わない——#felt の 3D が潰れる -->
+      <div class="endTint" hidden></div>
+      <div id="sticks" class="sticks-fly"></div>
     </div>
     <div id="toast"></div>
     <div id="overlay"><div class="panel"></div></div>
@@ -265,10 +290,7 @@ const Match = (() => {
        入れなければ従来どおりの打ち方になる */
     seats.forEach((c, i) => {
       if (!c) return;
-      /* 顔。プレイヤーは p01〜p12、雀ドルは3桁の番号 */
-      g.players[i].face = c.id === 0
-        ? `img/${c.face || 'p01'}.webp`
-        : `img/${String(c.id).padStart(3, '0')}.webp`;
+      g.players[i].face = faceOf(c);
       if (c.id === 0) return;
       g.players[i].name = c.name;
       g.players[i].styleName = (STYLES[c.style] || {}).name || '';
@@ -358,18 +380,30 @@ const Match = (() => {
     return rank.map((r, i) => ({ chara: seats[r.seat], place: i + 1 }));
   }
 
+  /* 半荘の締め（agari-spec.md §7）。**局の締め（帯）より重くてよい。**
+     四人の顔・順位・最終点・素点の増減を並べ、一位だけ演出を分ける。
+
+     見出しに opts.title を出さないこと——単体ページでは「単体の対局」、
+     大会からは大会名が入ってしまい、**何の画面か言っていない**見出しになる。
+     どこから来たかは小さく添える */
   async function showResult(rank, seats, opts) {
+    const START = 25000;
     const rows = rank.map((r, i) => {
       const c = seats[r.seat] || {};
       const mine = r.seat === 0;
-      return `<div class="rank-row"${mine ? ' style="color:var(--gold)"' : ''}>
-        <span class="r">${i + 1}位</span>
-        <span>${esc(c.name || r.name)}</span>
-        <span>${r.score}</span>
+      const diff = r.score - START;
+      return `<div class="mzRow${mine ? ' mine' : ''}${i === 0 ? ' top' : ''}">
+        <span class="mzR">${i + 1}<i>位</i></span>
+        <span class="mzFace"><img src="${esc(faceOf(c))}" alt="" onerror="this.remove()"></span>
+        <span class="mzName">${esc(c.name || r.name)}</span>
+        <span class="mzPt">${r.score}</span>
+        <span class="mzDiff" data-dir="${diff > 0 ? 'up' : diff < 0 ? 'down' : 'flat'}">${
+          (diff > 0 ? '+' : diff < 0 ? '−' : '±') + Math.abs(diff)}</span>
       </div>`;
     }).join('');
+    const where = opts.title ? `<span class="mzWhere">${esc(opts.title)}</span>` : '';
     await UI.modal(
-      `<h2>${esc(opts.title || '対局終了')}</h2>${rows}`,
+      `<h2 class="mzHead">対局終了</h2>${where}<div class="mzList">${rows}</div>`,
       [{ v: 'x', label: '結果へ', primary: true }]
     );
   }

@@ -506,7 +506,9 @@ body.inMatch.four .seat{position:absolute}
 body.inMatch.four .s-left{left:14px;top:50%;transform:translateY(-50%)}
 body.inMatch.four .s-right{right:14px;top:50%;transform:translateY(-50%)}
 body.inMatch.four .s-top{left:50%;top:8px;transform:translateX(-50%)}
-body.inMatch.four .s-bottom{left:14px;bottom:8px}
+/* 締めのあいだは帯のぶん持ち上げる。--eb-lift は showEnd が実測して入れる
+   （帯の高さ − #myarea の高さ）。決め打ちにすると端末で食われる */
+body.inMatch.four .s-bottom{left:14px;bottom:calc(8px + var(--eb-lift,0px));transition:bottom .28s ease}
 body.inMatch.four .seat.talking{transform:scale(1.07)}
 body.inMatch.four .s-left.talking,body.inMatch.four .s-right.talking{transform:translateY(-50%) scale(1.07)}
 body.inMatch.four .s-top.talking{transform:translateX(-50%) scale(1.07)}
@@ -599,3 +601,262 @@ body.inMatch:not(.four) .cutin{
 }
 body.inMatch:not(.four) .cutin .card{max-height:100%}
 body.inMatch:not(.four) .cutin .bubble{margin-top:10px;max-width:none;flex:1 1 auto;font-size:14px}
+
+
+/* ============================================================
+   局の締め（docs/design/match/agari-spec.md）
+
+   **箱をやめて帯にした。**卓（#table）には一切掛からない——
+   #myarea のぶんだけを下から覆う。以前の #overlay .panel は横幅の6割・
+   縦では画面の4割を占めていて、結果を見ている間ずっと河が見えなかった（§0-3）。
+
+   画面は四つある（.end-tsumo / .end-ron / .end-dealin / .end-other）。
+   **色替えではなく、入る向きが違う**——勝ちは下から立ち上がり、
+   放銃は上から降りて沈む（§4）。
+
+   一番大きい数字は **.ebDelta ＝ 自分の増減**。和了った人の合計点（.ebScore）は
+   二番目、符と翻（.ebYaku）は三番目。**大きさの順が関心の順**（§2）。
+   ============================================================ */
+body.inMatch{
+  --lose:#ff6b6b;          /* 沈むときの赤。--hot（桃）は鳴きの色なので分ける */
+  --ebh:132px;             /* 帯の高さ。立ち絵の足元もこれで決まる */
+}
+body.inMatch:not(.four){--ebh:168px}
+
+/* display:flex を書くので、hidden を明示的に効かせる
+   （hidden の display:none は作者スタイルに負ける。実際に負けた） */
+body.inMatch #endband[hidden],body.inMatch #endbust[hidden],body.inMatch .endTint[hidden]{display:none}
+body.inMatch #endband{
+  position:absolute;left:0;right:0;bottom:0;height:var(--ebh);z-index:8;
+  display:flex;align-items:stretch;gap:14px;padding:8px 14px;box-sizing:border-box;
+  background:linear-gradient(180deg,#251d3d 0%,#1a1430 100%);
+  border-top:3px solid var(--line);box-shadow:0 -6px 14px rgba(0,0,0,.45);
+  opacity:0;transition:opacity .2s ease,translate .3s cubic-bezier(.2,.9,.3,1);
+}
+/* 入る向き。**ここが「勝ちと負けで画面を変える」の実体**（§4） */
+body.inMatch #endband[data-kind="tsumo"],
+body.inMatch #endband[data-kind="ron"]{translate:0 100%}
+body.inMatch #endband[data-kind="dealin"]{translate:0 -22px;background:linear-gradient(180deg,#1b1b2e 0%,#12101f 100%)}
+body.inMatch #endband[data-kind="other"],
+body.inMatch #endband[data-kind="draw"]{translate:0 10px;background:linear-gradient(180deg,#221d33 0%,#161227 100%)}
+body.inMatch #endband.on{opacity:1;translate:0 0}
+@media(prefers-reduced-motion:reduce){
+  body.inMatch #endband{transition:none}
+}
+/* 立ち絵の側は帯を空けておく。**手牌にも役にもかぶせないための錠**（§3） */
+body.inMatch.four #app.bust-left #endband{padding-left:150px}
+body.inMatch.four #app.bust-right #endband{padding-right:150px}
+
+body.inMatch .ebLeft{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;justify-content:center;gap:4px}
+body.inMatch .ebRight{
+  flex:0 0 auto;width:196px;display:flex;flex-direction:column;
+  justify-content:center;align-items:flex-end;text-align:right;gap:2px;
+  border-left:2px solid rgba(255,255,255,.09);padding-left:12px;
+}
+
+/* 見出し */
+body.inMatch .ebHead{display:flex;align-items:baseline;gap:8px;line-height:1.1}
+body.inMatch .ebHead b{
+  font-family:var(--maru);font-weight:900;font-size:20px;letter-spacing:.06em;color:var(--sun);
+  -webkit-text-stroke:3px var(--line);paint-order:stroke fill;
+}
+body.inMatch #endband[data-kind="dealin"] .ebHead b{color:var(--lose)}
+body.inMatch #endband[data-kind="other"] .ebHead b,
+body.inMatch #endband[data-kind="draw"] .ebHead b{color:#cfc4e6;font-size:18px}
+body.inMatch .ebHead i{font-style:normal;font-size:11.5px;color:#a99ec6;letter-spacing:.04em}
+
+/* 一言。カットインは締めのあいだ消えるので、ここが唯一のセリフ */
+body.inMatch .ebLine{font-size:12px;line-height:1.3;color:#e6dcff;display:flex;gap:7px;align-items:baseline;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+body.inMatch .ebLine:empty{display:none}
+body.inMatch .ebLine .who{color:var(--cool);font-weight:800;font-size:10.5px;flex:none}
+body.inMatch .ebLine .say{overflow:hidden;text-overflow:ellipsis}
+
+/* 和了手。和了牌だけ離して光らせる */
+body.inMatch .ebTiles{display:flex;align-items:flex-end;gap:1.5px;flex-wrap:nowrap;min-height:0}
+body.inMatch .ebTiles:empty{display:none}
+body.inMatch .ebTiles .tile{
+  width:calc(var(--tw)*.54);height:calc(var(--tw)*.72);margin:0;flex:none;
+  box-shadow:0 0 0 1.4px var(--line),0 2px 0 var(--line);
+}
+body.inMatch .ebMeld{display:inline-flex;gap:4px;margin-left:8px}
+body.inMatch .ebMeld .meld{display:inline-flex;gap:1px}
+body.inMatch .ebWin{margin-left:9px;display:inline-flex}
+body.inMatch .ebWin .tile{
+  box-shadow:0 0 0 1.4px var(--line),0 0 0 3.5px var(--sun),0 2px 0 var(--line),0 0 12px rgba(255,201,60,.7);
+}
+body.inMatch #endband[data-kind="dealin"] .ebWin .tile{
+  box-shadow:0 0 0 1.4px var(--line),0 0 0 3.5px var(--lose),0 2px 0 var(--line),0 0 12px rgba(255,107,107,.6);
+}
+
+body.inMatch .ebDora{display:flex;gap:12px;align-items:center;font-size:10.5px;color:#a99ec6}
+body.inMatch .ebDora:empty{display:none}
+body.inMatch .ebDora span{display:inline-flex;align-items:center;gap:3px}
+body.inMatch .ebDora .tile{width:calc(var(--tw)*.38);height:calc(var(--tw)*.5);margin:0;
+  box-shadow:0 0 0 1.2px var(--line),0 1px 0 var(--line)}
+
+/* 一番大きい数字＝自分の増減。**和了った人の点数ではない**（§2） */
+body.inMatch .ebDelta{
+  font-family:var(--maru);font-weight:900;line-height:1;
+  font-size:clamp(30px,7.6vh,44px);letter-spacing:.02em;
+  -webkit-text-stroke:4px var(--line);paint-order:stroke fill;
+}
+body.inMatch .ebDelta[data-dir="up"]{color:var(--sun);text-shadow:0 0 18px rgba(255,201,60,.45)}
+body.inMatch .ebDelta[data-dir="down"]{color:var(--lose)}
+body.inMatch .ebDelta[data-dir="flat"]{color:#8d84a8;font-size:clamp(22px,5vh,30px)}
+body.inMatch .ebScore{font-size:12px;color:#cfc4e6;display:flex;gap:6px;align-items:baseline}
+body.inMatch .ebScore:empty{display:none}
+body.inMatch .ebScore .who{color:#a99ec6;font-size:10.5px}
+body.inMatch .ebScore .v{font-family:var(--maru);font-weight:800}
+body.inMatch .ebRight{overflow:hidden}
+body.inMatch .ebYaku{
+  display:flex;flex-wrap:wrap;justify-content:flex-end;gap:0 8px;
+  font-size:10.5px;line-height:14px;color:#a99ec6;max-height:28px;overflow:hidden;
+}
+body.inMatch .ebYaku:empty{display:none}
+body.inMatch .ebYaku .fu{color:#e6dcff;width:100%}
+body.inMatch .ebYaku .y i{font-style:normal;color:#7a7096;margin-left:3px}
+
+/* ---------- 立ち絵（§3） ----------
+   カットインの枠は流用しない。あれは会話の演出で、こちらは局の締め。
+   **席プレートより下の層に置く**（z-index）——プレートの点数が動くので、
+   そこだけは隠れてはいけない。飛ぶ点棒も立ち絵の上を通る */
+body.inMatch #endbust{
+  position:absolute;bottom:calc(var(--ebh) - 16px);z-index:2;
+  width:150px;height:min(232px,calc(100% - var(--ebh) - 6px));
+  opacity:0;transition:opacity .22s ease,translate .3s cubic-bezier(.2,1.5,.4,1);
+  pointer-events:none;
+}
+body.inMatch #endbust[data-side="left"]{left:6px;translate:-14px 12px}
+body.inMatch #endbust[data-side="right"]{right:6px;translate:14px 12px}
+body.inMatch #endbust.on{opacity:1;translate:0 0}
+body.inMatch #endbust img{
+  width:100%;height:100%;object-fit:cover;object-position:50% 12%;display:block;
+  border-radius:6px 6px 0 0;
+  -webkit-mask-image:linear-gradient(180deg,#000 62%,transparent 100%);
+  mask-image:linear-gradient(180deg,#000 62%,transparent 100%);
+}
+/* 振り込みのときは主役が相手なので、こちらは静かに出す（跳ねない） */
+body.inMatch #endband[data-kind="dealin"] ~ #endbust,
+body.inMatch #app.end-dealin #endbust{transition:opacity .3s ease}
+/* **#table は perspective を持つので、それ自体が stacking context。**
+   中の .seat の z-index は外まで効かない——立ち絵（z-index:2）が
+   席プレートを覆っていた（実際に覆った）。卓ごと立ち絵の上へ出す */
+body.inMatch #table{z-index:3}
+body.inMatch.four .seat{z-index:5}
+body.inMatch:not(.four) .seat{position:relative;z-index:5}
+body.inMatch #sticks{position:absolute;inset:0;z-index:6;pointer-events:none;overflow:visible}
+
+/* 締めのあいだカットインは消す。立ち絵と同じ隅でぶつかる（§3） */
+body.inMatch #app.ending .cutin{opacity:0}
+/* 手牌の帯も消す。**帯がそこに立つので、下から覗くと壊れて見える**
+   （縦持ちで実際に半分だけ覗いていた）。visibility なので寸法は動かない */
+body.inMatch #app.ending #myarea{visibility:hidden}
+
+/* ---------- 冷たい膜（§4） ----------
+   filter:saturate() で書かないこと。#app は #felt（rotateX + preserve-3d）の
+   祖先なので、牌の厚みが潰れる危険がある（spec.md §5.1 と同じ話）。
+   青を一枚重ねるだけなら 3D に触らない */
+body.inMatch .endTint{
+  position:absolute;inset:0;z-index:4;pointer-events:none;
+  background:linear-gradient(180deg,rgba(80,120,190,.16),rgba(40,60,120,.20));
+  mix-blend-mode:soft-light;
+}
+
+/* ---------- 集中線（§4） ----------
+   #app::before の放射（既にある）を、自分が和了ったときだけ濃くして回す。
+   **放銃では出さない。**負けを派手にしない */
+body.inMatch #app.end-tsumo::before,body.inMatch #app.end-ron::before{
+  opacity:.22;animation:ebSpin 7s linear infinite;
+}
+@keyframes ebSpin{to{transform:translate(-50%,-50%) rotate(360deg)}}
+@media(prefers-reduced-motion:reduce){
+  body.inMatch #app.end-tsumo::before,body.inMatch #app.end-ron::before{animation:none;opacity:.18}
+}
+/* 振り込んだ人（自分）のプレートを暗く落とす */
+body.inMatch #app.end-dealin #plate-bottom{filter:brightness(.62) saturate(.7)}
+
+/* ---------- 点棒（§5） ----------
+   払う人のプレートから受け取る人のプレートへ。親のぶんは太く、供託は白く長い */
+body.inMatch .ptStick{
+  position:absolute;left:50%;top:50%;width:34px;height:6px;margin:-3px 0 0 -17px;
+  border-radius:3px;background:linear-gradient(180deg,#fff,#d9d2e6);
+  box-shadow:0 0 0 1.5px var(--line),0 2px 0 rgba(0,0,0,.35);
+}
+body.inMatch .ptStick::after{
+  content:"";position:absolute;left:50%;top:50%;width:5px;height:5px;margin:-2.5px 0 0 -2.5px;
+  border-radius:50%;background:var(--hot);
+}
+/* 親のぶんは太く、色を変える。**本数ではなく太さで言う**（§5） */
+body.inMatch .ptStick.oya{height:9px;margin-top:-4.5px;background:linear-gradient(180deg,#ffe9a8,#f0c94a)}
+body.inMatch .ptStick.kept{background:linear-gradient(180deg,#fff,#cfe9ff)}
+body.inMatch .ptStick.kept::after{background:var(--cool)}
+
+/* ---------- 卓の上（§3・§6） ---------- */
+/* 倒した手牌。裏だったものが表になったと分かるように、金の下線を引く */
+body.inMatch .backs.shown{box-shadow:0 2px 0 var(--sun)}
+/* 当たり牌。振り込んだ人の河で光る。.last（直前の打牌）より強く */
+/* **`.last`（直前の打牌）と必ず重なる**——ロンの当たり牌は、その人の最後の一打だから。
+   `.last` はレイアウトごとに三か所で書かれていて（78・342・430行）、
+   四人卓のぶんが `body.inMatch.four .river .tile.last` と重いので、
+   同じ重さで並べないと勝てない（実際に負けて、桃色のままだった） */
+body.inMatch .tile.hit,
+body.inMatch:not(.four) .river .tile.hit,
+body.inMatch.four .river .tile.hit{
+  outline:3px solid var(--sun);outline-offset:-1px;
+  box-shadow:0 0 0 1.6px var(--line),0 2px 0 var(--line),0 0 14px rgba(255,201,60,.85);
+}
+/* テンパイ／ノーテンの印（流局） */
+body.inMatch .seat .tp{
+  font-size:9.5px;font-weight:800;letter-spacing:.04em;padding:1px 5px;border-radius:8px;
+  background:var(--sun);color:#2a2008;box-shadow:0 0 0 1.5px var(--line);white-space:nowrap;
+}
+body.inMatch .seat .tp.no{background:#4b4463;color:#c9c0dd}
+
+/* ---------- 縦持ち（列レイアウト） ----------
+   帯は下端に固定。**中途半端な位置に浮かせない**（§3）。
+   横に二段では入らないので、上下に積む */
+body.inMatch:not(.four) #endband{flex-direction:column;gap:5px;padding:8px 12px 10px}
+body.inMatch:not(.four) .ebScore,body.inMatch:not(.four) .ebYaku .fu,
+body.inMatch:not(.four) .ebYaku .y{white-space:nowrap}
+body.inMatch:not(.four) .ebLeft{flex:0 0 auto;gap:3px}
+body.inMatch:not(.four) .ebRight{
+  width:auto;flex-direction:row;align-items:baseline;justify-content:flex-start;
+  gap:12px;border-left:0;border-top:2px solid rgba(255,255,255,.09);padding:5px 0 0;text-align:left;
+}
+body.inMatch:not(.four) .ebDelta{font-size:30px;flex:none}
+body.inMatch:not(.four) .ebScore{font-size:11px;gap:4px}
+body.inMatch:not(.four) .ebYaku{justify-content:flex-start;max-height:15px;flex:1 1 auto}
+body.inMatch:not(.four) .ebYaku .fu{width:auto}
+body.inMatch:not(.four) .ebTiles .tile{width:calc(var(--tw)*.62);height:calc(var(--tw)*.84)}
+body.inMatch:not(.four) #endbust{
+  width:118px;height:min(196px,calc(100% - var(--ebh) - 6px));bottom:calc(var(--ebh) - 12px);
+}
+body.inMatch:not(.four) #app.bust-left #endband{padding-left:12px}
+body.inMatch:not(.four) #app.bust-right #endband{padding-right:12px}
+
+/* ---------- 対局終了（§7） ----------
+   半荘の締め。局の締め（帯）より重くてよい。顔・順位・最終点・素点の増減 */
+body.inMatch .mzHead{font-size:22px !important;margin-bottom:2px !important}
+body.inMatch .mzWhere{display:block;font-size:11px;color:#9c92b8;margin:0 0 10px;letter-spacing:.06em}
+body.inMatch .mzList{display:flex;flex-direction:column;gap:5px;margin-bottom:4px}
+body.inMatch .mzRow{
+  display:grid;grid-template-columns:auto 34px 1fr auto auto;align-items:center;gap:10px;
+  padding:6px 9px;border-radius:8px;background:rgba(255,255,255,.04);
+}
+/* 自分の行は水色の枠。**一位の金と色を分ける**——同じ金だと
+   「自分が一位」と「自分が二位」が見分けられない（実際に見分けられなかった） */
+body.inMatch .mzRow.mine{background:rgba(58,210,255,.09);box-shadow:inset 0 0 0 1.5px rgba(58,210,255,.45)}
+body.inMatch .mzRow.top{background:linear-gradient(90deg,rgba(255,201,60,.22),rgba(255,201,60,.05))}
+body.inMatch .mzRow.top .mzR{font-size:22px;color:var(--sun)}
+body.inMatch .mzR{font-family:var(--maru);font-weight:900;font-size:17px;color:#cfc4e6;min-width:30px}
+body.inMatch .mzR i{font-style:normal;font-size:10px;margin-left:1px}
+body.inMatch .mzFace{width:34px;height:34px;border-radius:50%;overflow:hidden;background:#332a4d;
+  box-shadow:0 0 0 1.5px var(--line)}
+body.inMatch .mzFace img{width:100%;height:100%;object-fit:cover;object-position:50% 14%;display:block}
+body.inMatch .mzName{font-size:13.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+body.inMatch .mzPt{font-family:var(--maru);font-weight:800;font-size:15px}
+body.inMatch .mzDiff{font-size:11.5px;min-width:52px;text-align:right}
+body.inMatch .mzDiff[data-dir="up"]{color:var(--sun)}
+body.inMatch .mzDiff[data-dir="down"]{color:var(--lose)}
+body.inMatch .mzDiff[data-dir="flat"]{color:#8d84a8}

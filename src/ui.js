@@ -272,12 +272,18 @@ const UI = {
 
     // 席プレート（§4.5）。名前・自風・点数・顔。自分のぶん（#plate-bottom）は色を反転させてある
     const c = g.cheat;
+    /* 局の締め（agari-spec.md §3・§6）。倒す手・当たり牌・テンパイの印。
+       **イカサマの reveal と同じ経路に相乗りしている**——別の道を作らない */
+    const end = this._end;
     const plateHTML = (p) => `
       <span class="kz">${KAZE_CH[p.jikaze - 27] || ''}</span>
       <span class="bust">${p.face ? `<img src="${esc(p.face)}" alt="" onerror="this.remove()">` : ''}</span>
       <span class="txt"><span class="nm">${esc(p.name)}</span><span class="pt">${p.score}</span></span>
       ${p.riichi ? '<span class="rc">立</span>' : ''}
-      ${p.suspicion ? '<span class="susp">疑</span>' : ''}`;
+      ${p.suspicion ? '<span class="susp">疑</span>' : ''}
+      ${end && end.tenpai
+        ? `<span class="tp${end.tenpai[p.seat] ? '' : ' no'}">${end.tenpai[p.seat] ? 'テンパイ' : 'ノーテン'}</span>`
+        : ''}`;
     [['#plate-bottom', 0], ['#plate-right', 1], ['#plate-top', 2], ['#plate-left', 3]].forEach(([sel, seat]) => {
       const el = $(sel);
       if (!el) return;
@@ -291,9 +297,9 @@ const UI = {
 
     // 他家の手牌（裏）と副露。プレートは別なので、ここは牌だけ
     const oppHTML = (p) => `
-        <div class="backs">${
-          c && c.reveal.has(p.seat)
-            ? p.hand.map((id) => tileHTML(id, 'tiny')).join('')
+        <div class="backs${end && end.reveal.has(p.seat) ? ' shown' : ''}">${
+          (c && c.reveal.has(p.seat)) || (end && end.reveal.has(p.seat))
+            ? p.hand.slice().sort((a, b) => kindOf(a) - kindOf(b)).map((id) => tileHTML(id, 'tiny')).join('')
             : Array(Math.max(0, p.hand.length)).fill(backHTML('tiny')).join('')}</div>
         ${c && c.showWaits.has(p.seat) ? `<div class="waits">待${
           Engine.winningTiles(Engine.countsFromIds(p.hand), p.melds).map(jpName).join('') || '無'}</div>` : ''}
@@ -321,7 +327,9 @@ const UI = {
     });
     const riverItems = (p) => p.discards.map((d, i) => {
       const last = g.lastDiscard && g.lastDiscard.seat === p.seat && i === p.discards.length - 1;
-      return { id: d.id, cls: (d.riichi ? 'riichi ' : '') + (d.tsumogiri ? 'tsumogiri ' : '') + (last ? 'last' : '') };
+      const hit = end && end.winId !== null && d.id === end.winId;
+      return { id: d.id, cls: (d.riichi ? 'riichi ' : '') + (d.tsumogiri ? 'tsumogiri ' : '')
+        + (hit ? 'hit ' : '') + (last ? 'last' : '') };
     });
     const rivers = [
       ['#river-bottom', bySeat(0)], ['#river-right', bySeat(1)], ['#river-top', bySeat(2)], ['#river-left', bySeat(3)],
@@ -680,65 +688,332 @@ const UI = {
     await sleep(120);
   },
 
+  /* ============================================================
+     局の締め（docs/design/match/agari-spec.md）
+
+     箱で覆うのをやめて、**卓を残したまま下に帯を出す。**
+     画面は四つある——自分がツモ／自分がロン／自分が振り込み／他家同士。
+     一番大きい数字は**常にプレイヤー自身の増減**（§2）。
+     和了った人の合計点ではない——放銃したときに相手の12000が大きく出て、
+     負けたほうが派手に見えていた
+     ============================================================ */
+
+  /* 四分岐。**色替えではなく四つの別の画面**（§1） */
+  endKind(data) {
+    if (data.type !== 'win') return 'draw';
+    if (data.winner.seat === 0) return data.loser ? 'ron' : 'tsumo';
+    if (data.loser && data.loser.seat === 0) return 'dealin';
+    return 'other';
+  },
+
+  /* 席ごとの増減。**payments は「誰がいくら払ったか」で、和了った人は入っていない**
+     （game.js の finishWin）。流局は payments に全員ぶんが入っている（agari-spec.md §10） */
+  endDeltas(data) {
+    const d = [0, 0, 0, 0];
+    (data.payments || []).forEach((pm) => { d[pm.seat] += pm.amount; });
+    if (data.type === 'win') {
+      d[data.winner.seat] += data.result.score.total + (data.sticks || 0) * 1000;
+    }
+    return d;
+  },
+
+  /* 主役の立ち絵を出す側。**カットイン（say）と同じ式**——
+     同じ人が会話と締めで左右に飛ばないように */
+  endSide(seat) { return (seat === 0 || seat === 3) ? 'left' : 'right'; },
+
+  /* 帯を組む。**牌は再掲**で、卓の上に倒れている牌（keyed な _nodes）とは別物 */
+  showEnd(kind, data) {
+    const g = this.game;
+    const band = $('#endband');
+    const bust = $('#endbust');
+    if (!band) return;
+    const deltas = this.endDeltas(data);
+    const me = deltas[0];
+
+    /* --- 見出し --- */
+    let head = '';
+    if (kind === 'tsumo') head = '<b>ツモ和了</b>';
+    else if (kind === 'ron') head = '<b>ロン和了</b>';
+    else if (kind === 'dealin') head = `<b>放銃</b><i>${esc(data.winner.name)} に</i>`;
+    else if (kind === 'other') {
+      head = `<b>${esc(data.winner.name)}</b><i>${data.loser ? 'ロン ' + esc(data.loser.name) : 'ツモ'}</i>`;
+    } else {
+      const renchan = data.tenpai ? data.tenpai[g.dealer] : true;
+      head = `<b>${esc(data.reason)}</b><i>${renchan ? '親は連荘' : '親が流れる'}</i>`;
+    }
+    band.querySelector('.ebHead').innerHTML = head;
+
+    /* --- 和了手（誰の和了でも読める大きさで）。和了牌は離して光らせる --- */
+    let tiles = '';
+    if (data.type === 'win') {
+      /* ツモは和了牌が data.hand に入っている。離して出すので手牌の側からは外す */
+      const rest = data.hand.filter((id) => id !== data.winId).sort((a, b) => kindOf(a) - kindOf(b));
+      tiles = rest.map((id) => tileHTML(id, 'small')).join('')
+        + (data.melds.length ? `<span class="ebMeld">${data.melds.map((m) => meldHTML(m, 'small')).join('')}</span>` : '')
+        + `<span class="ebWin">${tileHTML(data.winId, 'small', 'last')}</span>`;
+    }
+    band.querySelector('.ebTiles').innerHTML = tiles;
+
+    /* --- ドラ表示・裏ドラ --- */
+    let dora = '';
+    if (data.type === 'win') {
+      dora = `<span>ドラ ${data.doraIndicators.map((d) => tileHTML(d, 'tiny')).join('')}</span>`
+        + (data.uraIndicators.length
+          ? `<span>裏 ${data.uraIndicators.map((d) => tileHTML(d, 'tiny')).join('')}</span>` : '');
+    } else if (data.tenpai) {
+      const n = data.tenpai.filter(Boolean).length;
+      dora = `<span>テンパイ ${n}人 ／ ノーテン ${4 - n}人</span>`;
+    }
+    band.querySelector('.ebDora').innerHTML = dora;
+
+    /* --- 一番大きい数字＝自分の増減（§2）。ここだけは四分岐で色も向きも変わる --- */
+    const d = band.querySelector('.ebDelta');
+    d.dataset.dir = me > 0 ? 'up' : (me < 0 ? 'down' : 'flat');
+    d.textContent = this.yenSigned(0);
+    this._endTarget = me;
+
+    /* --- 二番目：和了った人の合計。三番目：符と翻 --- */
+    const r = data.result;
+    band.querySelector('.ebScore').innerHTML = data.type === 'win'
+      ? `<span class="who">${esc(data.winner.name)}</span><span class="v">${r.score.total}点</span>`
+      : '';
+    band.querySelector('.ebYaku').innerHTML = data.type === 'win'
+      ? `<span class="fu">${r.fu}符 ${r.han}翻${r.score.name ? ' ' + esc(r.score.name) : ''}</span>`
+        + r.yaku.map((y) => `<span class="y">${esc(y.name)}<i>${y.yakuman ? '役満' : y.han + '翻'}</i></span>`).join('')
+      : '';
+
+    /* --- 立ち絵。主役は §1 の表。振り込みの主役は「和了った相手」で、自分ではない --- */
+    const star = data.type === 'win'
+      ? (kind === 'dealin' || kind === 'other' ? data.winner.seat : 0)
+      : g.dealer;
+    const img = bust.querySelector('img');
+    const sp = g.players[star];
+    const face = sp ? sp.face : null;
+    const app = $('#app');
+    if (face) {
+      img.src = face;
+      bust.dataset.side = this.endSide(star);
+      if (app) app.classList.add('bust-' + this.endSide(star));
+      bust.hidden = false;
+    } else {
+      bust.hidden = true;
+    }
+    /* 一言は帯の中に置く。**カットインは締めのあいだ消す**（§3）
+       ——同じ隅で立ち絵とぶつかるのと、「専用の大きさで出す」ため。
+       喋る人は立ち絵と同じ（主役）。SERIFU が無い環境では黙って空になる */
+    let line = '';
+    if (typeof SERIFU !== 'undefined' && sp) {
+      const kindOfLine = data.type !== 'win' ? 'draw'
+        : (star === data.winner.seat ? (data.loser ? 'ron' : 'tsumo') : 'deal');
+      line = SERIFU.pick(sp.chara, kindOfLine) || '';
+    }
+    /* **自分（seat 0）には喋らせない。**この作品の主人公は事務所の側で、
+       性格の一言を持っていない。自分が主役のときは、振り込んだ相手に喋らせる
+       ——そこが唯一「人が出ている」ところなので、黙らせると締めから顔が消える */
+    let sayer = sp;
+    if (star === 0) {
+      sayer = data.loser && data.loser.seat !== 0 ? g.players[data.loser.seat] : null;
+      line = sayer && typeof SERIFU !== 'undefined' ? (SERIFU.pick(sayer.chara, 'deal') || '') : '';
+    }
+    band.querySelector('.ebLine').innerHTML = line && sayer
+      ? `<span class="who">${esc(sayer.name)}</span><span class="say">${esc(line)}</span>` : '';
+
+    band.dataset.kind = kind;
+    band.hidden = false;
+    /* 自分の席プレートが帯に食われる（点数が動くのはそこなので隠れてはいけない）。
+       **帯の高さ − 手牌の帯の高さ**だけ持ち上げる。決め打ちにすると端末で食われる */
+    const my = $('#myarea');
+    if (app && my) {
+      app.style.setProperty('--eb-lift',
+        Math.max(0, band.offsetHeight - my.offsetHeight + 8) + 'px');
+    }
+    $('#app').classList.add('ending', 'end-' + kind);
+    /* 冷たい膜は振り込みのときだけ。filter を使わない（3D が潰れる） */
+    const tint = document.querySelector('.endTint');
+    if (tint) tint.hidden = kind !== 'dealin';
+    /* 帯と立ち絵を入れる。上がるか降りるかは CSS（.end-* が向きを持つ） */
+    void band.offsetWidth;
+    band.classList.add('on');
+    if (!bust.hidden) bust.classList.add('on');
+  },
+
+  hideEnd() {
+    const band = $('#endband');
+    const bust = $('#endbust');
+    if (band) { band.classList.remove('on'); band.hidden = true; }
+    if (bust) { bust.classList.remove('on'); bust.hidden = true; }
+    const tint = document.querySelector('.endTint');
+    if (tint) tint.hidden = true;
+    const app = $('#app');
+    if (app) {
+      app.style.removeProperty('--eb-lift');
+      [...app.classList].forEach((c) => {
+        if (c === 'ending' || c.startsWith('end-') || c.startsWith('bust-')) app.classList.remove(c);
+      });
+    }
+    const host = $('#sticks');
+    if (host) host.innerHTML = '';
+    this._end = null;
+    this._endTarget = 0;
+  },
+
+  yenSigned(v) { return (v > 0 ? '+' : v < 0 ? '−' : '±') + Math.abs(Math.round(v)); },
+
+  /* 席プレートの点数を書き換える。**render() を通さない**
+     ——render は p.score（＝支払い後）を読むので、飛んでいる最中の値が消える */
+  setPlateScore(seat, v) {
+    const id = this.PLATE_IDS[seat];
+    const el = id ? $('#' + id) : null;
+    const pt = el && el.querySelector('.pt');
+    if (pt) pt.textContent = String(Math.round(v));
+  },
+
+  /* 点棒を飛ばす（§5）。払う人のプレートから、受け取る人のプレートへ。
+     供託のリーチ棒は中央（#info）から和了った人へ。
+     **飛んでいる間にプレートの数字が動き、着地した瞬間に最終値になる。**
+
+     最速（speed 0）と prefers-reduced-motion では飛ばさず、即座に確定させる。
+     途中でどこかを押したら、その場で確定させる（this._endSettle） */
+  async flyScores(data, deltas) {
+    const g = this.game;
+    const host = $('#sticks');
+    /* 支払い後の値が届いているので、飛ばす前の値へ戻す（agari-spec.md §10） */
+    const after = g.players.map((p) => p.score);
+    const before = after.map((v, i) => v - deltas[i]);
+    for (let i = 0; i < 4; i++) this.setPlateScore(i, before[i]);
+    const band = $('#endband');
+    const dband = band && band.querySelector('.ebDelta');
+
+    const settle = () => {
+      for (let i = 0; i < 4; i++) this.setPlateScore(i, after[i]);
+      if (dband) dband.textContent = this.yenSigned(this._endTarget);
+      if (host) host.innerHTML = '';
+    };
+    if (!this.animates || !host) { settle(); return; }
+
+    /* 誰から誰へ。和了は payers → winner、流局は ノーテン → テンパイ の総当たり */
+    const pairs = [];
+    if (data.type === 'win') {
+      (data.payments || []).forEach((pm) => {
+        pairs.push({ from: pm.seat, to: data.winner.seat, oya: pm.seat === g.dealer });
+      });
+      for (let i = 0; i < Math.min(data.sticks || 0, 4); i++) {
+        pairs.push({ from: null, to: data.winner.seat, kept: true });
+      }
+    } else {
+      const pays = (data.payments || []).filter((pm) => pm.amount < 0);
+      const gets = (data.payments || []).filter((pm) => pm.amount > 0);
+      pays.forEach((a) => gets.forEach((b) => pairs.push({ from: a.seat, to: b.seat })));
+    }
+    if (!pairs.length) { settle(); return; }
+
+    const hostRect = host.getBoundingClientRect();
+    const at = (sel) => {
+      const el = $(sel);
+      if (!el) return [0, 0];
+      const r = el.getBoundingClientRect();
+      let x = r.left + r.width / 2 - (hostRect.left + hostRect.width / 2);
+      let y = r.top + r.height / 2 - (hostRect.top + hostRect.height / 2);
+      /* 回転表示中は画面が90度回っている。画面の差をレイアウトの差へ戻す（flip と同じ式） */
+      if (document.body.classList.contains('rotated')) [x, y] = [y, -x];
+      return [x, y];
+    };
+    const seatAt = (seat) => at('#' + this.PLATE_IDS[seat]);
+
+    const nodes = pairs.map((pr) => {
+      const el = document.createElement('span');
+      el.className = 'ptStick' + (pr.oya ? ' oya' : '') + (pr.kept ? ' kept' : '');
+      const [x0, y0] = pr.from === null ? at('#info') : seatAt(pr.from);
+      const [x1, y1] = seatAt(pr.to);
+      el.style.translate = x0.toFixed(1) + 'px ' + y0.toFixed(1) + 'px';
+      host.appendChild(el);
+      return { el, x1, y1 };
+    });
+    void host.offsetWidth;
+    const ms = Math.max(320, Math.min(560, this.speed || 520));
+    nodes.forEach((n) => {
+      n.el.style.transition = `translate ${ms}ms cubic-bezier(.3,.9,.3,1), opacity ${ms}ms linear`;
+      n.el.style.translate = n.x1.toFixed(1) + 'px ' + n.y1.toFixed(1) + 'px';
+    });
+
+    /* 数字を動かす。着地した瞬間に最終値 */
+    await new Promise((res) => {
+      const t0 = performance.now();
+      let done = false;
+      const fin = () => { if (done) return; done = true; settle(); this._endSettle = null; res(); };
+      this._endSettle = fin;
+      const step = (now) => {
+        if (done) return;
+        const t = Math.min(1, (now - t0) / ms);
+        const e = 1 - Math.pow(1 - t, 3);
+        for (let i = 0; i < 4; i++) this.setPlateScore(i, before[i] + deltas[i] * e);
+        if (dband) dband.textContent = this.yenSigned(this._endTarget * e);
+        if (t >= 1) fin(); else requestAnimationFrame(step);
+      };
+      requestAnimationFrame(step);
+    });
+  },
+
+  /* 送り。**他家同士だけ自動で送ってよい**（§1）。残り三つはタップを待つ。
+     おまかせ（this.auto）のときは、いままでどおり全部自動 */
+  waitEnd(kind) {
+    return new Promise((res) => {
+      let done = false;
+      const go = () => { if (done) return; done = true; clearTimeout(timer); this._endAdvance = null; res(); };
+      this._endAdvance = go;
+      /* 待たずに送ってよいのは「他家同士」だけ（§1）。おまかせのときは全部自動 */
+      const wait = this.auto ? Math.max(700, this.speed * 2)
+        : (kind === 'other' ? Math.max(900, this.speed * 2) : 0);
+      const timer = wait ? setTimeout(go, wait) : null;
+    });
+  },
+
   async result(data) {
     const g = this.game;
-    const panel = $('#overlay .panel');
+    const kind = this.endKind(data);
     /* 和了った人と、振り込んだ人の両方に一言。
        振り込みのほうを後にして、そちらを画面に残す */
     if (data.type === 'win' && data.winner) {
       this.say(data.winner.seat, data.loser ? 'ron' : 'tsumo');
       if (data.loser) this.say(data.loser.seat, 'deal', true);
       /* 自分が振ったときだけ沈む音。それ以外は和了の音 */
-      this.sfx(data.loser && data.loser.seat === 0 ? 'deal' : 'agari');
+      this.sfx(kind === 'dealin' ? 'deal' : 'agari');
     } else if (data.type === 'draw') {
       this.say(g.dealer, 'draw');
       this.sfx('ryuukyoku');
     }
-    if (data.type === 'win') {
-      const r = data.result;
-      const yakuRows = r.yaku.map((y) =>
-        `<div>${y.name}</div><div class="h">${y.yakuman ? '役満' : y.han + '翻'}</div>`).join('');
-      const winTiles = data.hand.slice().sort((a, b) => kindOf(a) - kindOf(b));
-      panel.innerHTML = `
-        <h2>${data.loser ? 'ロン和了' : 'ツモ和了'} — ${esc(data.winner.name)}</h2>
-        <div class="hand-view">
-          ${winTiles.map((id) => tileHTML(id, 'small')).join('')}
-          ${data.melds.map((m) => meldHTML(m, 'small')).join('')}
-          <span class="win">${tileHTML(data.winId, 'small', 'last')}</span>
-        </div>
-        <div class="sub">ドラ表示 ${data.doraIndicators.map((d) => tileHTML(d, 'tiny')).join('')}
-          ${data.uraIndicators.length ? ' ／ 裏 ' + data.uraIndicators.map((d) => tileHTML(d, 'tiny')).join('') : ''}</div>
-        <div class="yaku-list">${yakuRows}</div>
-        <div class="sub">${r.fu}符 ${r.han}翻 ${r.score.name}</div>
-        <div class="total">${r.score.detail}</div>
-        <div class="opt"><button class="act" id="next">次へ</button></div>`;
-    } else {
-      const rows = data.tenpai
-        ? g.players.map((p, i) => `<div class="rank-row"><span class="r">${esc(p.name)}</span>
-            <span>${data.tenpai[i] ? 'テンパイ' : 'ノーテン'}</span><span>${p.score}</span></div>`).join('')
-        : '';
-      panel.innerHTML = `<h2>${data.reason}</h2>${rows}
-        <div class="opt"><button class="act" id="next">次へ</button></div>`;
-    }
-    $('#overlay').classList.add('show');
-    /* おまかせ中は局の結果も自分で送る。押させると早送りの意味がない。
-       早送り(speed 0)でも一瞬は見えるよう、最低限の間は置く */
-    await new Promise((res) => {
-      $('#next').onclick = res;
-      if (this.auto) setTimeout(res, Math.max(700, this.speed * 2));
-    });
-    $('#overlay').classList.remove('show');
-  },
 
-  async gameOver(rank) {
-    const panel = $('#overlay .panel');
-    panel.innerHTML = `<h2>対局終了</h2>
-      ${rank.map((r, i) => `<div class="rank-row"><span class="r">${i + 1}位</span>
-        <span>${esc(r.name)}</span><span>${r.score}</span></div>`).join('')}
-      <div class="opt"><button class="act primary" id="again">もう一度</button></div>`;
-    $('#overlay').classList.add('show');
-    await new Promise((res) => { $('#again').onclick = res; });
-    location.reload();
+    /* 卓の上で見せるもの（§3・§6）。倒す手・当たり牌・テンパイの印。
+       ここは render() が描く——帯の中の牌とは別物 */
+    const reveal = new Set();
+    if (data.type === 'win') reveal.add(data.winner.seat);
+    else if (data.tenpai) data.tenpai.forEach((t, i) => { if (t) reveal.add(i); });
+    this._end = {
+      reveal,
+      winId: data.type === 'win' ? data.winId : null,
+      tenpai: data.type === 'draw' ? data.tenpai : null,
+    };
+    this.render();
+
+    this.showEnd(kind, data);
+    /* タップは**飛んでいる最中から**受ける（§5「タップで飛ばせること」）。
+       一度目は演出を確定させるだけ、二度目で送る
+       ——一度で消すと、飛ばした人には何が起きたか読めないまま画面が変わる */
+    const onTap = () => {
+      if (this._endSettle) { this._endSettle(); return; }
+      if (this._endAdvance) this._endAdvance();
+    };
+    document.addEventListener('pointerdown', onTap, true);
+    try {
+      await this.flyScores(data, this.endDeltas(data));
+      await this.waitEnd(kind);
+    } finally {
+      document.removeEventListener('pointerdown', onTap, true);
+      this._endSettle = null;
+      this._endAdvance = null;
+    }
+    this.hideEnd();
+    this.render();
   },
 
   async aiPause() { await sleep(this.speed); },
@@ -782,6 +1057,9 @@ UI.openCheatPanel = async function () {};
 UI.aiTell = async function () {};
 UI.accuseResult = async function () {};
 
+/* 対局終了の画面は match.js の showResult（agari-spec.md §7）。
+   ここは順位を控えるだけ。**UI 側に和了画面と別の実装を持たないこと**
+   ——以前 ui.js に gameOver の中身があったが、この行に上書きされていて誰も呼んでいなかった */
 UI.gameOver = async function (rank) { this._lastRank = rank; };
 
 /* この先（ストーリー進行・タイトル画面の配線）は『忍雀』のものだったので外した。

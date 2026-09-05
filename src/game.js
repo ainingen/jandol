@@ -612,11 +612,20 @@ class Game {
       if (isTenpai) tenpai.push(p);
     }
     const n = tenpai.length;
+    /* 聴牌料。**誰がいくら動いたかを payments に載せて渡す**（agari-spec.md §10）。
+       io 側で 3000/n を組み直すと、同じ規則が二か所に散る。
+       和了（finishWin）と同じ形にしてあるので、点棒を飛ばす側は分けなくてよい */
+    const payments = [];
     if (n > 0 && n < 4) {
       const gain = 3000 / n, loss = 3000 / (4 - n);
-      for (const p of this.players) p.score += p.tenpaiAtDraw ? gain : -loss;
+      for (const p of this.players) {
+        const amt = p.tenpaiAtDraw ? gain : -loss;
+        p.score += amt;
+        payments.push({ seat: p.seat, amount: amt });
+      }
     }
-    await this.io.result({ type: 'draw', reason: '流局', tenpai: this.players.map((p) => p.tenpaiAtDraw) });
+    await this.io.result({ type: 'draw', reason: '流局', payments,
+      tenpai: this.players.map((p) => p.tenpaiAtDraw) });
     const dealerTenpai = this.players[this.dealer].tenpaiAtDraw;
     return this.nextKyoku(dealerTenpai, true);
   }

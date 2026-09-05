@@ -138,6 +138,9 @@ const log = (...a) => { process.stdout.write(a.join(' ') + '\n'); };
       overlay: vis('#overlay.show'),
       next: vis('#overlay.show #next'),
       modal: vis('#overlay.show [data-v]'),
+      /* 局の締めは帯になった（agari-spec.md）。**#next はもう無い。**
+         送るのは「どこかを叩く」ことなので、帯が出ていたら叩く */
+      band: vis('#endband.on'),
       nodes: UI._nodes ? UI._nodes.size : -1,
       jikaze: g.players.map((p) => p.jikaze - 27),
     };
@@ -165,7 +168,7 @@ const log = (...a) => { process.stdout.write(a.join(' ') + '\n'); };
     if (VIDEO && Date.now() - t0 > SECONDS * 1000) { log('録画の長さに達した'); break; }
     if (st.over) { log('終局 ' + JSON.stringify(st.rank)); break; }
     maxNodes = Math.max(maxNodes, st.nodes);
-    const key = JSON.stringify([st.kyoku, st.discards, st.melds, st.pending, st.overlay]);
+    const key = JSON.stringify([st.kyoku, st.discards, st.melds, st.pending, st.overlay, st.band]);
     if (key !== lastKey) { lastKey = key; lastChange = Date.now(); }
     else if (Date.now() - lastChange > STALL * 1000) {
       log('！進みが止まった ' + JSON.stringify(st)); process.exitCode = 2; break;
@@ -176,6 +179,15 @@ const log = (...a) => { process.stdout.write(a.join(' ') + '\n'); };
     if (!shots.late && st.discards.some((n) => n >= 13) && !st.overlay) { await shot('late'); shots.late = true; }
 
     if (st.next) { await page.click('#overlay.show #next').catch(() => {}); await sleep(120); continue; }
+    /* 帯を送る。**一度目は演出を確定させるだけ**なので、二度叩く（ui.js の onTap）。
+       おまかせのときは自動で送るが、自分で打つ経路（--play）はここが唯一の出口 */
+    if (st.band) {
+      await page.mouse.click(WIDTH / 2, Math.round(HEIGHT * 0.35)).catch(() => {});
+      await sleep(160);
+      await page.mouse.click(WIDTH / 2, Math.round(HEIGHT * 0.35)).catch(() => {});
+      await sleep(160);
+      continue;
+    }
     if (st.modal) { await page.click('#overlay.show [data-v]').catch(() => {}); await sleep(120); continue; }
 
     if (PLAY && st.pending === 'turn') {
