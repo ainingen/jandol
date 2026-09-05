@@ -25,6 +25,9 @@
        ——`call` はポン・チー・カンで共有する一つの場面。人が気づけるのは
        実際に鳴かれた瞬間だけで、それも「チーなのにポンと言った」と
        分かる人に限られる。**機械に見張らせる**
+    5. 締めの帯の下に、対局を畳む釦を置かないこと（2026年9月5日の不具合）
+       ——四人卓の #topbar が帯の真下にあり、帯を叩いた指の click が
+       「おまかせ」に落ちていた。形だけを機械的に見る
 */
 'use strict';
 
@@ -355,6 +358,50 @@ const winData = (winnerSeat, loserSeat, total, payments, sticks) => ({
   tables.forEach(([chara, v]) => {
     ok(!v.pon && !v.chi && !v.kan, chara + ' に pon / chi / kan の場面を作っていない');
   });
+}
+
+/* ============================================================
+   5. 締めの帯の下に、対局を畳む釦を置かない（src/match.css・src/ui.js）
+   ============================================================ */
+{
+  /* **実機で「東風なのに東1局で対局ごと終わって最初の画面に戻る」が出た**
+     （2026年9月5日・横持ちだけ）。原因は絵の重なりだった。
+
+       - 四人卓では #topbar（おまかせ／横画面にする）を**右下**に置いていた
+       - 締めの帯は画面の下 132px を覆う。**「おまかせ」は帯の真下にいた**
+       - 送りは pointerdown で受けるので、指が離れる前に帯が畳まれる。
+         iOS Safari は「押した相手が消えていたら**離した場所にいる相手**」へ
+         click を出すので、そのまま「残りをおまかせにしますか」が開き、
+         次の一叩きで「早送りで終わらせる」が押される
+       - 残りの三局が一瞬で消化されて対局が終わる。**一局で終わったように見えた**
+
+     直しは二重。**#topbar を上へ**（帯と重ならない）と、
+     **送ったあとの click を一回だけ飲む**（ui.js の eatGhostClick）。
+     どちらか片方だけにしないこと——上に逃がしても帯の下には手牌が残るし、
+     飲むだけでは「見えない釦が下にいる」という形そのものは残る。
+
+     ここで見るのは形だけ。実際に叩いて確かめるのは
+     `node tools/drive-match.js --play --width 844 --height 334`（局数と giveUp の錠）。 */
+  const fs = require('fs'), path = require('path');
+  const css = fs.readFileSync(path.join(__dirname, '../src/match.css'), 'utf8');
+  const ui = fs.readFileSync(path.join(__dirname, '../src/ui.js'), 'utf8');
+
+  const m = css.match(/body\.inMatch\.four #topbar\{([^}]*)\}/);
+  ok(!!m, '四人卓の #topbar の置き場所が match.css にある');
+  if (m) {
+    ok(/top:/.test(m[1]), '四人卓の #topbar は上に着けている（' + m[1].trim() + '）');
+    ok(!/bottom:/.test(m[1]),
+      '四人卓の #topbar を下に着けていない（帯の真下に「おまかせ」が来る）', m[1].trim());
+  }
+  ok(/#app\.ending #topbar\{[^}]*pointer-events:none/.test(css),
+    '締めのあいだ #topbar は押せない');
+
+  ok(/eatGhostClick\s*\(/.test(ui), 'ui.js に eatGhostClick がある');
+  /* 送り（_endAdvance）と同じ行で呼んでいること。呼ばなくなったら幽霊が戻る */
+  ok(/this\._endAdvance\(\);\s*this\.eatGhostClick\(\)/.test(ui),
+    '帯を送ったら、そのあとの click を一回飲む');
+  ok(/document\.addEventListener\('click', eat, true\)/.test(ui),
+    '飲むのは capture で受けた click（釦へ届く前に止める）');
 }
 
 /* ---------------- 結果 ---------------- */

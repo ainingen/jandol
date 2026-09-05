@@ -20,6 +20,24 @@
   --dealer N     起家を固定（?dealer）
   --rotate       縦持ちの回転表示を入れる（段7）
   --stall SEC    この秒数だけ進みが無ければ止まったとみなす（既定 60）
+  --noghost      実機の「幽霊クリック」を真似ない（既定は真似る。下を読むこと）
+
+  **幽霊クリック**（iOS Safari。2026年9月5日）:
+    WebKit は、押した相手が指を離すまでに消えていると、**離した場所にいる相手**へ
+    click を出す。Chromium は共通の祖先へ出すので **PC では再現しない。**
+    締めの帯は pointerdown で畳まれるので、帯を叩いた指の click が
+    **帯の下にあったもの**へ落ちる。ここではその WebKit の振る舞いだけを足して、
+    実機と同じ経路を通す。**これを外すと、実機で起きることが PC で捕まらない。**
+
+  **局数を数える錠**（2026年9月5日）:
+    最後に「東風なら東4局まで通ったか」を局番号で確かめ、通っていなければ
+    終了コード 2 で落ちる。**「完走したか」だけでは足りない**——一局で
+    対局が終わっても、画面としては綺麗に終わって見える（実際にそれで見逃した）。
+    あわせて **giveUp が呼ばれていないこと**も見る。帯を叩いた指が
+    その下の「おまかせ」に当たると、残りが早送りで消化されて
+    「一局で終わった」と同じ絵になるため。
+    **四人卓（body.four）で通すこと。**縦の列レイアウトでは #topbar が上にあり、
+    帯と重ならないので、この経路は通らない。
 */
 'use strict';
 
@@ -50,6 +68,7 @@ const DEALER = opt('dealer', null);
 const PLAY = flag('play');
 const ROTATE = flag('rotate');
 const STALL = +opt('stall', 60);
+const GHOST = !flag('noghost');
 const SCALE = +opt('scale', 2);
 
 function loadPlaywright() {
@@ -118,8 +137,41 @@ const log = (...a) => { process.stdout.write(a.join(' ') + '\n'); };
     };
     document.addEventListener('DOMContentLoaded', hook);
   });
+  /* 実機（iOS Safari）の幽霊クリック。上の説明を読むこと */
+  if (GHOST) {
+    await page.addInitScript(() => {
+      let down = null;
+      addEventListener('pointerdown', (e) => { down = e.target; }, true);
+      addEventListener('pointerup', (e) => {
+        const gone = down && (!down.isConnected
+          || (down.offsetParent === null && getComputedStyle(down).position !== 'fixed'));
+        if (gone) {
+          const el = document.elementFromPoint(e.clientX, e.clientY);
+          if (el) {
+            window.__ghost = (window.__ghost || 0) + 1;
+            el.dispatchEvent(new MouseEvent('click',
+              { bubbles: true, cancelable: true, clientX: e.clientX, clientY: e.clientY }));
+          }
+        }
+        down = null;
+      }, true);
+    });
+  }
   await page.goto(url);
   await page.waitForSelector('#table', { timeout: 10000 });
+  /* 通った局と、おまかせが呼ばれた回数を数える（下の錠で使う） */
+  await page.evaluate(() => {
+    window.__kyoku = [];
+    window.__giveup = 0;
+    const res = UI.result.bind(UI);
+    UI.result = function (d) {
+      const k = UI.game ? UI.game.kyoku : 0;
+      if (!window.__kyoku.includes(k)) window.__kyoku.push(k);
+      return res(d);
+    };
+    const gu = UI.giveUp.bind(UI);
+    UI.giveUp = function (sp) { window.__giveup++; return gu(sp); };
+  });
   if (ROTATE) {
     await page.waitForSelector('#rotateBtn', { timeout: 5000 });
     await page.click('#rotateBtn');
@@ -141,6 +193,18 @@ const log = (...a) => { process.stdout.write(a.join(' ') + '\n'); };
       /* 局の締めは帯になった（agari-spec.md）。**#next はもう無い。**
          送るのは「どこかを叩く」ことなので、帯が出ていたら叩く */
       band: vis('#endband.on'),
+      /* 帯は「どこを叩いても送れる」が、**指が行くのは右下**（タップで次へ）。
+         そこは四人卓では #topbar の真上なので、実機と同じ場所を叩く */
+      bandAt: (() => {
+        const e = document.querySelector('#endband.on');
+        if (!e) return null;
+        const r = e.getBoundingClientRect();
+        return { x: Math.round(r.right - 26), y: Math.round(r.bottom - 14) };
+      })(),
+      four: document.body.classList.contains('four'),
+      kyoku_seen: window.__kyoku ? window.__kyoku.slice() : [],
+      giveup: window.__giveup || 0,
+      bust: g.players.some((p) => p.score < 0),
       nodes: UI._nodes ? UI._nodes.size : -1,
       jikaze: g.players.map((p) => p.jikaze - 27),
     };
@@ -159,6 +223,8 @@ const log = (...a) => { process.stdout.write(a.join(' ') + '\n'); };
   let lastChange = Date.now();
   let lastKey = '';
   let maxNodes = 0;
+  let bust = false;          // 飛び（ハコ下）で終わったか。局数の錠はこれを除く
+  let sawFour = false;       // 四人卓を通ったか（錠は body.four で掛ける）
   let first = await snap();
   log('開始 ' + JSON.stringify(first));
   await shot('deal'); shots.deal = true;
@@ -168,6 +234,8 @@ const log = (...a) => { process.stdout.write(a.join(' ') + '\n'); };
     if (VIDEO && Date.now() - t0 > SECONDS * 1000) { log('録画の長さに達した'); break; }
     if (st.over) { log('終局 ' + JSON.stringify(st.rank)); break; }
     maxNodes = Math.max(maxNodes, st.nodes);
+    if (st.bust) bust = true;
+    if (st.four) sawFour = true;
     const key = JSON.stringify([st.kyoku, st.discards, st.melds, st.pending, st.overlay, st.band]);
     if (key !== lastKey) { lastKey = key; lastChange = Date.now(); }
     else if (Date.now() - lastChange > STALL * 1000) {
@@ -182,9 +250,14 @@ const log = (...a) => { process.stdout.write(a.join(' ') + '\n'); };
     /* 帯を送る。**一度目は演出を確定させるだけ**なので、二度叩く（ui.js の onTap）。
        おまかせのときは自動で送るが、自分で打つ経路（--play）はここが唯一の出口 */
     if (st.band) {
-      await page.mouse.click(WIDTH / 2, Math.round(HEIGHT * 0.35)).catch(() => {});
-      await sleep(160);
-      await page.mouse.click(WIDTH / 2, Math.round(HEIGHT * 0.35)).catch(() => {});
+      /* **指と同じポインタ列で、帯の右下を叩く。**画面の真ん中を click で叩くと
+         合成のクリックになり、**帯の下に何が来ているかを通らない**
+         （それで「東1局で対局が終わる」を見逃した。2026年9月5日）。
+         一度目は演出の確定、二度目で送り——一度ずつ叩いて、そのつど見直す */
+      const at = st.bandAt || { x: Math.round(WIDTH / 2), y: Math.round(HEIGHT * 0.35) };
+      await page.mouse.move(at.x, at.y).catch(() => {});
+      await page.mouse.down().catch(() => {});
+      await page.mouse.up().catch(() => {});
       await sleep(160);
       continue;
     }
@@ -223,6 +296,27 @@ const log = (...a) => { process.stdout.write(a.join(' ') + '\n'); };
   const last = await snap();
   await shot('end');
   log('最後 ' + JSON.stringify(last) + ' 最大ノード数 ' + maxNodes);
+
+  /* 局数の錠。**「完走したか」だけでは、一局で終わっても完走に見える** */
+  const tally = await page.evaluate(() => ({
+    kyoku: window.__kyoku || [], giveup: window.__giveup || 0, ghost: window.__ghost || 0,
+  })).catch(() => ({ kyoku: [], giveup: 0, ghost: 0 }));
+  const want = LENGTH === 'ikkyoku' ? 1 : (LENGTH === 'hanchan' ? 8 : 4);
+  const got = Math.max(0, ...tally.kyoku);
+  log('通った局 ' + JSON.stringify(tally.kyoku) + '（' + LENGTH + ' なので ' + want + '局まで要る）'
+      + ' body.four=' + sawFour + ' giveUp=' + tally.giveup + ' 幽霊クリック=' + tally.ghost);
+  if (PLAY && !sawFour && WIDTH > HEIGHT) {
+    log('！四人卓（body.four）を通っていない。この錠は横持ちで掛けること');
+    process.exitCode = 2;
+  }
+  if (got < want && !bust) {
+    log('！東' + got + '局で終わっている。' + want + '局まで進んでいない');
+    process.exitCode = 2;
+  }
+  if (PLAY && tally.giveup > 0) {
+    log('！自分で打っているのに giveUp が呼ばれた（帯を叩いた指が、下の釦に当たっている）');
+    process.exitCode = 2;
+  }
   const sfx = await page.evaluate(() => ({ played: window.__sfx, ready: typeof Sound !== 'undefined' && Sound.ready() }));
   log('効果音 ' + JSON.stringify(sfx));
   if (errors.length) { log('！ページのエラー ' + errors.length + '件'); process.exitCode = 2; }

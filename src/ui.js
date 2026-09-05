@@ -1088,6 +1088,36 @@ const UI = {
     });
   },
 
+  /* 帯を叩いた指の click を**一回だけ飲む**。iOS Safari の「幽霊クリック」（2026年9月5日）。
+
+     送りは pointerdown で受けるので、**指が離れる前に帯が畳まれる。**
+     WebKit は「押した相手が消えていたら、離した場所にいる相手」へ click を出すので、
+     **帯の下にあった釦がそのまま押される。**四人卓では #topbar（おまかせ）が
+     右下＝帯の中にあり、東1局の締めを叩いた指が「残りをおまかせにしますか」を開き、
+     次の一叩きで「早送りで終わらせる」を押していた。
+     **「東風なのに一局で対局が終わって最初に戻る」の正体がこれ。**
+
+     Chromium は共通の祖先へ click を出すので、**PC では出ない。**
+     `tools/drive-match.js` が WebKit のこの振る舞いを真似して叩いている。 */
+  eatGhostClick(ms) {
+    if (this._ghostOff) this._ghostOff();
+    const off = () => {
+      clearTimeout(timer);
+      document.removeEventListener('click', eat, true);
+      this._ghostOff = null;
+    };
+    /* モーダル（#overlay）だけは通す。**最後の局を送った直後に対局終了の札が出る**ので、
+       ここを飲むと「一度目の指が効かない」になる。幽霊はそこには落ちない
+       ——落ちるのは帯の下にあったもの（釦・手牌）で、札はまだ無い */
+    const eat = (e) => {
+      if (e.target && e.target.closest && e.target.closest('#overlay')) { off(); return; }
+      e.stopPropagation(); e.preventDefault(); off();
+    };
+    const timer = setTimeout(off, ms || 700);
+    document.addEventListener('click', eat, true);
+    this._ghostOff = off;
+  },
+
   async result(data) {
     const g = this.game;
     const kind = this.endKind(data);
@@ -1127,7 +1157,7 @@ const UI = {
        ——一度で消すと、飛ばした人には何が起きたか読めないまま画面が変わる */
     const onTap = () => {
       if (this._endSettle) { this._endSettle(); return; }
-      if (this._endAdvance) this._endAdvance();
+      if (this._endAdvance) { this._endAdvance(); this.eatGhostClick(); }
     };
     document.addEventListener('pointerdown', onTap, true);
     try {

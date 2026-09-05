@@ -431,9 +431,18 @@ body.inMatch.four #app{
   width:100%;max-width:none;height:100%;min-height:0;padding:0;
   display:flex;flex-direction:column;
 }
+/* **右上に置く。右下に置かないこと**（2026年9月5日）。
+   締めの帯は画面の下 132px を覆うので、右下に置くと**帯の真下に「おまかせ」が来る。**
+   帯を叩いて送った指の click が下の釦へ落ち、「残りをおまかせにしますか」が開いて、
+   次の一叩きで「早送りで終わらせる」が押される——**東風が東1局で終わって
+   最初の画面に戻る**の正体がこれだった（実機・横持ちだけで出た。
+   縦持ちは #topbar が上にあるので出ない）。
+   右上は卓面（y33〜）と対面の札（x〜500）の外側で、空いている。 */
 body.inMatch.four #topbar{
-  position:absolute;right:14px;bottom:10px;z-index:6;margin:0;
+  position:absolute;right:12px;top:6px;z-index:6;margin:0;
 }
+/* 締めのあいだは消す。立ち絵（#endbust は右にも出る）と重ならないように */
+body.inMatch #app.ending #topbar{opacity:0;pointer-events:none;transition:opacity .18s ease}
 body.inMatch.four #table{
   flex:1 1 auto;min-height:0;position:relative;display:block;
   background:none;border:0;box-shadow:none;border-radius:0;padding:0;
