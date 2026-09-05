@@ -252,7 +252,7 @@ const log = (...a) => { process.stdout.write(a.join(' ') + '\n'); };
     if (st.band) {
       /* **指と同じポインタ列で、帯の右下を叩く。**画面の真ん中を click で叩くと
          合成のクリックになり、**帯の下に何が来ているかを通らない**
-         （それで「東1局で対局が終わる」を見逃した。2026年9月5日）。
+         （帯の下に「おまかせ」がいることに気づけなかった。2026年9月5日）。
          一度目は演出の確定、二度目で送り——一度ずつ叩いて、そのつど見直す */
       const at = st.bandAt || { x: Math.round(WIDTH / 2), y: Math.round(HEIGHT * 0.35) };
       await page.mouse.move(at.x, at.y).catch(() => {});
