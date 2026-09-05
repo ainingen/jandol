@@ -48,90 +48,323 @@ const UI = {
   riichiSelect: false,
   showHints: true,
   speed: 520,
+  /* 打牌の操作（spec.md §8）。'single' … 押した牌をそのまま切る（既定）。
+     'double' … 一度目で選び、二度目で切る。上へスワイプはどちらでも常に効く */
+  discardMode: 'single',
+
+  /* ---------- 音 ----------
+     鳴らすのは io 層（ここ）だけ。game.js には一行も足さない（spec.md §2.3）。
+     早送り（speed 0）は無音。速い（200未満）は打牌とツモだけ間引く */
+  sfx(name, opts) {
+    if (typeof Sound === 'undefined') return;
+    if (this.speed === 0) return;
+    if ((name === 'discard' || name === 'draw') && this.speed < 200) return;
+    Sound.play(name, opts);
+  },
+  /* 打牌音。同じ音が17回続くと機械音に聞こえるので、速さを毎回 ±3% 振る */
+  sfxDiscard() { this.sfx('discard', { rate: 1 + (Math.random() * 2 - 1) * 0.03 }); },
+
+  /* ツモとドラの音。render() は何度も呼ばれるので、**前回と比べて増えたときだけ**鳴らす。
+     打牌の音は牌のノードの突き合わせ（reconcile）が「河に牌が増えた」瞬間に鳴らす
+     ——アニメーションの開始と音の頭を揃えるため（spec.md §3.5） */
+  soundDiff(g) {
+    const key = g.kyoku + ':' + g.honba + ':' + g.dealer;
+    if (this._sndKey !== key) {
+      this._sndKey = key;
+      this._sndDora = g.doraIndicators.length;
+      this._sndDraw = null;
+      return;
+    }
+    const draw = g.currentDraw ? g.currentDraw.seat + ':' + g.currentDraw.id : null;
+    if (draw && draw !== this._sndDraw) this.sfx('draw');
+    this._sndDraw = draw;
+    if (g.doraIndicators.length > this._sndDora) this.sfx('dora');
+    this._sndDora = g.doraIndicators.length;
+  },
+
+  /* ============================================================
+     牌のノード（spec.md §3）
+
+     手牌と四つの河だけ keyed にする。牌の id（0〜135）が鍵で、
+     Map<id, HTMLElement> にノードを持ち、描画のたびに「あるべき並び」と
+     突き合わせて、あるものは使い回し、無いものだけ作り、余ったものだけ外す。
+
+     同じノードが手牌から河へ移るので、自分の打牌は FLIP で動かせる。
+     他家の打牌は裏牌に元のノードが無いので、河に作ったノードを
+     その家の手牌のあたりから飛ばし込む。
+
+     席プレートも中央の情報も吹き出しも、今までどおり innerHTML で組み直す。
+     他家の手牌（.backs）は個体差が無いので keyed にしない。
+     ============================================================ */
+  _nodes: null,               // Map<id, HTMLElement>
+  _seq: null,                 // 前回の並び。変わったときだけ動かす
+
+  tileNode(id) {
+    if (!this._nodes) this._nodes = new Map();
+    let el = this._nodes.get(id);
+    if (!el) {
+      el = document.createElement('span');
+      el.dataset.id = String(id);
+      el.innerHTML = tileFaceSVG(kindOf(id), Engine.isRed(id));
+      this._nodes.set(id, el);
+    }
+    return el;
+  },
+
+  /* 飛んでいる最中（.moving）の印は残す。render() は飛んでいる途中にも呼ばれるので、
+     className を丸ごと書くと transition と z-index が消えて、牌が立ち絵の裏に隠れる（実際に隠れた） */
+  setTileClass(el, cls) {
+    el.className = cls + (el.classList.contains('moving') ? ' moving' : '');
+  },
+
+  /* 河。container の子を items（{id, cls}）の並びに合わせる。
+     返すのは「新しく河に入った id」——打牌の音と飛ばし込みの手掛かり */
+  reconcileRiver(container, items, used) {
+    const fresh = [];
+    items.forEach((it, i) => {
+      const el = this.tileNode(it.id);
+      used.add(it.id);
+      if (el.parentElement !== container) fresh.push(it.id);
+      this.setTileClass(el, 'tile small ' + it.cls);
+      if (container.children[i] !== el) container.insertBefore(el, container.children[i] || null);
+    });
+    while (container.children.length > items.length) container.lastChild.remove();
+    return fresh;
+  },
+
+  /* 手牌。牌ごとに .tilewrap で包む（危険度の帯を下に置くため）。
+     包みは牌の親として付いてまわり、河へ移った牌の空の包みは末尾に押し出されて外れる */
+  reconcileHand(container, items, used) {
+    items.forEach((it, i) => {
+      const el = this.tileNode(it.id);
+      used.add(it.id);
+      let w = el.parentElement;
+      if (!w || !w.classList.contains('tilewrap') || w.parentElement !== container) {
+        w = document.createElement('span');
+        w.appendChild(el);
+      }
+      w.className = 'tilewrap' + (it.drawn ? ' drawn' : '');
+      this.setTileClass(el, 'tile big ' + it.cls);
+      const bar = w.querySelector('.hintbar');
+      if (bar) bar.remove();
+      if (it.bar) w.insertAdjacentHTML('beforeend', it.bar);
+      if (container.children[i] !== w) container.insertBefore(w, container.children[i] || null);
+    });
+    while (container.children.length > items.length) container.lastChild.remove();
+  },
+
+  /* 使われなかったノードは捨てる。局をまたいで Map が育たないように */
+  pruneNodes(used) {
+    if (!this._nodes) return;
+    for (const [id, el] of this._nodes) {
+      if (used.has(id)) continue;
+      if (el.parentElement) {
+        const w = el.parentElement;
+        el.remove();
+        if (w.classList.contains('tilewrap')) w.remove();
+      }
+      this._nodes.delete(id);
+    }
+  },
+
+  get reducedMotion() {
+    if (this._rm === undefined) {
+      this._rm = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+    }
+    return this._rm;
+  },
+  /* 早送りと prefers-reduced-motion では動かさない。位置だけ即座に確定させる */
+  get animates() { return this.speed !== 0 && !this.reducedMotion; },
+
+  /* 位置と大きさの差分を逆向きに当ててから 0 へ遷移させる（FLIP）。
+     transform は .picked や河の横向きが使うので、translate / scale の個別プロパティで動かす */
+  snapRects() {
+    const m = new Map();
+    if (!this._nodes) return m;
+    for (const [id, el] of this._nodes) {
+      if (el.parentElement) m.set(id, el.getBoundingClientRect());
+    }
+    return m;
+  },
+  /* 画面上の差分を、その牌の座標系に直す（四人卓のとき）。
+     左右の河は 90 度回っているので、画面の横の差は牌にとっては縦の差になる。
+     卓面は rotateX で寝ているので、奥行きの差は cos ぶん詰まって見える。
+     .rslot / .opp の data-angle と body.four から読む */
+  localDelta(el, dx, dy) {
+    const body = document.body;
+    /* 回転表示（§7）のあいだは画面が 90 度回っているので、まず画面の差をレイアウトの差に戻す
+       （rotate(90deg): レイアウトの (x,y) → 画面の (-y, x)。逆は (sy, -sx)） */
+    if (body.classList.contains('rotated')) [dx, dy] = [dy, -dx];
+    const slot = el.closest('[data-angle]');
+    const four = body.classList.contains('four');
+    if (!slot || !four) return [dx, dy];
+    const a = (Number(slot.dataset.angle) || 0) * Math.PI / 180;
+    const tilt = 36 * Math.PI / 180;
+    const fx = dx, fy = dy / Math.cos(tilt);
+    return [fx * Math.cos(a) + fy * Math.sin(a), -fx * Math.sin(a) + fy * Math.cos(a)];
+  },
+  flip(el, from, to) {
+    let dx = (from.left + from.width / 2) - (to.left + to.width / 2);
+    let dy = (from.top + from.height / 2) - (to.top + to.height / 2);
+    const sx = to.width ? from.width / to.width : 1;
+    const sy = to.height ? from.height / to.height : 1;
+    if (Math.abs(dx) < 1 && Math.abs(dy) < 1 && Math.abs(sx - 1) < .02 && Math.abs(sy - 1) < .02) return;
+    [dx, dy] = this.localDelta(el, dx, dy);
+    el.style.transition = 'none';
+    el.style.translate = dx.toFixed(1) + 'px ' + dy.toFixed(1) + 'px';
+    el.style.scale = sx.toFixed(3) + ' ' + sy.toFixed(3);
+    el.classList.add('moving');
+    void el.offsetWidth;                        // ここで一度描かせる
+    el.style.transition = '';
+    el.style.translate = '0px 0px';
+    el.style.scale = '1 1';
+    /* transitionend は transform（つまみ上げの戻り）や box-shadow でも飛んでくる。
+       それで片づけると、飛んでいる途中で translate が消えて牌が瞬間移動する（実際にした）。
+       translate / scale の終わりだけを見る */
+    const done = (e) => {
+      if (e && e.target !== el) return;
+      if (e && e.propertyName !== 'translate' && e.propertyName !== 'scale') return;
+      el.classList.remove('moving');
+      el.style.translate = ''; el.style.scale = ''; el.style.transition = '';
+      el.removeEventListener('transitionend', done);
+      clearTimeout(timer);
+    };
+    el.addEventListener('transitionend', done);
+    const timer = setTimeout(() => done(), 600);   // transitionend が来ない環境の保険
+  },
+  /* 他家の打牌。その家の手牌（.backs）の中心から河へ飛ばし込む */
+  flyIn(el, fromEl) {
+    if (!fromEl) return;
+    const to = el.getBoundingClientRect();
+    const f = fromEl.getBoundingClientRect();
+    const from = { left: f.left + f.width / 2 - to.width * .35, top: f.top + f.height / 2 - to.height * .35,
+      width: to.width * .7, height: to.height * .7 };
+    this.flip(el, from, to);
+  },
 
   render() {
     const g = this.game;
     if (!g) return;
+    this.soundDiff(g);
     this._maxThreat = Math.max(0, ...g.players.slice(1).map((o) => AI.threatLevel(g, o)));
     const bySeat = (r) => g.players[r % 4];
+    /* #info のテンプレートより前に置くこと。後ろに置くと TDZ で落ちる */
+    const KAZE_CH = ['東', '南', '西', '北'];
 
-    // 中央情報
+    // 中央のコンパス（spec.md §4.4）。局・本場・残り・ドラ、四辺に各家の自風
     const kyokuLabel = `${KAZE[g.bakaze - 27]}${((g.kyoku - 1) % 4) + 1}局`;
+    const turn = g.currentDraw ? g.currentDraw.seat
+      : (g.lastDiscard ? g.lastDiscard.seat : g.dealer);
+    const windAt = (seat, pos) => {
+      const p = g.players[seat];
+      return `<span class="wind w-${pos}${seat === g.dealer ? ' oya' : ''}${seat === 0 ? ' me' : ''}${
+        seat === turn ? ' turn' : ''}">${KAZE_CH[p.jikaze - 27] || ''}</span>`;
+    };
     $('#info').innerHTML = `
       <div class="kyoku">${kyokuLabel}</div>
       <div class="wall">${g.honba}本場 ・ 残り${g.wall.length}枚</div>
       <div id="dora">${g.doraIndicators.map((d) => tileHTML(d, 'tiny')).join('')}</div>
-      ${g.riichiSticks ? `<div>${'<span class="riichi-stick"></span>'.repeat(Math.min(g.riichiSticks, 4))}</div>` : ''}
+      ${g.riichiSticks ? `<div class="sticks">${'<span class="riichi-stick"></span>'.repeat(Math.min(g.riichiSticks, 4))}</div>` : ''}
       ${g.cheat ? `<div class="cheatinfo">疑い ${'●'.repeat(g.cheat.suspicion) || '無'}
         ／ 技 ${g.cheat.hand.length}枚</div>` : ''}
       ${g.cheat && g.cheat.peek ? `<div class="peek">山 ${g.cheat.peek.map((id) => tileHTML(id, 'tiny')).join('')}</div>` : ''}
-      <div class="scores">${[0, 1, 2, 3].map((i) => {
-        const p = g.players[i];
-        return `<div class="${i === 0 ? 'me' : ''} ${i === g.dealer ? 'dealer-dot' : ''}">
-          ${i === 0 && p.face ? `<span class="oppFace"><img src="${esc(p.face)}" alt=""
-            onerror="this.remove()"></span>` : ''}
-          ${esc(p.name)} <b>${p.score}</b></div>`;
-      }).join('')}</div>`;
+      ${windAt(0, 'b')}${windAt(1, 'r')}${windAt(2, 't')}${windAt(3, 'l')}`;
 
-    // 対局者
+    // 席プレート（§4.5）。名前・自風・点数・顔。自分のぶん（#plate-bottom）は色を反転させてある
     const c = g.cheat;
-    const KAZE_CH = ['東', '南', '西', '北'];
-    const oppHTML = (p, vert) => `
-      <div class="opp ${vert ? 'vert' : ''}">
-        <div class="oppName">
-          ${p.face ? `<span class="oppFace"><img src="${esc(p.face)}" alt=""
-            onerror="this.remove()"></span>` : ''}
-          <span class="oppKaze">${KAZE_CH[p.jikaze - 27] || ''}</span>
-          <span class="oppWho">${esc(p.name)}</span>
-          <span class="oppScore">${p.score}</span>
-        </div>
-        <div class="backs ${vert ? 'vert' : ''}">${
+    const plateHTML = (p) => `
+      <span class="kz">${KAZE_CH[p.jikaze - 27] || ''}</span>
+      <span class="bust">${p.face ? `<img src="${esc(p.face)}" alt="" onerror="this.remove()">` : ''}</span>
+      <span class="txt"><span class="nm">${esc(p.name)}</span><span class="pt">${p.score}</span></span>
+      ${p.riichi ? '<span class="rc">立</span>' : ''}
+      ${p.suspicion ? '<span class="susp">疑</span>' : ''}`;
+    [['#plate-bottom', 0], ['#plate-right', 1], ['#plate-top', 2], ['#plate-left', 3]].forEach(([sel, seat]) => {
+      const el = $(sel);
+      if (!el) return;
+      const p = bySeat(seat);
+      el.innerHTML = plateHTML(p);
+      el.classList.toggle('dealer', seat === g.dealer);
+      el.classList.toggle('riichi', !!p.riichi);
+      el.classList.toggle('turn', seat === turn);
+      el.classList.toggle('talking', this._cutinSeat === seat);
+    });
+
+    // 他家の手牌（裏）と副露。プレートは別なので、ここは牌だけ
+    const oppHTML = (p) => `
+        <div class="backs">${
           c && c.reveal.has(p.seat)
             ? p.hand.map((id) => tileHTML(id, 'tiny')).join('')
             : Array(Math.max(0, p.hand.length)).fill(backHTML('tiny')).join('')}</div>
         ${c && c.showWaits.has(p.seat) ? `<div class="waits">待${
           Engine.winningTiles(Engine.countsFromIds(p.hand), p.melds).map(jpName).join('') || '無'}</div>` : ''}
-        ${p.suspicion ? '<span class="susp">疑</span>' : ''}
-        <div class="melds">${p.melds.map((m) => meldHTML(m, 'tiny')).join('')}</div>
-        ${p.riichi ? '<span style="color:var(--vermilion)">立</span>' : ''}
-      </div>`;
-    $('#top').innerHTML = oppHTML(bySeat(2), false);
-    $('#left').innerHTML = oppHTML(bySeat(3), true);
-    $('#right').innerHTML = oppHTML(bySeat(1), true);
+        <div class="melds">${p.melds.map((m) => meldHTML(m, 'tiny')).join('')}</div>`;
+    $('#top').innerHTML = oppHTML(bySeat(2));
+    $('#left').innerHTML = oppHTML(bySeat(3));
+    $('#right').innerHTML = oppHTML(bySeat(1));
 
-    // 河
-    const riverHTML = (p, side) => p.discards.map((d, i) => {
-      const last = g.lastDiscard && g.lastDiscard.seat === p.seat && i === p.discards.length - 1;
-      const t = tileHTML(d.id, 'small',
-        (d.riichi ? 'riichi ' : '') + (d.tsumogiri ? 'tsumogiri ' : '') + (last ? 'last' : ''));
-      return side ? `<span class="cell ${d.riichi ? 'riichi' : ''}">${t}</span>` : t;
-    }).join('');
-    $('#river-bottom').innerHTML = riverHTML(bySeat(0), false);
-    $('#river-right').innerHTML = riverHTML(bySeat(1), true);
-    $('#river-top').innerHTML = riverHTML(bySeat(2), false);
-    $('#river-left').innerHTML = riverHTML(bySeat(3), true);
-
-    // 自分
+    // 河と手牌（keyed。spec.md §3）
     const me = g.players[0];
     $('#melds-row').innerHTML = me.melds.map((m) => meldHTML(m, 'small')).join('');
     const drawn = g.currentDraw && g.currentDraw.seat === 0 ? g.currentDraw.id : null;
     const hand = me.hand.filter((id) => id !== drawn);
     const selectable = this.pending && this.pending.type === 'turn';
     const allowed = this.allowedDiscards();
-    const cell = (id, extra) => {
+    const handItems = hand.concat(drawn !== null ? [drawn] : []).map((id) => {
       const ok = selectable && (!allowed || allowed.has(id));
-      const picked = this._selected === id ? 'picked ' : '';
-      return tileHTML(id, 'big',
-        picked + (ok ? 'selectable ' : (selectable ? 'dim ' : '')) + (extra || ''),
-        `data-id="${id}"`) + (ok ? this.hintBar(id) : '');
-    };
-    $('#handrow').innerHTML = hand.map((id) => `<span class="tilewrap">${cell(id)}</span>`).join('')
-      + (drawn !== null ? `<span class="tilewrap drawn">${cell(drawn, 'drawn')}</span>` : '');
-
-    $('#handrow').querySelectorAll('.tile.selectable').forEach((el) => {
-      el.onclick = () => this.onTileClick(+el.dataset.id);
+      const isDrawn = id === drawn;
+      return {
+        id, drawn: isDrawn,
+        cls: (this._selected === id ? 'picked ' : '') + (ok ? 'selectable ' : (selectable ? 'dim ' : ''))
+          + (isDrawn ? 'drawn' : ''),
+        bar: ok ? this.hintBar(id) : '',
+      };
     });
-    this.renderTachie();
+    const riverItems = (p) => p.discards.map((d, i) => {
+      const last = g.lastDiscard && g.lastDiscard.seat === p.seat && i === p.discards.length - 1;
+      return { id: d.id, cls: (d.riichi ? 'riichi ' : '') + (d.tsumogiri ? 'tsumogiri ' : '') + (last ? 'last' : '') };
+    });
+    const rivers = [
+      ['#river-bottom', bySeat(0)], ['#river-right', bySeat(1)], ['#river-top', bySeat(2)], ['#river-left', bySeat(3)],
+    ].map(([sel, p]) => ({ el: $(sel), p, items: riverItems(p) }));
+
+    /* 並びが変わったときだけ、動かす前の位置を控える。
+       毎回の描画で animation を仕掛けると画面が痙攣する */
+    const seq = handItems.map((it) => it.id).join(',') + '|' + rivers.map((r) => r.items.map((it) => it.id).join(',')).join('|');
+    const changed = seq !== this._seq;
+    const sameKyoku = this._seqKyoku === g.kyoku + ':' + g.honba + ':' + g.dealer;
+    this._seq = seq;
+    this._seqKyoku = g.kyoku + ':' + g.honba + ':' + g.dealer;
+    const before = changed && sameKyoku && this.animates ? this.snapRects() : null;
+
+    const used = new Set();
+    this.reconcileHand($('#handrow'), handItems, used);
+    const freshBySeat = rivers.map((r) => this.reconcileRiver(r.el, r.items, used));
+    this.pruneNodes(used);
+
+    /* 河に牌が増えた瞬間に鳴らす。局の頭（河が空になったところ）では鳴らない */
+    if (changed && sameKyoku && freshBySeat.some((f) => f.length)) this.sfxDiscard();
+
+    if (before) {
+      for (const [id, el] of this._nodes) {
+        if (!el.parentElement) continue;
+        const prev = before.get(id);
+        if (prev) { this.flip(el, prev, el.getBoundingClientRect()); continue; }
+        /* 元のノードが無い＝他家の打牌。その家の手牌から飛ばし込む */
+        const seat = freshBySeat.findIndex((f) => f.includes(id));
+        if (seat > 0) this.flyIn(el, $(['#river-bottom', '#right', '#top', '#left'][seat] + ' .backs'));
+      }
+    }
+
+    const handrow = $('#handrow');
+    if (!handrow.onclick) {
+      handrow.onclick = (e) => {
+        if (this._swipedAt && Date.now() - this._swipedAt < 400) return;   // スワイプの余波
+        const t = e.target.closest('.tile.selectable');
+        if (t) this.onTileClick(+t.dataset.id);
+      };
+      this.bindSwipe(handrow);
+    }
+    this.renderCutin();
     this.renderHintText();
   },
 
@@ -147,7 +380,7 @@ const UI = {
   renderHintText() {
     const g = this.game, me = g.players[0];
     if (!this.pending || this.pending.type !== 'turn') { $('#hintbox').textContent = ''; return; }
-    if (this._selected !== null && this._selected !== undefined) {
+    if (this._selected !== null && this._selected !== undefined && this.discardMode === 'double') {
       $('#hintbox').textContent = `${jpName(kindOf(this._selected))} — もう一度たたくと切る`;
       return;
     }
@@ -191,11 +424,13 @@ const UI = {
     return set;
   },
 
-  onTileClick(id) {
+  onTileClick(id, force) {
     if (!this.pending || this.pending.type !== 'turn') return;
+    if (!this.game.players[0].hand.includes(id)) return;     // 河の牌は押せない
     const allowed = this.allowedDiscards();
     if (allowed && !allowed.has(id)) return;
-    if (this._selected !== id) {      // 一度目は選ぶだけ
+    /* 二度押しの設定では一度目は選ぶだけ。スワイプ（force）は設定に関係なく切る */
+    if (this.discardMode === 'double' && !force && this._selected !== id) {
       this._selected = id;
       this.render();
       return;
@@ -206,48 +441,50 @@ const UI = {
     this.resolve({ type, tile: id });
   },
 
-  /* ============================================================
-     顔とセリフ
+  /* 上へスワイプで切る。#handrow に一度だけ仕掛ける（牌のノードは使い回されるので、
+     牌ごとに付けると付け忘れが出る）。スワイプの直後に飛んでくる click は捨てる */
+  SWIPE_PX: 24,
+  bindSwipe(handrow) {
+    if (handrow._swipeBound) return;
+    handrow._swipeBound = true;
+    let start = null;
+    handrow.addEventListener('pointerdown', (e) => {
+      const t = e.target.closest('.tile.selectable');
+      if (!t) { start = null; return; }
+      start = { id: +t.dataset.id, x: e.clientX, y: e.clientY, pid: e.pointerId };
+    }, { passive: true });
+    const end = (e) => {
+      if (!start || e.pointerId !== start.pid) return;
+      const dx = e.clientX - start.x, dy = e.clientY - start.y;
+      const id = start.id;
+      start = null;
+      /* 回転表示のあいだは画面の「上」がレイアウトの「右」になる（rotate(90deg)） */
+      const up = document.body.classList.contains('rotated') ? dx : -dy;
+      const side = document.body.classList.contains('rotated') ? Math.abs(dy) : Math.abs(dx);
+      if (up >= this.SWIPE_PX && up > side) {
+        this._swipedAt = Date.now();
+        this.onTileClick(id, true);
+      }
+    };
+    handrow.addEventListener('pointerup', end);
+    handrow.addEventListener('pointercancel', () => { start = null; });
+  },
 
-     四人ぶんの顔を小さく並べておき、喋った人だけ大きくする。
-     一人ずつ入れ替える形だと、誰が喋ったのか追えなくなる。
+  /* ============================================================
+     セリフのカットイン（spec.md §6）
+
+     喋った人の写真を上の角に出し、吹き出しを添える。
+     左側の席（上家・自分）は左上、右側の席（下家・対面）は右上。
+     同時に席プレートを光らせるので、誰が喋ったかは写真・名前・プレートの三つで分かる。
 
      吹き出しは「そこから四回捨てられるまで」残す。時間ではなく
      捨て牌の数で測るので、早送りでも自分の手番でも同じだけ残る。
+
+     SERIFU 側は触らない。chara 19種を鍵にする仕組みも場面11種もそのまま。
      ============================================================ */
   BUBBLE_TURNS: 4,          // 吹き出しが残る長さ（捨て牌の数）
-
-  /* 卓の並びと同じ順（下家→対面→上家→自分）で顔を作る。
-     対局のはじめに一度だけ。名前は入力された文字が入るので、
-     innerHTML ではなく textContent で入れること */
-  initTachie() {
-    const box = $('#tachie');
-    const g = this.game;
-    if (!box || !g) return;
-    const row = box.querySelector('.tcRow');
-    if (!row) return;
-    row.innerHTML = '';
-    [1, 2, 3, 0].forEach((seat) => {
-      const p = g.players[seat];
-      if (!p) return;
-      const slot = document.createElement('div');
-      slot.className = 'tcSlot';
-      slot.dataset.seat = String(seat);
-      const face = document.createElement('span');
-      face.className = 'tcFace';
-      if (p.face) face.style.backgroundImage = 'url("' + p.face + '")';
-      const tag = document.createElement('span');
-      tag.className = 'tcTag';
-      tag.textContent = p.name || '';
-      slot.appendChild(face);
-      slot.appendChild(tag);
-      row.appendChild(slot);
-    });
-    box.classList.remove('talk');
-    box.querySelector('.tcBubble').textContent = '';
-    this._sayAt = null;
-    this._tachieReady = true;
-  },
+  HOT_KINDS: ['riichi', 'tsumo', 'ron'],   // 吹き出しの地を差し色にする場面
+  PLATE_IDS: ['plate-bottom', 'plate-right', 'plate-top', 'plate-left'],
 
   /* 場に出ている捨て牌の総数。吹き出しを引っ込める目安に使う */
   discardCount() {
@@ -258,55 +495,51 @@ const UI = {
     return n;
   },
 
-  /* 一言を出す。喋った人の顔を大きくして、吹き出しをその下に置く */
+  /* 一言を出す。名前は入力された文字が入るので textContent で入れること */
   say(seat, kind, hold) {
     if (typeof SERIFU === 'undefined') return;
     const g = this.game;
-    const box = $('#tachie');
+    const box = $('#cutin');
     if (!g || !box) return;
     const p = g.players[seat];
     if (!p) return;
     const line = SERIFU.pick(p.chara, kind);
     if (!line) return;
-    if (!this._tachieReady) this.initTachie();
 
-    box.querySelectorAll('.tcSlot').forEach((el) => {
-      el.classList.toggle('on', Number(el.dataset.seat) === seat);
+    const img = box.querySelector('img');
+    if (p.face) { img.src = p.face; img.hidden = false; } else { img.removeAttribute('src'); img.hidden = true; }
+    box.querySelector('.who').textContent = p.name || '';
+    box.querySelector('.line').textContent = line;
+    box.dataset.side = (seat === 0 || seat === 3) ? 'left' : 'right';
+    box.classList.toggle('hot', this.HOT_KINDS.includes(kind));
+    box.classList.add('on');
+    /* 喋った人の席プレートも光らせる */
+    this._cutinSeat = seat;
+    document.querySelectorAll('#table .seat').forEach((el) => {
+      el.classList.toggle('talking', el.id === this.PLATE_IDS[seat]);
     });
-    box.querySelector('.tcBubble').textContent = line;
-    box.classList.add('talk');
-    box.classList.toggle('riichi', !!p.riichi);
     /* 放銃の一言（hold）は長めに残す */
     this._sayAt = this.discardCount();
     this._sayFor = hold ? this.BUBBLE_TURNS + 3 : this.BUBBLE_TURNS;
     this._sayKyoku = g.kyoku;
   },
 
-  renderTachie() {
+  /* 時間切れで引っ込める。四回捨てられたか、局が変わったら */
+  renderCutin() {
     const g = this.game;
-    const box = $('#tachie');
+    const box = $('#cutin');
     if (!g || !box) return;
-    if (!this._tachieReady) this.initTachie();
-
-    /* 吹き出しを引っ込める。四回捨てられたか、局が変わったら */
     if (this._sayAt !== null && this._sayAt !== undefined) {
       const past = this.discardCount() - this._sayAt;
       if (past >= this._sayFor || this._sayKyoku !== g.kyoku) {
-        box.classList.remove('talk', 'riichi');
-        box.querySelector('.tcBubble').textContent = '';
-        box.querySelectorAll('.tcSlot.on').forEach((el) => el.classList.remove('on'));
+        box.classList.remove('on', 'hot');
         this._sayAt = null;
+        this._cutinSeat = null;
+        document.querySelectorAll('#table .seat.talking').forEach((el) => el.classList.remove('talking'));
       }
     }
-
-    /* いま打っている人に薄く印を付ける。顔は動かさないので取り違えない */
     const turn = g.currentDraw ? g.currentDraw.seat
       : (g.lastDiscard ? g.lastDiscard.seat : g.dealer);
-    box.querySelectorAll('.tcSlot').forEach((el) => {
-      const s = Number(el.dataset.seat);
-      el.classList.toggle('turn', s === turn);
-      el.classList.toggle('rc', !!(g.players[s] && g.players[s].riichi));
-    });
     this.maybeIdle(turn);
   },
 
@@ -370,7 +603,7 @@ const UI = {
       const el = document.createElement('button');
       el.className = 'act' + (b.primary ? ' primary' : '') + (b.ghost ? ' ghost' : '');
       el.innerHTML = b.label;
-      el.onclick = b.onClick;
+      el.onclick = () => { this.sfx('tap'); b.onClick(); };
       bar.appendChild(el);
     }
   },
@@ -440,6 +673,8 @@ const UI = {
     /* game.js が「誰が・何を」を添えてくる。添えて来ない呼び出しもあるので、
        あるときだけ喋らせる */
     if (who && who.kind) this.say(who.seat, who.kind);
+    if (who && who.kind === 'riichi') this.sfx('riichi');
+    else if (who && who.kind === 'call') this.sfx('call');
     await sleep(ms || 700);
     t.className = '';
     await sleep(120);
@@ -453,8 +688,11 @@ const UI = {
     if (data.type === 'win' && data.winner) {
       this.say(data.winner.seat, data.loser ? 'ron' : 'tsumo');
       if (data.loser) this.say(data.loser.seat, 'deal', true);
+      /* 自分が振ったときだけ沈む音。それ以外は和了の音 */
+      this.sfx(data.loser && data.loser.seat === 0 ? 'deal' : 'agari');
     } else if (data.type === 'draw') {
       this.say(g.dealer, 'draw');
+      this.sfx('ryuukyoku');
     }
     if (data.type === 'win') {
       const r = data.result;
@@ -531,7 +769,7 @@ UI.modal = function (html, buttons) {
   $('#overlay').classList.add('show');
   return new Promise((res) => {
     panel.querySelectorAll('[data-v]').forEach((el) => {
-      el.onclick = () => { $('#overlay').classList.remove('show'); res(el.dataset.v); };
+      el.onclick = () => { UI.sfx('tap'); $('#overlay').classList.remove('show'); res(el.dataset.v); };
     });
   });
 };

@@ -74,6 +74,7 @@ ZIPに混ぜるとURLを知っている人には届いてしまう。
 
 ```
 zip -r jandol.zip . -x '.git/*' 'debug.html' 'src/debug.js' 'tools/*' 'docs/*'
+# audio/（効果音）と tiles/（牌の絵）と img/ と fonts/ は入れること
 ```
 
 ## 直したあと
@@ -97,20 +98,27 @@ index.html          ビルド結果。これを配布する（500KB以下に保�
 shell.html          外枠。表紙・タブ・セーブ。ビルド時にCSS/JSが差し込まれる
 build.py            index.html を組み立てる（約13KB。CSS/JSは src/ のまま読む）
 tools/make-font.py  表紙の丸ゴシックを作り直す
+tools/make-sfx.py   控えの discard.wav だけを合成して書く（鳴る12本は書かない）
+tools/prep-sfx.py   生成した音源（audio_raw/）を切り出して整形し audio/ に書く（鳴る12本）
+tools/check-sound.js 打牌の鳴らし分けをブラウザで確かめる（音源を差し替えたら回す）
+tools/drive-match.js 対局画面をブラウザで回す。配牌・鳴き・河3段・終局を撮り、--video で録画
 
 office.html         ┐
 meikan.html         │
 team.html           │ 画面ごとの単体ページ（開発用）
 taikai.html         │
 scout.html          │
-jansou.html         ┘
+jansou.html         │
+match.html          ┘ 対局画面だけを開く（?seed ?dealer ?auto ?speed ?discard で固定できる）
 
 src/
   engine.js         麻雀エンジン（シャンテン・和了判定・役・符・点数）テスト35件合格
   ai.js             CPU思考（牌効率・危険度読み・押し引き・打ち筋の係数）
   game.js           対局進行（鳴き・リーチ・流局・連荘）
   ui.js             対局画面。牌はすべてSVG（『忍雀』のイカサマ部分は外した）
-  match.js/.css     実対局の入口。卓のDOMを組んでGameを走らせ、着順を返す
+  match.js/.css     実対局の入口。卓のDOMを組んでGameを走らせ、着順を返す。
+                    四人卓（横持ち・回転表示）と列レイアウト（縦持ち）の両方の CSS
+  sound.js          効果音（WebAudio）。論理名9つを読む（打牌だけ四本から選ぶ）。鳴らすのは ui.js からだけ
   style.css         対局画面のスタイルと配色トークン
 
   characters.js     雀ドル73人＋打ち筋20種＋地域＋契約条件
@@ -229,8 +237,17 @@ src/debug.js        その中身。build.py は読まない（配布から外す
 | 係数がCPUに効く強さ | `src/ai.js` の `chooseDiscard` `shouldRiichi` `shouldCall` |
 | 未熟さ（最善でない牌を選ぶ率） | `src/ai.js` の `slip` |
 | 配色・明るさ・字体 | `src/theme.css` |
-| 顔の大きさ・出る条件 | `src/match.css` の `#tachie` `.tcSlot`（`min-width:900px`） |
+| カットインの大きさ・置き場所 | `src/match.css` の `.cutin`（四人卓は上の角、列レイアウトは卓と手牌のあいだ） |
 | 吹き出しが残る長さ | `src/ui.js` の `BUBBLE_TURNS`（捨て牌の数） |
+| 吹き出しの地を差し色にする場面 | `src/ui.js` の `HOT_KINDS`（リーチ・ツモ・ロン） |
+| 卓の傾き・牌の厚み・河と手牌の押し出し | `src/match.css` の `rotateX(36deg)` `--th` `.rslot` `.413`/`.186` |
+| 牌の移動の速さ | `src/match.css` の `.tile.moving`（.24s） |
+| 効果音の音量の既定・素材 | `src/sound.js` の `DEFAULT_VOLUME`、`audio/*.wav`（`tools/prep-sfx.py`） |
+| どの名前が何本の音源を持つか | `src/sound.js` の `FILES`（打牌だけ四本） |
+| 音を耳で確かめる場所 | `debug.html` の「音」の区画（`src/debug.js` の `soundPanel`） |
+| 生成音の切り出しと音量合わせ | `tools/prep-sfx.py` の `SOURCES` `GROUPS`、`HEAD_MS` `LOUD_MS` `PEAK_CEIL_DB` |
+| 場面ごとの音の大きさ | `tools/prep-sfx.py` の `SOURCES` の `target_db`（和了 −25 … ツモ・ボタン −36） |
+| 打牌の操作の既定（一度押し） | `src/ui.js` の `discardMode`、スワイプの長さは `SWIPE_PX` |
 | セリフ | `src/serifu.js` の `LINES`（性格名が鍵） |
 | 雑談が出る確率 | `src/ui.js` の `maybeIdle` の `0.18` |
 | おまかせの動き | `src/ui.js` の `giveUp` と `src/match.js` の `#giveup` |
@@ -265,10 +282,47 @@ src/debug.js        その中身。build.py は読まない（配布から外す
 大会で自分の卓に当たると `Match.play()` が呼ばれ、卓のDOMを組んで `Game` を走らせる。
 終わると卓を片付けて着順を `taikai.js` に返す。
 
-- **人間は必ず東家（seat 0）**。`game.js` と `ui.js` がそれを前提にしているので、
-  `Match.play` が席順を回してプレイヤーを先頭に持ってくる
+- **人間は必ず seat 0**。`game.js` と `ui.js` がそれを前提にしているので、
+  `Match.play` が席順を回してプレイヤーを先頭に持ってくる。
+  **起家は毎回ランダム**（`Game` が振る。`opts.startDealer` で固定できる）。
+  以前は `dealer = 0` 固定で、プレイヤーが必ず東家から始まっていた
+  （`docs/design/match/spec.md` §1）
 - **卓は `#view` の外（`#matchRoot`）に置く。**`ui.js` は `document` 直下のidを見るため
 - 「自動で処理」にすると `playRealMatch` が何も返さず、`taikai.js` が数値処理に落とす
+
+### 効果音
+
+`audio/` の音を `src/sound.js` が WebAudio で読んで鳴らす（`docs/design/match/spec.md` §2）。
+**論理名は9つ**（打牌・ツモ・鳴き・リーチ・和了・放銃・ドラ・流局・ボタン）で、
+**一つの名前が複数の音源を持てる。**いま複数なのは打牌だけ
+（`discard1.wav`〜`discard4.wav`。一番よく鳴るので、一本だと一局十七回で機械音に聞こえる）。
+
+- **鳴らすのは `ui.js` からだけ。**`game.js` は Node の測定からも読まれるので触らない
+- **`AudioContext` は一つ。**初期化はユーザー操作の中（大会の「卓に着く」）。
+  雀荘の夜・遠征の一局から入ったときは、最初のタップで `resume` する保険が効く
+- 早送り（速さ 0）は無音、「速い」（200未満）は打牌とツモだけ間引く
+- 音量は大会の設定（`st.sfxVolume`、0 / 0.5 / 1。無ければ 1）
+- **`Sound.play('discard')` のまま。**どの一本を鳴らすかは `sound.js` が決める
+  （`FILES`）。**直前と同じものは続けて選ばない。**`ui.js` は名前しか渡さない
+- **`NAMES` は論理名9つのまま公開する。**ファイル名の一覧は `FILES` に別に持つ
+  ——`tools/drive-match.js` は `NAMES` の側を数えている
+- **四本そろっていなくてよい。**読めたものだけで鳴り、一本も無ければ `discard.wav`
+  に落ちる（差し替えの途中で無音にならないため）
+- **鳴る12本は全部 ElevenLabs の生成音**（2026年9月4日に差し替え終わり）。生成したままの WAV は
+  `audio_raw/`（**コミットしない**）に置き、切り出しと整形は `tools/prep-sfx.py` が回す
+  ——単発に切り、モノラル、頭1ms・末尾20msフェード、**A特性RMS**で聞こえを揃えて
+  ピーク −3dBFS 以下。48kHz のまま。頭を切る位置は、打牌は**主ピークの8ms手前**を
+  道具が自分で探し、残りの8つは**測って決めた範囲**（`SOURCES` の `cut`）
+- **大きさは一本ずつ違えてある**（`target_db`）。局が終わる音は前へ、
+  よく鳴る音は後ろへ。打牌の −30.1dB が基準
+- **流局だけ均してある**（`compress`）。連続音なので、大きい当たりだけが飛び出すと
+  「途切れた洗牌」に聞こえる。**単発の7本には掛けない**——立ち上がりが命
+- **`tools/make-sfx.py` が書くのは控えの `discard.wav` 一本だけ。**
+  `prep-sfx.py` が持っている名前を書こうとしたらその場で止まる
+  ——回すと生成音を潰してしまうため
+- 差し替えるときは同じ名前で上書きし、**`audio/LICENSE.txt` の出典欄を書き換えること。**
+  差し替えたら `node tools/check-sound.js`
+- **ZIP に `audio/` を含めること。**無くても対局は止まらないが、無音になる
 
 ### 牌の絵
 
@@ -282,50 +336,47 @@ src/debug.js        その中身。build.py は読まない（配布から外す
 - **軽くしようとメタ情報を正規表現で削るとSVGが壊れる。**図形まで巻き込む。
   770KBのまま置くのが安全（`index.html` には影響しない）
 
-### 画面の向き
+### 画面の向き — 四人卓と列レイアウト
+
+設計は `docs/design/match/spec.md`（全8段・2026年9月4日に完了）。
+色と数値の正は `docs/design/match/table-mock.html`。
 
 **Webでは向きを固定できない。** `screen.orientation.lock()` はフルスクリーン中の
 Android Chromeでしか効かず、iOS Safariは非対応。PLiCyはiframeで動くので
-フルスクリーン権限も取れない。
+フルスクリーン権限も取れない。そこで二つのレイアウトを持つ。
 
-列レイアウトにしてから縦でも読めるようになったので、
-**横持ちの誘導は出していない**（`updateRotate()` が常に外す）。
-出したくなったら条件を戻すだけでよく、`#rotateHint` の作りは残してある。
+- **四人卓**（`body.four`）… 横持ち、または「横画面にする」の回転表示。
+  卓面（`#felt`）を `rotateX(36deg)` で寝かせ、四方に人を置く。
+  河は中心のゼロサイズの点（`.rslot`）を回して外へ押し出し、内側の端を固定する。
+  手牌は中心基準。**端（left/right）で決めないこと**（`spec.md` §4.3）。
+  辺長 `--side` は `match.js` の `fitFour()` が「回した後の高さ」を測って決める
+- **列レイアウト**（`body.inMatch:not(.four)`）… 縦持ちで回さない人の道。
+  各家を「プレート＋手牌」「河」の二行ずつ、上から積む（下家 → 対面 → 上家 → 自分）。
+  同じ DOM を `display:contents` と grid で並べ直しているだけ。**消さないこと**
+- **回転表示**は `.matchHost` ごと `rotate(90deg)`。トグルで、強制しない。
+  OS の画面回転ロックを入れている人にも横画面が届く
 
-牌の大きさは向きで変わる（`src/match.css`）。縦は幅が足りず約26px、横は約57px。
-**14枚＋隙間13＋引いた牌の余白を引いてから割ること。**引かないと左右にはみ出す。
-横は高さが足りないので `17dvh` で頭打ちにしてある。
+`ui.js` の書き出し先は `#top` `#left` `#right` `#river-*` に加えて、
+席プレート `#plate-*` とコンパス `#info`。**`#felt` の下の `#center` は block**
+（`style.css` の grid のままだと、中の絶対配置が「そのマス」基準になってずれる）。
 
-### 列レイアウト
+### 牌の移動と音
 
-卓を上から見た形（四方に配置、左右は回転）はやめて、
-**各家を「名前＋手牌」「捨て牌」の二行ずつ、上から積む**形にしてある。
-並び順は 下家 → 対面 → 上家 → 自分。読み下すと手番の順になる。
+手牌と四つの河は **keyed**（`Map<id, node>`）。並びが変わったときだけ、
+自分の打牌は FLIP、他家の打牌は手牌からの飛ばし込みで動く（`translate` / `scale` の
+個別プロパティ。`transform` は横向きと つまみ上げ が使う）。
+**`render()` は className を丸ごと書かず `.moving` を残すこと**、
+**`transitionend` は `translate` / `scale` だけを見ること**——どちらも実際に踏んだ。
 
-理由は、回転した牌が読みにくく、左右の河が縦に伸びて卓の高さを食っていたため。
-横に並べると四人ぶんが同じ大きさ・同じ向きで読める。縦横どちらでも同じ形。
+音は `src/sound.js`（上の「効果音」）。打牌の音は差分検出が「河に牌が増えた」瞬間に鳴らす。
 
-**`ui.js` は書き換えていない。**書き出し先（`#top` `#left` `#right` `#river-*`）は
-そのままで、`#center` に `display:contents` を当てて `#table` の直下に並べ替え、
-`order` で順番を決めている。`.river.side` の回転もCSSで打ち消している。
-`ui.js` に足したのは各家の「風・名前・点数」の札（`.oppName`）だけ。
+### 確かめかた
 
-背は `.back` ではなく **`.tile.tiny`** で描かれている（`.back` を狙っても効かない）。
+`node tools/drive-match.js` が `match.html` を Playwright で回す。
+`--shots DIR` で配牌・鳴き・河3段・終局、`--video DIR` で録画、
+`--width 392 --height 780` で縦、`--rotate` で回転表示、`--play` で人間の席を
+スクリプトが押す。撮ったものは `docs/design/match/shots/` と `rec/` にある。
 
-横持ちは高さがぎりぎりで、河が埋まって鳴きが入ると自分の捨て牌が卓からはみ出す。
-行の余白を詰めたうえ、`match.js` の `fitTable()` が
-**はみ出していたら河（`--rw-fit`）を自動で縮めて収める。**
-判定は `scrollHeight` ではなく一番下の行の位置で見る
-（`scrollHeight` は四隅の飾りなども拾ってしまう）。
-前の値から増減させると縮んだまま戻らなくなるので、毎回1から測り直すこと。
-
-**行を足したり余白を増やすときは、河を満杯にした状態で測り直すこと。**
-保険として `#table` は `overflow-y:auto` にしてある。
-
-**罠：** 卓をスクロールしたまま向きを変えると、縦は余白が余っていて
-スクロールで戻せないため、一番上の家が隠れたままになる。
-`onOrientationChange()` が先頭に戻している（寸法の確定が遅れる端末があるので、
-時間差でもう二回戻す）。
 - `ui.js` から『忍雀』のイカサマとストーリー進行は外したが、`g.cheat` で守られた分岐は
   残してある（`g.cheat` を立てなければ一切動かない）
 

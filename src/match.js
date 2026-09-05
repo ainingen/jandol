@@ -22,25 +22,42 @@ const Match = (() => {
   const esc = (s) => String(s).replace(/[&<>"']/g,
     (m) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m]));
 
-  /* ui.js が触るidを全部そろえた卓。style.css の指定に合わせてある */
+  /* ui.js が触るidを全部そろえた卓（docs/design/match/spec.md §4）。
+
+     #felt が卓面。四人卓（body.four）では rotateX で寝かせ、河と他家の手牌は
+     その中に置く。河は .rslot（中心に置いたゼロサイズの点）を回して外へ押し出し、
+     そこから外向きに伸ばす——端（left/right）で決めると回転前の箱に効いて、
+     左右の家だけ内側へ引き込まれる（§4.3）。data-angle は ui.js が FLIP の向きを
+     卓の座標に直すために読む。
+     席プレート（#plate-*）は卓面の外。列レイアウト（縦持ち）では
+     #felt / #center / .rslot を display:contents にして、同じ DOM を格子に並べ直す */
   const TABLE_HTML = `
     <div id="app">
-      <button type="button" id="giveup">おまかせ</button>
-      <div id="table">
-        <div id="top" class="opp"></div>
-        <div id="left" class="opp vert"></div>
-        <div id="right" class="opp vert"></div>
-        <div id="center">
-          <div id="river-top" class="river"></div>
-          <div id="river-left" class="river side"></div>
-          <div id="info"></div>
-          <div id="river-right" class="river side"></div>
-          <div id="river-bottom" class="river"></div>
-        </div>
+      <div id="topbar">
+        <button type="button" id="rotateBtn" aria-pressed="false">横画面にする</button>
+        <button type="button" id="giveup">おまかせ</button>
       </div>
-      <div id="tachie" aria-hidden="true">
-        <div class="tcRow"></div>
-        <div class="tcBubble"></div>
+      <div id="table">
+        <div id="felt">
+          <div id="top" class="opp" data-angle="180"></div>
+          <div id="left" class="opp vert" data-angle="90"></div>
+          <div id="right" class="opp vert" data-angle="-90"></div>
+          <div id="center">
+            <div class="rslot rs-top" data-angle="180"><div id="river-top" class="river"></div></div>
+            <div class="rslot rs-left" data-angle="90"><div id="river-left" class="river side"></div></div>
+            <div id="info"></div>
+            <div class="rslot rs-right" data-angle="-90"><div id="river-right" class="river side"></div></div>
+            <div class="rslot rs-bottom" data-angle="0"><div id="river-bottom" class="river"></div></div>
+          </div>
+        </div>
+        <div id="plate-top" class="seat s-top"></div>
+        <div id="plate-left" class="seat s-left"></div>
+        <div id="plate-right" class="seat s-right"></div>
+        <div id="plate-bottom" class="seat s-bottom mine"></div>
+      </div>
+      <div id="cutin" class="cutin" data-side="left" aria-live="polite">
+        <div class="card"><span class="tape"></span><img alt=""></div>
+        <div class="bubble"><span class="who"></span><span class="line"></span></div>
       </div>
       <div id="myarea">
         <div id="melds-row"></div>
@@ -71,6 +88,11 @@ const Match = (() => {
      縦でも打てるので、閉じる道は必ず残すこと。
   ------------------------------------------------------------ */
   let dismissed = false;
+  /* 回転表示（§7.2）。縦持ちのままラッパー（.matchHost）を 90 度回して横画面にする。
+     OS 側の画面回転ロックを入れている人にも横画面が届く。
+     **強制ではなくトグル。**持ち方を変えていないのに横倒しになると、普通にバグだと思われる。
+     対局をまたいで覚えておく（同じ大会のあいだに毎回押させない） */
+  let rotated = false;
 
   function isPortrait() {
     return window.matchMedia('(orientation:portrait)').matches;
@@ -80,9 +102,63 @@ const Match = (() => {
      横持ちの誘導は出さない。仕組みは残してあるので、
      出したくなったら needRotate を付ける条件を戻すだけでよい */
   function updateRotate() {
-    document.body.classList.remove('needRotate');
+    const body = document.body;
+    body.classList.remove('needRotate');
+    const portrait = isPortrait();
+    /* 回転の釦は縦持ちのときだけ。横持ちの端末で回すと縦になってしまう */
+    body.classList.toggle('canRotate', portrait);
+    body.classList.toggle('rotated', portrait && rotated);
+    const btn = document.getElementById('rotateBtn');
+    if (btn) {
+      btn.setAttribute('aria-pressed', String(portrait && rotated));
+      btn.textContent = portrait && rotated ? '縦に戻す' : '横画面にする';
+    }
+    /* 横持ち、または回転表示なら四人卓（body.four）。縦持ちで回さないなら列レイアウト（§4・§7.4）。
+       media query ではなく class にしてあるのはこのため——回転表示は
+       縦持ちのまま .matchHost を回すので、orientation は portrait のまま */
+    body.classList.toggle('four', !portrait || rotated);
     fitTable();
     clampTableScroll();
+  }
+
+  /* 回転表示のあいだ getBoundingClientRect は 90 度回った箱を返す。
+     レイアウト上の「上・下・幅」に読み替える（rotate(90deg) は 下 → 画面の左） */
+  function layoutBox(el, ref) {
+    const r = el.getBoundingClientRect();
+    const t = ref.getBoundingClientRect();
+    if (!document.body.classList.contains('rotated')) {
+      return { top: r.top - t.top, bottom: t.bottom - r.bottom, width: r.width };
+    }
+    return { top: t.right - r.right, bottom: r.left - t.left, width: r.height };
+  }
+
+  /* 四人卓の辺長。画面の高さから手牌ぶんを引いた残りに収まる正方形（§4.2）。
+     rotateX で寝かせるので、見た目の高さは辺長より短い。
+     CSS だけでは「回した後の高さ」が測れないので、候補を入れて測って詰める。
+     上端（対面の手牌）が切れないこと、上のプレートと重ならないことを見る */
+  function fitFour() {
+    const t = document.getElementById('table');
+    const felt = document.getElementById('felt');
+    const body = document.body;
+    if (!t || !felt) return;
+    const W = t.clientWidth, H = t.clientHeight;
+    if (!W || !H) return;
+    /* 上のプレートは卓面の遠い縁に少し掛かってよい（モックがそうなっている）。
+       掛かってはいけないのは対面の手牌のほうで、それは縁より内側にある */
+    const plateTop = document.getElementById('plate-top');
+    const topPad = plateTop ? Math.max(0, plateTop.offsetTop + plateTop.offsetHeight - 10) : 36;
+    const botPad = 4;
+    const maxW = W - 24;
+    let side = Math.min(maxW, H * 1.3);
+    for (let i = 0; i < 24; i++) {
+      body.style.setProperty('--side', Math.round(side) + 'px');
+      const b = layoutBox(felt, t);
+      const okTop = b.top >= topPad;
+      const okBottom = b.bottom >= botPad;
+      const okWide = b.width <= maxW;
+      if (okTop && okBottom && okWide) break;
+      side *= 0.95;
+    }
   }
 
   /* 向きが変わると卓の中身の高さが変わる。
@@ -98,6 +174,13 @@ const Match = (() => {
     const last = document.getElementById('river-bottom');
     if (!t || !last) return;
     const body = document.body;
+    if (body.classList.contains('four')) {
+      body.style.removeProperty('--rw-fit');
+      body.classList.remove('tableScroll');
+      fitFour();
+      return;
+    }
+    body.style.removeProperty('--side');
 
     /* scrollHeight は四隅の飾りなども拾ってしまうので、
        一番下の行（自分の捨て牌）が卓の底より下に出ているかで判定する */
@@ -105,12 +188,16 @@ const Match = (() => {
       last.getBoundingClientRect().bottom - t.getBoundingClientRect().bottom;
 
     body.style.setProperty('--rw-fit', '1');
+    body.classList.remove('tableScroll');
     if (overflow() <= 1) { body.style.removeProperty('--rw-fit'); return; }
     for (let f = 0.94; f >= 0.48; f -= 0.06) {
       body.style.setProperty('--rw-fit', f.toFixed(2));
       if (overflow() <= 1) return;
     }
-    /* ここまで縮めても収まらない端末では、卓のスクロールで見てもらう */
+    /* ここまで縮めても収まらない端末では、卓のスクロールで見てもらう。
+       普段は overflow を切らない（牌が卓の外から飛んでくるので）。
+       スクロールが要るときだけ立てる */
+    body.classList.add('tableScroll');
   }
 
   function clampTableScroll(toTop) {
@@ -194,16 +281,20 @@ const Match = (() => {
     /* おまかせ。以降は自分の席もCPUが打つ。
        着順はごまかさず、そのまま結果になる                        */
     UI.auto = false;
-    /* UI は対局をまたいで使い回すので、立ち絵まわりの覚えを戻す。
-       _tachieSeat が残っていると次の対局の一枚目で差し替えが飛ばされ、
-       前の対局の顔がそのまま出る。
+    /* UI は対局をまたいで使い回すので、カットインまわりの覚えを戻す。
+       _cutinSeat / _sayAt が残っていると、次の対局の一局目で
+       前の対局の一言が引っ込む前提で動き、プレートの光りが取り違えられる。
        _idleSeat / _idleKyoku も同じ性質で、残っていると
        二戦目の一局目で席がたまたま一致したとき雑談が一度飛ぶ */
-    UI._tachieSeat = null;
+    UI._cutinSeat = null;
     UI._idleSeat = null;
     UI._idleKyoku = null;
     UI._sayAt = null;
-    UI._tachieReady = false;      // 顔の並びは対局ごとに組み直す
+    /* 牌のノードも対局ごと。前の卓の DOM は host ごと消えているので、
+       Map だけ残っていると外れたノードを使い回そうとする */
+    UI._nodes = null;
+    UI._seq = null;
+    UI._seqKyoku = null;
     const giveBtn = host.querySelector('#giveup');
     giveBtn.addEventListener('click', async () => {
       const v = await UI.modal(
@@ -225,6 +316,13 @@ const Match = (() => {
       dismissed = true;
       updateRotate();
     });
+    /* 回転表示のトグル。押した瞬間に卓を組み替えるので、牌は動かさず位置だけ確定させる */
+    host.querySelector('#rotateBtn').addEventListener('click', () => {
+      rotated = !rotated;
+      updateRotate();
+      setTimeout(fitTable, 60);
+      UI.render();
+    });
     await tryLockLandscape();
     updateRotate();
     window.addEventListener('resize', onOrientationChange);
@@ -238,6 +336,7 @@ const Match = (() => {
     UI._lastRank = null;
     UI.speed = opts.speed === undefined ? 520 : opts.speed;
     UI.showHints = opts.showHints !== false;
+    UI.discardMode = opts.discardMode === 'double' ? 'double' : 'single';   // 無ければ一度押し
 
     await g.run();
     const rank = UI._lastRank || g.rankings();
@@ -247,6 +346,8 @@ const Match = (() => {
 
     clearInterval(watch);
     document.body.style.removeProperty('--rw-fit');
+    document.body.style.removeProperty('--side');
+    document.body.classList.remove('tableScroll', 'four', 'rotated', 'canRotate');
     window.removeEventListener('resize', onOrientationChange);
     if (screen.orientation) screen.orientation.removeEventListener('change', onOrientationChange);
     document.body.classList.remove('needRotate');

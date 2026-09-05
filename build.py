@@ -55,7 +55,8 @@ CSS = ['style.css', 'theme.css', 'maru.css', 'title.css', 'meikan.css',
 # jansou.js より前でも構わない（読み込み時には触らない）。
 # office-room.js（事務所の部屋）は JansouFloor の描画の道具を読み込み時に借りるので、
 # jansou-floor.js より後ろに置く（office/room.md §3.1）
-JS = ['engine.js', 'ai.js', 'game.js', 'ui.js', 'match.js',
+# sound.js は ui.js が「あれば使う」（読み込み時には触らない）。audio/ は ZIP に含めること
+JS = ['engine.js', 'ai.js', 'game.js', 'sound.js', 'ui.js', 'match.js',
       'characters.js', 'geo.js', 'tournament.js', 'offers.js', 'office.js',
       'title.js', 'meikan.js',
       'team.js', 'taikai.js', 'scout.js',

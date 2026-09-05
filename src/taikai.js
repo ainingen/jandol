@@ -303,6 +303,21 @@ const Taikai = (() => {
             </span>
           </div>
           <div class="tkSetRow">
+            <span class="tkSetLabel">打牌の操作</span>
+            <span class="tkSeg">
+              <button type="button" data-set="discard:single" aria-pressed="${st.discardMode !== 'double'}">一度押し</button>
+              <button type="button" data-set="discard:double" aria-pressed="${st.discardMode === 'double'}">二度押し</button>
+            </span>
+          </div>
+          <div class="tkSetRow">
+            <span class="tkSetLabel">効果音</span>
+            <span class="tkSeg">
+              ${[[1, 'ふつう'], [0.5, '小さく'], [0, '消す']].map(([v, n]) =>
+                `<button type="button" data-set="sfx:${v}"
+                  aria-pressed="${(st.sfxVolume === undefined ? 1 : st.sfxVolume) === v}">${n}</button>`).join('')}
+            </span>
+          </div>
+          <div class="tkSetRow">
             <span class="tkSetLabel">補助表示</span>
             <span class="tkSeg">
               <button type="button" data-set="hint:1" aria-pressed="${st.showHints !== false}">出す</button>
@@ -312,7 +327,8 @@ const Taikai = (() => {
           <p class="tkHint">${st.autoMatch
             ? 'すべての卓を結果だけで処理します。'
             : '自分が座る卓だけ実際に打ちます。他の卓は結果だけが出ます。'}
-            シャンテン数と危険度の目安が補助表示です。</p>
+            シャンテン数と危険度の目安が補助表示です。
+            打牌は牌を上へはらっても切れます。</p>
         </section>`;
     }
 
@@ -528,6 +544,14 @@ const Taikai = (() => {
         if (key === 'auto') store.set({ autoMatch: val === '1' });
         if (key === 'speed') store.set({ matchSpeed: Number(val) });
         if (key === 'hint') store.set({ showHints: val === '1' });
+        if (key === 'discard') store.set({ discardMode: val === 'double' ? 'double' : 'single' });
+        if (key === 'sfx') {
+          store.set({ sfxVolume: Number(val) });
+          /* 設定の釦そのものが音の口。押した瞬間に試し鳴りする */
+          if (typeof Sound !== 'undefined') {
+            Sound.init(); Sound.volume(Number(val)); Sound.load().then(() => Sound.play('tap'));
+          }
+        }
         renderSelect();
         return;
       }
@@ -535,7 +559,14 @@ const Taikai = (() => {
       if (tier && !tier.disabled) { start(tier.dataset.tier); return; }
       const act = e.target.closest('[data-act]');
       if (!act) return;
-      if (act.dataset.act === 'start') { playRounds(); }
+      if (act.dataset.act === 'start') {
+        /* 音の初期化はユーザー操作の中で（spec.md §2.2）。「卓に着く」がその口。
+           Sound は index.html にしか無いので、あれば使う */
+        if (typeof Sound !== 'undefined') {
+          Sound.init(); Sound.volume(store.get().sfxVolume); Sound.load();
+        }
+        playRounds();
+      }
       else if (act.dataset.act === 'result') finish();
       else if (act.dataset.act === 'back') {
         /* 依頼から入ったときは、戻る先が事務所（大会選択の画面は無い） */

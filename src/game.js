@@ -16,7 +16,18 @@ class Game {
       jikaze: 27, name: (opts.foes && i > 0) ? opts.foes[i - 1] : SEAT_LABEL[i],
     }));
     this.bakaze = 27;
-    this.dealer = 0;
+    /* 起家。指定が無ければ毎回振り直す。席順（誰が下家か）は
+       makeTables() が既に混ぜているので、ここで親を回せば
+       「自分が必ず東家」だけが消える。
+       opts.startDealer はリプレイ検証と席決め演出のために残してある
+       （tools/measure-fatigue.js は 0 を渡して、測った数字を動かさない） */
+    this.dealer = (opts.startDealer !== undefined)
+      ? ((opts.startDealer % 4) + 4) % 4
+      : Math.floor(Math.random() * 4);
+    this.startDealer = this.dealer;
+    /* 保険。実際の自風は deal() が入れるが、親が0でなくなると
+       描画が先に走ったとき「東が二人いる」瞬間が出る */
+    for (const p of this.players) p.jikaze = 27 + ((p.seat - this.dealer + 4) % 4);
     this.kyoku = 1;
     this.honba = 0;
     this.riichiSticks = 0;
