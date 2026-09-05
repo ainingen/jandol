@@ -21,6 +21,10 @@
        自分がツモ／自分がロン／自分が振り込み／他家同士。増減は payments から組む
     3. RULES_DEFAULT の前方互換（BACKLOG「ローカルルール」）
        渡さない・undefined・null・部分指定のどれでも既定に落ちること
+    4. SERIFU の `call` に鳴きの種類が入っていないこと
+       ——`call` はポン・チー・カンで共有する一つの場面。人が気づけるのは
+       実際に鳴かれた瞬間だけで、それも「チーなのにポンと言った」と
+       分かる人に限られる。**機械に見張らせる**
 */
 'use strict';
 
@@ -32,6 +36,7 @@ global.kindOf = Engine.kindOf;
 
 const { UI, meldHTML } = require('../src/ui.js');
 const { Game, RULES_DEFAULT } = require('../src/game.js');
+const { SERIFU } = require('../src/serifu.js');
 
 let pass = 0;
 const fails = [];
@@ -302,6 +307,32 @@ const winData = (winnerSeat, loserSeat, total, payments, sticks) => ({
   const src = require('fs').readFileSync(require('path').join(__dirname, '../src/game.js'), 'utf8');
   const reads = (src.match(/this\.rules\./g) || []).length;
   eq(reads, 0, 'game.js はまだ rules を読んでいない（読み始めたらここに錠を足す）');
+}
+
+/* ============================================================
+   4. セリフの `call` に鳴きの種類を書かない（src/serifu.js）
+   ============================================================ */
+{
+  /* `call` は**ポン・チー・カンで共有する一つの場面**。種類を名指しすると、
+     チーやカンでも「ポン」と言う（実機で出た）。種類は帯（#toast）が出している
+     ——情報は帯が持ち、セリフが持つのは人格。二重に言う必要がない。
+
+     `pon` / `chi` / `kan` に分けないこと。19種×3場面ぶん書き足すことになり、
+     しかも**チーは上家からしかできない**ので下家と対面のチーは一生使われない */
+  const NG = /ポン|チー|カン|槓/;
+  const tables = Object.entries(SERIFU.LINES).concat([['（代表）', SERIFU.PLAYER_LINES]]);
+  let lines = 0;
+  const bad = [];
+  tables.forEach(([chara, v]) => {
+    ok(Array.isArray(v.call) && v.call.length >= 2, chara + ' の call が二つ以上ある');
+    (v.call || []).forEach((t) => { lines++; if (NG.test(t)) bad.push(chara + '「' + t + '」'); });
+  });
+  eq(bad.length, 0, 'call に鳴きの種類（ポン・チー・カン）が入っていない', bad.join(' / '));
+  ok(lines >= 40, 'call の行が数えられている（' + lines + '行）');
+  /* 場面を pon / chi / kan に割らないこと（上の理由） */
+  tables.forEach(([chara, v]) => {
+    ok(!v.pon && !v.chi && !v.kan, chara + ' に pon / chi / kan の場面を作っていない');
+  });
 }
 
 /* ---------------- 結果 ---------------- */
