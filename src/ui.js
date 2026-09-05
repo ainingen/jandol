@@ -292,7 +292,10 @@ const UI = {
       el.classList.toggle('dealer', seat === g.dealer);
       el.classList.toggle('riichi', !!p.riichi);
       el.classList.toggle('turn', seat === turn);
-      el.classList.toggle('talking', this._cutinSeat === seat);
+      /* 締めのあいだはカットインを消しているので、喋っている印も出さない。
+         代わりに主役の席へ .star を付けて、立ち絵と一組に見せる */
+      el.classList.toggle('talking', !end && this._cutinSeat === seat);
+      el.classList.toggle('star', !!end && end.star === seat);
     });
 
     // 他家の手牌（裏）と副露。プレートは別なので、ここは牌だけ
@@ -792,6 +795,13 @@ const UI = {
     const app = $('#app');
     if (face) {
       img.src = face;
+      /* **誰の顔かを名札で言う。**ロンの主役は自分、放銃の主役は相手で、
+         立ち絵は同じ場所に出る。**顔だけでは一秒で分からない**（実際に分からなかった）。
+         席プレートと同じ形の札（自風＋名前）を足元に置き、自分なら同じ桃色にする */
+      const kz = ['東', '南', '西', '北'][sp.jikaze - 27] || '';
+      bust.querySelector('.kz').textContent = kz;
+      bust.querySelector('.nm').textContent = sp.name || '';
+      bust.querySelector('.ebWho').classList.toggle('mine', star === 0);
       bust.dataset.side = this.endSide(star);
       if (app) app.classList.add('bust-' + this.endSide(star));
       bust.hidden = false;
@@ -988,8 +998,14 @@ const UI = {
     const reveal = new Set();
     if (data.type === 'win') reveal.add(data.winner.seat);
     else if (data.tenpai) data.tenpai.forEach((t, i) => { if (t) reveal.add(i); });
+    /* 主役の席。**立ち絵と席プレートを一組に見せる**ための印（§A-1）。
+       showEnd と同じ規則で選ぶこと——二か所で決めると顔と札がずれる */
+    const starSeat = data.type === 'win'
+      ? (kind === 'dealin' || kind === 'other' ? data.winner.seat : 0)
+      : g.dealer;
     this._end = {
       reveal,
+      star: starSeat,
       winId: data.type === 'win' ? data.winId : null,
       tenpai: data.type === 'draw' ? data.tenpai : null,
     };

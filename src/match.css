@@ -147,11 +147,15 @@ body.inMatch .seat .kz{
   box-shadow:0 0 0 2px var(--line);font-family:var(--maru);
 }
 body.inMatch .seat.dealer .kz{background:var(--sun);color:var(--line)}
+/* **リーチに桃色を使わないこと。**桃色は「自分の席」の色（下の .mine）で、
+   同じ色で二つの意味を表すと、自分がどれかを探す一瞬が戻ってくる
+   ——実際に「桃色のプレートが二つ」出た（自分とリーチした他家）。
+   白は供託のリーチ棒（.riichi-stick）の色なので、リーチの意味はそちらへ寄せる */
 body.inMatch .seat .rc{
-  font-family:var(--maru);font-weight:900;font-size:11px;color:#fff;
-  background:var(--hot);border-radius:4px;padding:1px 4px;box-shadow:0 0 0 2px var(--line);
+  font-family:var(--maru);font-weight:900;font-size:11px;color:var(--line);
+  background:#fff;border-radius:4px;padding:1px 4px;box-shadow:0 0 0 2px var(--line);
 }
-body.inMatch .seat.riichi{box-shadow:0 0 0 2.5px var(--line),0 0 0 6px var(--hot),0 4px 0 rgba(0,0,0,.45)}
+body.inMatch .seat.riichi{box-shadow:0 0 0 2.5px var(--line),0 0 0 5px #fff,0 4px 0 rgba(0,0,0,.45)}
 body.inMatch .seat.turn .bust{box-shadow:0 0 0 2.5px var(--line),0 0 0 4.5px var(--cool)}
 /* 自分の席だけ色を反転。起家がランダムになったので「自分がどれか」を探させない */
 body.inMatch .seat.mine{background:var(--hot)}
@@ -159,6 +163,10 @@ body.inMatch .seat.mine .kz{background:#fff;color:var(--line)}
 body.inMatch .seat.mine .nm{color:#fff}
 /* 喋っている人 */
 body.inMatch .seat.talking{box-shadow:0 0 0 2.5px var(--line),0 0 0 6px var(--sun),0 4px 0 rgba(0,0,0,.45)}
+/* 局の締めの主役。**立ち絵と同じ金の枠**で、二つが一組だと分かるようにする（agari-spec §A-1） */
+body.inMatch .seat.star{
+  box-shadow:0 0 0 2.5px var(--line),0 0 0 6px var(--sun),0 4px 0 rgba(0,0,0,.45),0 0 18px rgba(255,201,60,.55);
+}
 
 /* ---------- 中央のコンパス（共通の中身。§4.4） ---------- */
 body.inMatch #info{
@@ -730,11 +738,31 @@ body.inMatch #endbust{
 body.inMatch #endbust[data-side="left"]{left:6px;translate:-14px 12px}
 body.inMatch #endbust[data-side="right"]{right:6px;translate:14px 12px}
 body.inMatch #endbust.on{opacity:1;translate:0 0}
+/* 誰の顔かを言う札。席プレートと同じ形にして、**自分なら同じ桃色**にする */
+/* **札は上に置くこと。**下に置くと席プレート（z-index:5）の裏に回って読めない
+   ——立ち絵は卓より下の層にいるので、重なった側が必ず勝つ（実際に隠れた） */
+body.inMatch #endbust .ebWho{
+  position:absolute;left:8px;right:8px;top:8px;z-index:2;
+  display:flex;align-items:center;gap:6px;padding:3px 9px 3px 3px;
+  background:var(--plate);border-radius:20px;
+  box-shadow:0 0 0 2.5px var(--line),0 3px 0 rgba(0,0,0,.45);
+}
+body.inMatch #endbust .ebWho.mine{background:var(--hot)}
+body.inMatch #endbust .ebWho .kz{
+  font-family:var(--maru);font-weight:900;font-size:11px;width:18px;height:18px;flex:none;
+  border-radius:50%;display:flex;align-items:center;justify-content:center;
+  background:#3a3252;color:#cfc4e6;box-shadow:0 0 0 2px var(--line);
+}
+body.inMatch #endbust .ebWho.mine .kz{background:#fff;color:var(--line)}
+body.inMatch #endbust .ebWho .nm{
+  font-size:11.5px;font-weight:800;color:#fff;white-space:nowrap;
+  overflow:hidden;text-overflow:ellipsis;
+}
 body.inMatch #endbust img{
   width:100%;height:100%;object-fit:cover;object-position:50% 12%;display:block;
-  border-radius:6px 6px 0 0;
-  -webkit-mask-image:linear-gradient(180deg,#000 62%,transparent 100%);
-  mask-image:linear-gradient(180deg,#000 62%,transparent 100%);
+  /* **下端をぼかさない。**金の枠と名札で「一枚の額」に見せるほうが、
+     誰のものかがはっきりする（ぼかすと枠も一緒に消えて宙に浮く） */
+  border-radius:6px;box-shadow:0 0 0 3px var(--sun),0 0 0 5.5px var(--line),0 0 20px rgba(255,201,60,.35);
 }
 /* 振り込みのときは主役が相手なので、こちらは静かに出す（跳ねない） */
 body.inMatch #endband[data-kind="dealin"] ~ #endbust,
@@ -774,7 +802,9 @@ body.inMatch #app.end-tsumo::before,body.inMatch #app.end-ron::before{
   body.inMatch #app.end-tsumo::before,body.inMatch #app.end-ron::before{animation:none;opacity:.18}
 }
 /* 振り込んだ人（自分）のプレートを暗く落とす */
-body.inMatch #app.end-dealin #plate-bottom{filter:brightness(.62) saturate(.7)}
+/* 放銃のとき自分を落とす。**落としすぎないこと**——桃色は「自分はここ」の唯一の印なので、
+   暗くしすぎると画面で一番目立つプレートが他人になる（実際になった） */
+body.inMatch #app.end-dealin #plate-bottom{filter:brightness(.74) saturate(.85)}
 
 /* ---------- 点棒（§5） ----------
    払う人のプレートから受け取る人のプレートへ。親のぶんは太く、供託は白く長い */

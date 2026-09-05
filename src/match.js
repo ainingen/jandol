@@ -73,7 +73,8 @@ const Match = (() => {
       </div>
       <!-- 局の締め（agari-spec.md）。箱ではなく帯。**卓には掛からない**
            ——#myarea のぶんだけを下から覆う。立ち絵は左右の端で帯の上端に立つ -->
-      <div id="endbust" class="endbust" hidden><img alt=""></div>
+      <div id="endbust" class="endbust" hidden><img alt="">
+        <span class="ebWho"><span class="kz"></span><span class="nm"></span></span></div>
       <div id="endband" class="endband" hidden>
         <div class="ebLeft">
           <div class="ebHead"></div>
