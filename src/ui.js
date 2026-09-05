@@ -1048,16 +1048,42 @@ const UI = {
     });
   },
 
-  /* 送り。**他家同士だけ自動で送ってよい**（§1）。残り三つはタップを待つ。
-     おまかせ（this.auto）のときは、いままでどおり全部自動 */
+  /* 自動で送ってよいか。0 なら**タップを待つ**（agari-spec.md §1）。
+
+     **四分岐すべてタップ待ち。**初版は「他家同士」だけ自動で送っていたが、
+     実機で「何が起きたか分からないまま次の局へ流れる」となった（2026年9月5日）。
+     二重に間違っていた——**他家のツモでは自分が払っている**（±0 ではない）し、
+     他家の和了は「誰が何で上がったか・いくら動いたか・その人がどういう打ち手か」を
+     知る唯一の機会で、順位も変わる。「自分に関係がない」という前提が誤りだった。
+
+     自動で送るのは**人が見ていないときだけ**——おまかせ（giveUp）と最速（speed 0）。
+
+     **kind で分けないこと。**引数に残してあるのは「分けない」ことを見せるため
+     （`tools/test-match.js` が四分岐とも 0 になることを固定している） */
+  endAutoMs(kind, auto, speed) {
+    if (auto) return Math.max(700, speed * 2);
+    if (speed === 0) return 400;
+    return 0;
+  },
+
+  /* 送り。演出が終わってから「タップで次へ」を出す
+     ——演出中に出すと、まだ動いているのに押させることになる */
   waitEnd(kind) {
+    const band = $('#endband');
+    const next = band && band.querySelector('.ebNext');
     return new Promise((res) => {
       let done = false;
-      const go = () => { if (done) return; done = true; clearTimeout(timer); this._endAdvance = null; res(); };
+      const go = () => {
+        if (done) return;
+        done = true;
+        clearTimeout(timer);
+        this._endAdvance = null;
+        if (next) next.hidden = true;
+        res();
+      };
       this._endAdvance = go;
-      /* 待たずに送ってよいのは「他家同士」だけ（§1）。おまかせのときは全部自動 */
-      const wait = this.auto ? Math.max(700, this.speed * 2)
-        : (kind === 'other' ? Math.max(900, this.speed * 2) : 0);
+      const wait = this.endAutoMs(kind, this.auto, this.speed);
+      if (!wait && next) next.hidden = false;   // 押せると分からなければ待つだけになる
       const timer = wait ? setTimeout(go, wait) : null;
     });
   },

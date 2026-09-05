@@ -260,6 +260,28 @@ const winData = (winnerSeat, loserSeat, total, payments, sticks) => ({
 }
 
 {
+  /* --- 送り。**四分岐すべてタップ待ち**（agari-spec.md §1）。
+         初版は「他家同士」だけ自動で送っていて、実機で「何が起きたか分からないまま
+         次の局へ流れる」となった。**他家のツモでは自分が払っている**し、
+         他家の和了は順位にも打ち方の読みにも効く。
+         ここが `other` だけ falls through する形に戻らないように固定する --- */
+  const KINDS = ['tsumo', 'ron', 'dealin', 'other', 'draw'];
+  KINDS.forEach((k) => {
+    eq(UI.endAutoMs(k, false, 520), 0, k + '：人が見ているときはタップを待つ');
+    eq(UI.endAutoMs(k, false, 900), 0, k + '：速さを変えてもタップを待つ');
+    eq(UI.endAutoMs(k, false, 200), 0, k + '：速いでもタップを待つ');
+  });
+  /* 四つとも同じ扱い＝ kind で分かれていないこと */
+  eq(new Set(KINDS.map((k) => UI.endAutoMs(k, false, 520))).size, 1,
+    '送りかたが kind で分かれていない');
+  /* 自動で送るのは人が見ていないときだけ */
+  KINDS.forEach((k) => {
+    ok(UI.endAutoMs(k, true, 520) > 0, k + '：おまかせなら自動で送る');
+    ok(UI.endAutoMs(k, false, 0) > 0, k + '：最速なら自動で送る');
+  });
+}
+
+{
   /* --- 立ち絵を出す側。**カットイン（say）と同じ式**でなければならない
          ——同じ人が会話と締めで左右に飛ぶ（agari-spec.md §10） --- */
   eq(UI.endSide(0), 'left', '自分は左');

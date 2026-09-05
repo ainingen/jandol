@@ -729,6 +729,17 @@ body.inMatch #endband.on{opacity:1;translate:0 0}
 body.inMatch.four #app.bust-left #endband{padding-left:150px}
 body.inMatch.four #app.bust-right #endband{padding-right:150px}
 
+/* 「タップで次へ」。**帯のどこを叩いても送れる**ので、これは案内であって釦ではない
+   ——横持ちのスマホで小さな釦を狙わせない。演出中は出さない（waitEnd が出す） */
+body.inMatch .ebNext{
+  position:absolute;right:12px;bottom:6px;font-size:10.5px;letter-spacing:.06em;
+  color:#a99ec6;pointer-events:none;animation:ebBlink 1.6s ease-in-out infinite;
+}
+body.inMatch .ebNext[hidden]{display:none}
+@keyframes ebBlink{0%,100%{opacity:.45}50%{opacity:1}}
+@media(prefers-reduced-motion:reduce){body.inMatch .ebNext{animation:none;opacity:.8}}
+body.inMatch:not(.four) .ebNext{right:12px;bottom:4px}
+
 body.inMatch .ebLeft{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;justify-content:center;gap:4px}
 body.inMatch .ebRight{
   flex:0 0 auto;width:196px;display:flex;flex-direction:column;

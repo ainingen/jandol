@@ -87,6 +87,8 @@ const Match = (() => {
           <div class="ebScore"></div>
           <div class="ebYaku"></div>
         </div>
+        <!-- 演出が終わってから出す。**押せると分からなければ、ユーザーは待つだけになる** -->
+        <div class="ebNext" hidden>タップで次へ</div>
       </div>
       <!-- 冷たくする膜（§4）。filter を使わない——#felt の 3D が潰れる -->
       <div class="endTint" hidden></div>
