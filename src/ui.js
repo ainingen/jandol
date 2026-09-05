@@ -1109,4 +1109,5 @@ UI.gameOver = async function (rank) { this._lastRank = rank; };
 /* この先（ストーリー進行・タイトル画面の配線）は『忍雀』のものだったので外した。
    対局の開始と後始末は match.js が受け持つ。 */
 
-if (typeof module !== 'undefined') module.exports = { UI, tileHTML, jpName };
+/* meldHTML は tools/test-match.js が分岐を固定している（DOMに触らない純関数） */
+if (typeof module !== 'undefined') module.exports = { UI, tileHTML, meldHTML, jpName };

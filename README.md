@@ -100,6 +100,7 @@ build.py            index.html を組み立てる（約13KB。CSS/JSは src/ の
 tools/make-font.py  表紙の丸ゴシックを作り直す
 tools/make-sfx.py   控えの discard.wav だけを合成して書く（鳴る12本は書かない）
 tools/prep-sfx.py   生成した音源（audio_raw/）を切り出して整形し audio/ に書く（鳴る12本）
+tools/test-match.js  対局まわりの純関数テスト（副露の横倒し・締めの四分岐・ルールの既定）
 tools/check-sound.js 打牌の鳴らし分けをブラウザで確かめる（音源を差し替えたら回す）
 tools/drive-match.js 対局画面をブラウザで回す。配牌・鳴き・河3段・終局を撮り、--video で録画
 
