@@ -254,6 +254,13 @@ body.inMatch #toast::after{
   background-image:radial-gradient(circle,#fff 1.4px,transparent 1.6px);background-size:9px 9px;
 }
 body.inMatch #toast.call{color:#fff;background:var(--cool)}
+/* リーチの帯だけ白。**A-2 で「白＝リーチ」に決めた**（席プレートの枠・立の札・供託の棒）ので、
+   帯だけ別の色だとリーチを表す色が二つになる。白地なので字は暗く、網点も暗くする */
+body.inMatch #toast.riichi{
+  color:var(--line);background:#fff;-webkit-text-stroke:0;
+  text-shadow:2px 3px 0 rgba(0,0,0,.18);
+}
+body.inMatch #toast.riichi::after{background-image:radial-gradient(circle,rgba(0,0,0,.5) 1.4px,transparent 1.6px)}
 body.inMatch #toast.win{color:#fff;background:var(--sun)}
 body.inMatch #overlay{background:rgba(12,8,23,.86)}
 body.inMatch .panel{background:var(--plate);border:0;box-shadow:0 0 0 3px var(--line),0 0 0 6px var(--rail),0 8px 0 rgba(0,0,0,.4);color:#e9e0f2}
@@ -497,7 +504,11 @@ body.inMatch.four .opp .melds .tile::before{
 body.inMatch.four .backs .tile{
   width:calc(var(--rw)*.76);height:calc(var(--rw)*1.1);
   transform:rotateX(-74deg);transform-origin:bottom center;
-  transform-style:preserve-3d;--th:calc(var(--rw)*.52);
+  /* 厚み。**実物の麻雀牌は 幅21mm : 奥行17mm ＝ 0.81 だが、それより薄くしてある。**
+     画面に出ているのは真上からの寸法ではなく、36度傾けた卓を見下ろした投影なので、
+     幾何学的に正しい値が絵として正しいとは限らない（0.8 まで上げると牌が縦に伸びて
+     積み木に見えた）。**0.5/0.6/0.7/0.8 を並べて目で決めた値。**戻すときも目で決めること */
+  transform-style:preserve-3d;--th:calc(var(--rw)*.7);
 }
 body.inMatch.four .backs .tile::before{
   bottom:100%;transform-origin:center bottom;transform:rotateX(90deg);
@@ -505,7 +516,8 @@ body.inMatch.four .backs .tile::before{
 }
 /* 寝ている牌（河と副露）：手前の面が卓へ落ちる。面は象牙、胴はオレンジ */
 body.inMatch.four .river .tile,body.inMatch.four .opp .melds .tile{
-  transform-style:preserve-3d;--th:calc(var(--rw)*.43);
+  /* 寝ている牌は立っている牌の 0.83 倍（上の 0.7 と対。見下ろす角度が違うぶん薄い） */
+  transform-style:preserve-3d;--th:calc(var(--rw)*.581);
 }
 body.inMatch.four .river .tile::before,body.inMatch.four .opp .melds .tile::before{
   top:100%;transform-origin:center top;transform:rotateX(-90deg);

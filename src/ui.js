@@ -680,7 +680,10 @@ const UI = {
   async event(text, ms, who) {
     const t = $('#toast');
     t.textContent = text;
-    t.className = 'show' + (/ポン|チー|カン|リーチ|暗槓|加槓/.test(text) ? ' call' : '');
+    /* 帯の色。**リーチは鳴きと分ける**——白はこの作品で「リーチ」を表す色
+       （席プレートの枠・立の札・供託の棒）なので、帯だけ別の色だと二つになる */
+    t.className = 'show' + (/リーチ/.test(text) ? ' riichi'
+      : (/ポン|チー|カン|暗槓|加槓/.test(text) ? ' call' : ''));
     /* game.js が「誰が・何を」を添えてくる。添えて来ない呼び出しもあるので、
        あるときだけ喋らせる */
     if (who && who.kind) this.say(who.seat, who.kind);
