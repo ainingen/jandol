@@ -41,7 +41,9 @@ body.inMatch{
 }
 /* 卓を包む箱（match.js が作る .matchHost）。#matchRoot は flex で中央寄せしているので、
    幅を言わないと中身なりに縮む（手牌の幅＝528px になって左右の帯が消えた） */
-body.inMatch .matchHost{width:100%;height:100%;min-height:0;display:flex;justify-content:center}
+/* --vvh は match.js が visualViewport.height から入れる。**100dvh に頼らない**
+   ——実機（iOS Safari）で上下バーが 56px 食っていて、そのぶん卓が小さく計算されていた */
+body.inMatch .matchHost{width:100%;height:var(--vvh,100%);min-height:0;display:flex;justify-content:center}
 body.inMatch #app{position:relative;overflow:hidden;isolation:isolate}
 body.inMatch #app::before{
   content:"";position:absolute;left:50%;top:38%;width:1200px;height:1200px;
@@ -440,9 +442,18 @@ body.inMatch.four #table{
 body.inMatch.four #table::before,body.inMatch.four #table::after{display:none}
 
 /* 卓面 */
+/* **卓面は正方形でなくてよい。**画面は横に2.5倍長いのに正方形を置いていたので、
+   幅の28%しか使わず、フェルトの下半分が緑のまま空いていた。
+   `--side` が高さ、`--side-w` が幅（どちらも fitFour が測って入れる）。
+   `--felt-y` は下へのずらし——上は対面のプレートで止まり、下は余るので、
+   余っているぶん下げると卓を大きくできる。
+   **傾き（rotateX(36deg)）は増やさない**——倒すほど奥の河が小さくなり、
+   対面の河が読めなくなる。読みたいのは全員の河なので逆方向 */
 body.inMatch.four #felt{
-  position:absolute;left:50%;top:50%;width:var(--side);height:var(--side);
-  transform:translate(-50%,-50%) rotateX(36deg);transform-style:preserve-3d;
+  position:absolute;left:50%;top:50%;
+  width:var(--side-w,var(--side));height:var(--side);
+  transform:translate(-50%,calc(-50% + var(--felt-y,0px))) rotateX(36deg);
+  transform-style:preserve-3d;
 }
 body.inMatch.four #felt::before{
   content:"";position:absolute;inset:0;border-radius:calc(var(--side)*.052);
@@ -463,9 +474,9 @@ body.inMatch.four #center{position:absolute;inset:0;display:block;transform-styl
    内側の端が固定されるので、1段から3段へ伸びても局の途中で動かない */
 body.inMatch.four .rslot{position:absolute;left:50%;top:50%;width:0;height:0;transform-style:preserve-3d}
 body.inMatch.four .rs-bottom{transform:rotate(0deg)   translateY(calc(var(--side)*.186))}
-body.inMatch.four .rs-right {transform:rotate(-90deg) translateY(calc(var(--side)*.186))}
+body.inMatch.four .rs-right {transform:rotate(-90deg) translateY(calc(var(--side-w,var(--side))*.186))}
 body.inMatch.four .rs-top   {transform:rotate(180deg) translateY(calc(var(--side)*.186))}
-body.inMatch.four .rs-left  {transform:rotate(90deg)  translateY(calc(var(--side)*.186))}
+body.inMatch.four .rs-left  {transform:rotate(90deg)  translateY(calc(var(--side-w,var(--side))*.186))}
 body.inMatch.four .river,body.inMatch.four .river.side{
   position:absolute;left:50%;top:0;transform:translateX(-50%);
   display:grid;grid-template-columns:repeat(6,var(--rw));grid-auto-rows:calc(var(--rw)*1.19);gap:2px;
@@ -489,8 +500,8 @@ body.inMatch.four .opp,body.inMatch.four .opp.vert{
    残っていると 13 枚が 61px の箱からはみ出し、中心が片側へ寄る（実際に寄った） */
 body.inMatch.four #left,body.inMatch.four #right,body.inMatch.four #top{max-width:none;width:max-content}
 body.inMatch.four #top  {transform:translate(-50%,-50%) rotate(180deg) translateY(calc(var(--side)*.413))}
-body.inMatch.four #right{transform:translate(-50%,-50%) rotate(-90deg) translateY(calc(var(--side)*.413))}
-body.inMatch.four #left {transform:translate(-50%,-50%) rotate(90deg)  translateY(calc(var(--side)*.413))}
+body.inMatch.four #right{transform:translate(-50%,-50%) rotate(-90deg) translateY(calc(var(--side-w,var(--side))*.413))}
+body.inMatch.four #left {transform:translate(-50%,-50%) rotate(90deg)  translateY(calc(var(--side-w,var(--side))*.413))}
 body.inMatch.four .backs,body.inMatch.four .backs.vert{
   display:flex;flex-direction:row;flex-wrap:nowrap;gap:1.5px;max-height:none;transform-style:preserve-3d;
 }
@@ -548,12 +559,16 @@ body.inMatch.four .opp .waits{position:absolute;bottom:100%;left:0;font-size:10p
    大きすぎて河が内側に押し込まれ、河の牌が17pxしかなかった。
    **自風の丸も内側の縁へ入れた**（下の .w-*）。外に出していたから河とぶつかり、
    `translateZ` で描画順を入れ替えて逃げていた——衝突そのものが無くなったので外した */
+/* 卓が横長になったので、板も横長でよい。**幅は --side-w、高さは --side から取る。**
+   高さを詰めるのは、上下の自風が上下の河にいちばん近いから
+   （実機で 6.7px しか空いていなかった） */
 body.inMatch.four #info{
-  position:absolute;left:50%;top:50%;width:calc(var(--side)*.24);height:calc(var(--side)*.24);
+  position:absolute;left:50%;top:50%;
+  width:calc(var(--side-w,var(--side))*.19);height:calc(var(--side)*.24);
   transform:translate(-50%,-50%);margin:0;min-width:0;max-width:none;
-  /* 左右の自風が縁に掛かるぶん、中身を内側へ寄せる */
-  padding:0 calc(var(--side)*.028);box-sizing:border-box;
-  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;
+  /* 自風が四辺の縁に掛かるぶん、中身を内側へ寄せる。**上下も要る**
+     ——入れないと局名に東の丸が、ドラに西の丸が乗る（実際に乗った） */
+  padding:calc(var(--side)*.032) calc(var(--side-w,var(--side))*.022);box-sizing:border-box;
   display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;
   font-size:calc(var(--side)*.026);line-height:1.3;
 }
@@ -577,16 +592,24 @@ body.inMatch.four .riichi-stick{width:calc(var(--side)*.08);height:3px}
 body.inMatch.four .wind{
   width:calc(var(--side)*.054);height:calc(var(--side)*.054);font-size:calc(var(--side)*.031);
 }
-body.inMatch.four .w-b{left:50%;bottom:calc(var(--side)*-.027);transform:translateX(-50%)}
-body.inMatch.four .w-t{left:50%;top:calc(var(--side)*-.027);transform:translateX(-50%)}
-body.inMatch.four .w-r{right:calc(var(--side)*-.027);top:50%;transform:translateY(-50%)}
-body.inMatch.four .w-l{left:calc(var(--side)*-.027);top:50%;transform:translateY(-50%)}
+body.inMatch.four .w-b{left:50%;bottom:calc(var(--side)*-.02);transform:translateX(-50%)}
+body.inMatch.four .w-t{left:50%;top:calc(var(--side)*-.02);transform:translateX(-50%)}
+body.inMatch.four .w-r{right:calc(var(--side)*-.02);top:50%;transform:translateY(-50%)}
+body.inMatch.four .w-l{left:calc(var(--side)*-.02);top:50%;transform:translateY(-50%)}
 
 /* 席プレート。卓面の外、四辺に */
 body.inMatch.four .seat{position:absolute}
 body.inMatch.four .s-left{left:14px;top:50%;transform:translateY(-50%)}
 body.inMatch.four .s-right{right:14px;top:50%;transform:translateY(-50%)}
-body.inMatch.four .s-top{left:50%;top:8px;transform:translateX(-50%)}
+/* 対面のプレートだけ小さくする。**卓に重ねない**ためには卓面がこれより下から
+   始まる必要があり、ふつうの高さ（44px）だとそのぶん卓が縮む。
+   左右のプレートは画面の余った列にいるので、そのままでよい */
+body.inMatch.four .s-top{left:50%;top:4px;transform:translateX(-50%);padding:2px 9px 2px 3px;gap:5px}
+body.inMatch.four .s-top .bust{width:24px;height:24px}
+body.inMatch.four .s-top .kz{width:16px;height:16px;font-size:10px}
+body.inMatch.four .s-top .nm{font-size:10px}
+body.inMatch.four .s-top .pt{font-size:13px}
+body.inMatch.four .s-top .txt{flex-direction:row;align-items:baseline;gap:6px}
 /* 締めのあいだは帯のぶん持ち上げる。--eb-lift は showEnd が実測して入れる
    （帯の高さ − #myarea の高さ）。決め打ちにすると端末で食われる */
 body.inMatch.four .s-bottom{left:14px;bottom:calc(8px + var(--eb-lift,0px));transition:bottom .28s ease}
@@ -595,11 +618,15 @@ body.inMatch.four .s-left.talking,body.inMatch.four .s-right.talking{transform:t
 body.inMatch.four .s-top.talking{transform:translateX(-50%) scale(1.07)}
 
 /* 手牌の帯。釦は右、補助は左、副露は右下に。手牌は中央 */
+/* 手牌の帯。**牌は指で押せる「幅」が要るだけで、高さはそこまで要らない。**
+   実機（844×334）で 89.7px＝画面の 26.9% を使っていた。削ったぶんは卓に回る
+   ——余白 28px → 12px、牌の高さ 1.36倍 → 1.2倍。**幅（--tw）は変えない** */
 body.inMatch.four #myarea{
-  flex:none;position:relative;padding:10px 0 18px;
+  flex:none;position:relative;padding:4px 0 8px;
   display:flex;flex-direction:column;align-items:center;justify-content:flex-end;
 }
-body.inMatch.four #handrow{min-height:calc(var(--tw)*1.36);align-items:flex-end}
+body.inMatch.four #handrow{min-height:calc(var(--tw)*1.2);align-items:flex-end}
+body.inMatch.four #handrow .tile.big{height:calc(var(--tw)*1.2)}
 body.inMatch.four #melds-row{
   position:absolute;right:120px;bottom:12px;margin:0;gap:6px;
 }

@@ -190,28 +190,65 @@ const Match = (() => {
     const maxW = W - 24;
     const botPad = 4;
 
+    /* **卓面を卓に重ねない。**対面のプレートの下から始める（プレート側を
+       小さくしてあるので、これでも卓は縮まない）。実機で「名前が牌にかぶる」が出た */
     const fits = (side) => {
       body.style.setProperty('--side', Math.round(side) + 'px');
       const b = layoutBox(felt, t);
       if (b.width > maxW) return false;
       if (b.bottom < botPad) return false;
-      if (b.top < 0) return false;
-      /* 対面の手牌の上端。まだ描かれていなければ卓面の縁で代用する */
-      const top = backs && backs.getBoundingClientRect().height
-        ? layoutBox(backs, t).top : b.top;
-      return top >= plateBottom - 6;
+      return b.top >= plateBottom;
     };
 
-    /* **卓面を上へずらして稼ぐことは考えなくてよい。**下の縁が先に詰まるので、
-       上に余白があってもそこは使えない（五つの画面幅で測って、
-       上の余りは常に対面の手牌の側で埋まっていた）。二分探索だけで足りる */
-    let lo = 120, hi = Math.min(maxW, H * 2.4);
-    if (fits(hi)) return;
-    for (let i = 0; i < 16; i++) {
-      const mid = (lo + hi) / 2;
-      if (fits(mid)) lo = mid; else hi = mid;
+    /* 高さを決める。**下だけが余ることがある**（実機 844×334 で 17px）ので、
+       余っているぶん卓面を下げてから探し直す。下げれば上の縛りが緩む */
+    let side = 120;
+    const search = () => {
+      let lo = 120, hi = Math.min(maxW, H * 2.4);
+      if (fits(hi)) { side = hi; return; }
+      for (let i = 0; i < 16; i++) {
+        const mid = (lo + hi) / 2;
+        if (fits(mid)) lo = mid; else hi = mid;
+      }
+      side = Math.floor(lo);
+      body.style.setProperty('--side', side + 'px');
+    };
+    body.style.setProperty('--felt-y', '0px');
+    let shift = 0;
+    for (let pass = 0; pass < 4; pass++) {
+      search();
+      const slack = layoutBox(felt, t).bottom - botPad;
+      if (slack <= 1) break;
+      shift += slack / 2;                     // 中心を下げるので、効くのは半分
+      body.style.setProperty('--felt-y', Math.round(shift) + 'px');
     }
-    body.style.setProperty('--side', Math.floor(lo) + 'px');
+    search();
+
+    /* 幅を決める。**正方形にしない。**画面は横に2.5倍長いので、正方形だと
+       幅の3割しか使わずフェルトの下半分が緑のまま空く。
+       左右の席プレートに掛からないところまで広げる（測って決める） */
+    const pl = document.getElementById('plate-left');
+    const pr = document.getElementById('plate-right');
+    const room = () => {
+      const tr = t.getBoundingClientRect();
+      const l = pl ? pl.getBoundingClientRect().right + 8 : tr.left + 12;
+      const r = pr ? pr.getBoundingClientRect().left - 8 : tr.right - 12;
+      return { l, r };
+    };
+    const wideFits = (w) => {
+      body.style.setProperty('--side-w', Math.round(w) + 'px');
+      const f = felt.getBoundingClientRect();
+      const g = room();
+      return f.left >= g.l && f.right <= g.r;
+    };
+    let wlo = side, whi = side * 2.2;         // 極端に横長にはしない
+    if (!wideFits(whi)) {
+      for (let i = 0; i < 14; i++) {
+        const mid = (wlo + whi) / 2;
+        if (wideFits(mid)) wlo = mid; else whi = mid;
+      }
+      body.style.setProperty('--side-w', Math.floor(wlo) + 'px');
+    }
   }
 
   /* 向きが変わると卓の中身の高さが変わる。
@@ -261,7 +298,19 @@ const Match = (() => {
     if (t.scrollTop > max) t.scrollTop = max;
   }
 
+  /* **画面の高さは `visualViewport.height` で取る。**`innerHeight` は
+     iOS Safari の上下バーを含んだ値を返すことがあり、実機で 390 と答えるのに
+     実際に見えているのは 334（バーが 56px 食っている）。**その 56px ぶん、
+     卓が小さく計算される。**しかもスクロールでバーが出入りするので、
+     高さは対局中に変わる——`visualViewport` の resize / scroll も購読する */
+  function applyViewportHeight() {
+    const vv = window.visualViewport;
+    const h = vv ? vv.height : window.innerHeight;
+    if (h) document.body.style.setProperty('--vvh', Math.round(h) + 'px');
+  }
+
   function onOrientationChange() {
+    applyViewportHeight();
     updateRotate();
     /* 回り終わって寸法が確定してからもう一度戻す。
        端末によっては change の時点でまだ古い寸法が返る */
@@ -377,6 +426,11 @@ const Match = (() => {
     updateRotate();
     window.addEventListener('resize', onOrientationChange);
     if (screen.orientation) screen.orientation.addEventListener('change', onOrientationChange);
+    if (window.visualViewport) {
+      window.visualViewport.addEventListener('resize', onOrientationChange);
+      window.visualViewport.addEventListener('scroll', onOrientationChange);
+    }
+    applyViewportHeight();
 
     /* 局が変わると河が空になり、卓の中身が縮む。
        そのときも取り残されたスクロールを詰める */
@@ -400,6 +454,11 @@ const Match = (() => {
     document.body.classList.remove('tableScroll', 'four', 'rotated', 'canRotate');
     window.removeEventListener('resize', onOrientationChange);
     if (screen.orientation) screen.orientation.removeEventListener('change', onOrientationChange);
+    if (window.visualViewport) {
+      window.visualViewport.removeEventListener('resize', onOrientationChange);
+      window.visualViewport.removeEventListener('scroll', onOrientationChange);
+    }
+    document.body.style.removeProperty('--vvh');
     document.body.classList.remove('needRotate');
     releaseLock();
     host.remove();
