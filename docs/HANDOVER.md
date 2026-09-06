@@ -705,6 +705,18 @@ grep -rn "\.クラス名" src/*.css
 いまのカットインは `.cutin .card` と入れ子にして `padding:0;border:0` で
 打ち消してある。**これは対症で、規則は上のほう**——次に足すものには接頭辞を付ける。
 
+### ブランチの削除は Claude Code の環境からできない（2026年9月6日）
+
+`git push origin --delete <branch>` が **HTTP 403** で弾かれる。
+**普通の push は通る**ので、資格情報にブランチ削除の権限が無いということ。
+GitHub の MCP にも削除の口は無い（`create_branch` はあるが `delete_branch` は無い）。
+
+**手元か GitHub の画面から消すこと。**Branches の一覧でゴミ箱を押すだけ。
+
+    git push origin --delete claude/xxxx claude/yyyy
+
+**403 を見て資格情報が壊れたと思わないこと**——通常の push は同じ資格情報で通っている。
+
 ### iOS Safari は JavaScript を強く握る（2026年9月5日・重大）
 
 **`git pull` して再読み込みしても、古いコードが動き続ける。**
