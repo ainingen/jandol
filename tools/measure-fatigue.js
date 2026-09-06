@@ -150,7 +150,10 @@ async function measureReal(cond) {
   const t0 = Date.now();
   try {
     for (let i = 0; i < GAMES; i++) {
-      const g = new Game(io, { spectate: true, length: LENGTH });
+      /* 起家は 0 に固定する。段1（docs/design/match/spec.md §1）で
+         Game が毎回振るようになったが、ここは種を固定して前後を比べる道具なので、
+         乱数を一つ余分に引いて数字が動くことを避ける */
+      const g = new Game(io, { spectate: true, length: LENGTH, startDealer: 0 });
       g.players.forEach((p, k) => {
         p.ai = Tournament.paramsOf(table[k], STYLES);
         if (k === 0 && skillOverride != null) p.ai = Object.assign({}, p.ai, { skill: skillOverride });

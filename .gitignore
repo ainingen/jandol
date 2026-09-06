@@ -1,2 +1,9 @@
 # make-font.py の作業場（元のTTFと文字リスト。数MBある）
 tools/_fontwork/
+
+# 効果音の素材（生成したままの WAV）。**コミットするのは整形後の audio/ だけ。**
+# 切り出しと整形は tools/prep-sfx.py が回す。出どころは audio/LICENSE.txt が正
+audio_raw/
+
+# tools/ を import したときに出る
+__pycache__/

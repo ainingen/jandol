@@ -5,10 +5,47 @@
 const KAZE = ['東', '南', '西', '北'];
 const SEAT_LABEL = ['自分', '下家', '対面', '上家'];
 
+/* ローカルルール（`docs/BACKLOG.md`「ローカルルール（卓ごとのルール差）」）。
+   **いまは口を開けただけで、分岐は一つも入っていない。**
+   `new Game(io, { rules })` で卓ごとに差し替えられる形にしてある。
+
+   なぜ先に置くか。あとから足すと「ルールをどこから読むか」を全ファイルで探すことになり、
+   雀荘や大会がルールを持った瞬間に `state` へルール設定が乗るので、
+   **前方互換の形（浅いマージ）を先に作っておかないと既存のセーブを壊す。**
+
+   **ここに書いてあるのは「理想の既定値」ではなく、いまの `engine.js` の実際の振る舞い。**
+   分岐を入れるときは、まず既定のまま通ることを確かめてから片方ずつ倒すこと。
+
+   - `kuitan` … `engine.js` の断幺九は `menzen` を見ていない（＝喰いタンあり）
+   - `atozuke` … 後付けを制限していない
+   - `aka` … `engine.js` の `RED_IDS`（16 / 52 / 88）で各色1枚の3枚
+   - `ippatsu` / `ura` … `p.ippatsu` と `uraIndicators` があり、どちらも効いている
+   - `wareme` … 割れ目は実装していない
+   - `tobi` … `nextKyoku` が `score < 0` で終了させている（ハコ下で終わる）
+   - `uma` … 順位点は持っていない。`rankings()` は素点で並べるだけ
+
+   **個別のトグルを増やさないこと**——組み合わせが数百になると AI の押し引きを
+   検証できない。3〜4種類の「卓」として束ねる（BACKLOG の設計方針） */
+const RULES_DEFAULT = {
+  name: '標準ルール',
+  kuitan: true,
+  atozuke: true,
+  aka: 3,
+  ippatsu: true,
+  ura: true,
+  wareme: false,
+  tobi: true,
+  uma: null,
+};
+
 class Game {
   constructor(io, opts = {}) {
     this.io = io;
     this.opts = Object.assign({ length: 'tonpuu', startScore: 25000 }, opts);
+    /* 卓のルール。**浅いマージ**なので、渡されなかったキーは既定のまま残る
+       ——古いセーブ（`rules` を持たない）も、部分的にしか書いていない将来のセーブも、
+       どちらも既定に落ちる。`undefined` も `null` もここで吸う */
+    this.rules = Object.assign({}, RULES_DEFAULT, this.opts.rules || {});
     this.players = [0, 1, 2, 3].map((i) => ({
       seat: i, isAI: opts.spectate ? true : i !== 0, score: this.opts.startScore,
       hand: [], melds: [], discards: [], riichi: false, riichiTurn: null,
@@ -16,7 +53,18 @@ class Game {
       jikaze: 27, name: (opts.foes && i > 0) ? opts.foes[i - 1] : SEAT_LABEL[i],
     }));
     this.bakaze = 27;
-    this.dealer = 0;
+    /* 起家。指定が無ければ毎回振り直す。席順（誰が下家か）は
+       makeTables() が既に混ぜているので、ここで親を回せば
+       「自分が必ず東家」だけが消える。
+       opts.startDealer はリプレイ検証と席決め演出のために残してある
+       （tools/measure-fatigue.js は 0 を渡して、測った数字を動かさない） */
+    this.dealer = (opts.startDealer !== undefined)
+      ? ((opts.startDealer % 4) + 4) % 4
+      : Math.floor(Math.random() * 4);
+    this.startDealer = this.dealer;
+    /* 保険。実際の自風は deal() が入れるが、親が0でなくなると
+       描画が先に走ったとき「東が二人いる」瞬間が出る */
+    for (const p of this.players) p.jikaze = 27 + ((p.seat - this.dealer + 4) % 4);
     this.kyoku = 1;
     this.honba = 0;
     this.riichiSticks = 0;
@@ -601,11 +649,20 @@ class Game {
       if (isTenpai) tenpai.push(p);
     }
     const n = tenpai.length;
+    /* 聴牌料。**誰がいくら動いたかを payments に載せて渡す**（agari-spec.md §10）。
+       io 側で 3000/n を組み直すと、同じ規則が二か所に散る。
+       和了（finishWin）と同じ形にしてあるので、点棒を飛ばす側は分けなくてよい */
+    const payments = [];
     if (n > 0 && n < 4) {
       const gain = 3000 / n, loss = 3000 / (4 - n);
-      for (const p of this.players) p.score += p.tenpaiAtDraw ? gain : -loss;
+      for (const p of this.players) {
+        const amt = p.tenpaiAtDraw ? gain : -loss;
+        p.score += amt;
+        payments.push({ seat: p.seat, amount: amt });
+      }
     }
-    await this.io.result({ type: 'draw', reason: '流局', tenpai: this.players.map((p) => p.tenpaiAtDraw) });
+    await this.io.result({ type: 'draw', reason: '流局', payments,
+      tenpai: this.players.map((p) => p.tenpaiAtDraw) });
     const dealerTenpai = this.players[this.dealer].tenpaiAtDraw;
     return this.nextKyoku(dealerTenpai, true);
   }
@@ -644,4 +701,4 @@ class Game {
       .sort((a, b) => b.score - a.score);
   }
 }
-if (typeof module !== 'undefined') module.exports = { Game, KAZE, SEAT_LABEL };
+if (typeof module !== 'undefined') module.exports = { Game, KAZE, SEAT_LABEL, RULES_DEFAULT };

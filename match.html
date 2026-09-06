@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>対局（単体）</title>
+<link rel="stylesheet" href="src/style.css">
+<link rel="stylesheet" href="src/theme.css">
+<link rel="stylesheet" href="src/maru.css">
+<link rel="stylesheet" href="src/match.css">
+<style>
+  /* このページ専用。shell.html が対局中にしていることを最小限で再現する */
+  html,body{height:100%}
+  body{display:flex;flex-direction:column;align-items:center;height:100dvh;overflow:hidden}
+  #matchRoot{display:flex;justify-content:center;width:100%}
+  body.inMatch #matchRoot{flex:1;min-height:0}
+  #matchRoot:empty{display:none}
+  body.inMatch .dbg{display:none}
+  .dbg{max-width:760px;margin:0 auto;padding:12px 8px 30px;display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+  .dbg button{
+    font-size:12px;padding:6px 12px;border-radius:3px;cursor:pointer;
+    border:1px solid var(--gold-dim);background:var(--felt);color:var(--ivory);
+  }
+  .dbg span,.dbg label{font-size:11px;color:var(--muted)}
+  .dbg select{font-size:12px;background:#111;color:var(--ivory);border:1px solid var(--gold-dim);border-radius:3px;padding:3px 6px}
+</style>
+</head>
+<body>
+
+<div id="matchRoot"></div>
+
+<!-- 動作確認用。対局画面だけを開く。クエリで自動化できる：
+       ?auto=1        おまかせ（最初から CPU が打つ）
+       ?speed=200     進む速さ（0 = 最速）
+       ?length=ikkyoku|tonpuu|hanchan
+       ?seed=123      Math.random を固定する（同じ並びを何度も見るため）
+       ?dealer=2      起家を固定する（Game の opts.startDealer）
+       ?sfx=0.5       効果音の音量（0 で無音）
+       ?discard=double 打牌を二度押しにする（既定は一度押し）
+       ?start=1       開いた瞬間に始める（撮影用） -->
+<div class="dbg">
+  <span>対局の単体ページ：</span>
+  <label>速さ <select id="dbgSpeed">
+    <option value="900">ゆっくり</option><option value="520" selected>ふつう</option>
+    <option value="200">速い</option><option value="0">最速</option></select></label>
+  <label>長さ <select id="dbgLen">
+    <option value="ikkyoku">一局</option><option value="tonpuu" selected>東風</option>
+    <option value="hanchan">半荘</option></select></label>
+  <button id="dbgPlay">自分で打つ</button>
+  <button id="dbgAuto">おまかせで流す</button>
+</div>
+
+<script src="src/engine.js"></script>
+<script src="src/ai.js"></script>
+<script src="src/game.js"></script>
+<script src="src/sound.js"></script>
+<script src="src/ui.js"></script>
+<script src="src/match.js"></script>
+<script src="src/characters.js"></script>
+<script src="src/tournament.js"></script>
+<script src="src/serifu.js"></script>
+<script>
+(function () {
+  'use strict';
+  const q = new URLSearchParams(location.search);
+  const num = (k, d) => (q.has(k) && q.get(k) !== '' ? Number(q.get(k)) : d);
+
+  /* 種を固定できる。線形合同法（jansou.js と同じ式） */
+  if (q.has('seed')) {
+    let s = (Number(q.get('seed')) >>> 0) || 1;
+    Math.random = function () {
+      s = (Math.imul(s, 1664525) + 1013904223) >>> 0;
+      return s / 4294967296;
+    };
+  }
+
+  /* 卓の四人。自分（id 0）と、雀ドルから3人。種があれば同じ顔ぶれになる */
+  function pickSeats() {
+    const me = Object.assign({}, PLAYER, { face: 'p01' });
+    const pool = JANDOLS.slice();
+    const seats = [];
+    while (seats.length < 3) {
+      const i = Math.floor(Math.random() * pool.length);
+      seats.push(pool.splice(i, 1)[0]);
+    }
+    /* 自分の席もばらす（大会の卓割りと同じく、どこに座るか分からない） */
+    const at = Math.floor(Math.random() * 4);
+    seats.splice(at, 0, me);
+    return seats;
+  }
+
+  async function start(auto, speed, length) {
+    Sound.init(); Sound.volume(num('sfx', 1)); Sound.load();
+    document.body.classList.add('inMatch');
+    const opts = { title: '単体の対局', speed, length, showHints: true, discardMode: q.get('discard') || 'single' };
+    if (q.has('dealer')) opts.startDealer = Number(q.get('dealer'));
+    const seats = pickSeats();
+    const p = Match.play(document.getElementById('matchRoot'), seats, opts);
+    if (auto) {
+      /* おまかせ。最初の入力待ちを解いてから CPU に任せる */
+      const tick = setInterval(() => {
+        if (UI.game) { UI.giveUp(speed); clearInterval(tick); }
+      }, 50);
+    }
+    const rank = await p;
+    document.body.classList.remove('inMatch');
+    window.lastRank = rank;
+    console.log('rank', rank.map((r) => `${r.place} ${r.chara.name}`).join(' / '));
+  }
+
+  document.getElementById('dbgPlay').addEventListener('click', () => {
+    start(false, Number(dbgSpeed.value), dbgLen.value);
+  });
+  document.getElementById('dbgAuto').addEventListener('click', () => {
+    start(true, Number(dbgSpeed.value), dbgLen.value);
+  });
+
+  window.startMatch = start;
+  if (q.get('start') === '1') {
+    start(q.get('auto') === '1', num('speed', 520), q.get('length') || 'tonpuu');
+  }
+})();
+</script>
+</body>
+</html>

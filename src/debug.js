@@ -154,7 +154,157 @@ const JandolDebug = (() => {
     });
   }
 
-  return { SAVE_KEY, PRESETS, build, apply, clear, panel };
+  /* ============================================================
+     音の確認（debug.html の「音」の区画）
+
+     **必ず sound.js を経由して鳴らす。**`<audio>` で直に鳴らすと
+     `playbackRate` の揺らぎも音量設定も通らないので、
+     ゲームで実際に聞こえる音とは別のものを聴くことになる。
+
+     見たいのは三つ：
+       ・discard1〜4 を並べて聴き比べる（音量が揃っているか）
+       ・打牌を連打して、同じ音が二回続かないこと
+       ・audio/ の全ファイルが読めていること
+     ============================================================ */
+
+  /* ui.js と同じ揺らぎ。同じ音が17回続くと機械音に聞こえるので ±3% 振る */
+  const jitter = () => 1 + (Math.random() * 2 - 1) * 0.03;
+
+  /* audio/ にある全ファイル。**Sound の FILES から組む**ので、
+     鳴らし分けを足したらこの一覧にも自動で出る。
+     控え（discard.wav）は FILES に無いが audio/ にはあるので、明示して足す */
+  function audioFiles() {
+    const out = [];
+    (typeof Sound === 'undefined' ? [] : Sound.NAMES).forEach((name) => {
+      const files = (Sound.FILES && Sound.FILES[name]) || [name];
+      files.forEach((f) => out.push({ file: f, name: name, many: files.length > 1 }));
+      /* 複数持つ名前は、同名の一本が「一本も読めなかったとき」の控えとして残っている */
+      if (files.length > 1 && files.indexOf(name) < 0) {
+        out.push({ file: name, name: name, spare: true });
+      }
+    });
+    return out;
+  }
+
+  function soundPanel(host) {
+    if (typeof Sound === 'undefined') {
+      host.textContent = 'sound.js が読まれていない（debug.html の script を確かめること）';
+      return;
+    }
+    const el = (tag, cls, text) => {
+      const e = document.createElement(tag);
+      if (cls) e.className = cls;
+      if (text !== undefined) e.textContent = text;
+      return e;
+    };
+    let shake = true;               // ゲームと同じ揺らぎを掛けるか
+    const heard = [];               // 鳴らした順（同じ音が続かないのを目でも見る）
+
+    /* ---- 打牌の連打 ---- */
+    const mash = el('button', 'dbgBig');
+    mash.type = 'button';
+    mash.innerHTML = '<b>打牌（連打できる）</b>'
+      + '<i>Sound.play(\'discard\') を一回。四本から選ばれる。'
+      + '<b>直前と同じものは続けて出ない</b>——下の並びで確かめられる</i>';
+
+    const log = el('div', 'sfxLog', '（まだ鳴らしていない）');
+    const say = (file) => {
+      if (file) heard.unshift(file);
+      if (heard.length > 12) heard.length = 12;
+      log.textContent = heard.length ? '鳴った順（新しい順）： ' + heard.join(' ← ') : '（鳴らなかった）';
+    };
+
+    /* ---- 上の操作 ---- */
+    const row = el('div', 'row');
+    const runs = el('button', null, '8回続けて鳴らす');
+    runs.type = 'button';
+    const vols = [['ふつう', 1], ['小さく', 0.5], ['消す', 0]].map(([label, v]) => {
+      const b = el('button', null, label);
+      b.type = 'button';
+      b.addEventListener('click', () => {
+        Sound.init();
+        Sound.volume(v);
+        vols.forEach((x) => x.classList.toggle('on', x === b));
+        say(null);
+      });
+      return b;
+    });
+    const shakeBtn = el('button', 'on', '揺らぎ ±3%：入');
+    shakeBtn.type = 'button';
+    shakeBtn.addEventListener('click', () => {
+      shake = !shake;
+      shakeBtn.textContent = '揺らぎ ±3%：' + (shake ? '入' : '切');
+      shakeBtn.classList.toggle('on', shake);
+    });
+    row.append(runs, el('span', 'sfxSep', '音量'), ...vols, shakeBtn);
+
+    const status = el('div', 'sfxStat', '（押すと読み込む）');
+    const list = el('div', 'sfxList');
+    host.append(mash, row, log, status, list);
+
+    /* ---- 鳴らす ---- */
+    const opts = () => (shake ? { rate: jitter() } : undefined);
+    /* 読み込みは押されるまで始めない（AudioContext はユーザー操作の中で作る）。
+       **読み終わったら一度だけ一覧を描き直す**——さもないと、マウント時に組んだ
+       「読めていない」の札が、鳴っているのに残る（一本ずつの ▶ は refresh を呼ばないため） */
+    let shown = false;
+    const ready = () => {
+      Sound.init();
+      return Sound.load().then((r) => {
+        if (!shown) { shown = true; refresh(); }
+        return r;
+      });
+    };
+
+    mash.addEventListener('click', () => { ready().then(() => { say(Sound.play('discard', opts())); refresh(); }); });
+    runs.addEventListener('click', () => {
+      ready().then(() => {
+        let n = 0;
+        const tick = () => {
+          say(Sound.play('discard', opts()));
+          if (++n < 8) setTimeout(tick, 380);
+        };
+        tick();
+        refresh();
+      });
+    });
+    vols[0].classList.add('on');
+
+    /* ---- 一覧 ---- */
+    function refresh() {
+      list.innerHTML = '';
+      const files = audioFiles();
+      let miss = 0;
+      files.forEach((f) => {
+        const got = f.spare ? null : Sound.sources(f.name).indexOf(f.file) >= 0;
+        if (got === false) miss++;
+        const r = el('div', 'sfxRow');
+        const b = el('button', null, '▶');
+        b.type = 'button';
+        b.addEventListener('click', () => {
+          ready().then(() => {
+            /* 控えは束に入っていないので preview で鳴らす。経路は同じ */
+            if (f.spare) Sound.preview(f.file, opts()).then((x) => say(x));
+            else say(Sound.play(f.name, Object.assign({ file: f.file }, opts())));
+          });
+        });
+        r.append(b, el('span', 'sfxName', f.file + '.wav'));
+        if (f.many) r.append(el('span', 'sfxTag many', f.name + ' の鳴らし分け'));
+        else if (f.spare) r.append(el('span', 'sfxTag spare', f.name + ' の控え（普段は鳴らない）'));
+        else r.append(el('span', 'sfxTag', f.name));
+        if (got === false) r.append(el('span', 'sfxTag bad', '読めていない'));
+        list.appendChild(r);
+      });
+      const n = Sound.loaded('discard');
+      status.textContent = '打牌 ' + n + '本'
+        + (n ? '（' + Sound.sources('discard').join(' / ') + '）' : '')
+        + ' ／ 一覧 ' + files.length + '本'
+        + (miss ? ' ／ **読めていないものが ' + miss + '本ある**' : '');
+    }
+    refresh();
+  }
+
+  return { SAVE_KEY, PRESETS, build, apply, clear, panel, soundPanel, audioFiles };
 })();
 
 if (typeof module !== 'undefined') {

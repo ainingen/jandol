@@ -33,6 +33,23 @@
     border-top:1px solid #33302c;padding-top:14px}
   .note code{color:#c8bcae}
   #state{font-size:11.5px;color:#96ffb4;margin-top:10px;min-height:1.6em}
+  /* 音の確認。**クラス名は sfx で始める**——CSS は全画面で一つの名前空間で、
+     card / row のような一般名は他の画面とぶつかる（docs/HANDOVER.md §5） */
+  .row button.on{border-color:#96ffb4;color:#f7f1e4;background:#1e2a20}
+  .sfxSep{font-size:11px;color:#8b8177;align-self:center;margin-left:6px}
+  .sfxLog{font-size:11.5px;line-height:1.7;color:#96ffb4;margin-top:10px;
+    word-break:break-all;min-height:1.7em}
+  .sfxStat{font-size:11.5px;color:#a99c8e;margin-top:6px}
+  .sfxList{margin-top:12px;border-top:1px solid #33302c;padding-top:10px}
+  .sfxRow{display:flex;align-items:center;gap:9px;padding:4px 0}
+  .sfxRow button{font:inherit;font-size:12px;width:34px;padding:5px 0;border-radius:6px;
+    border:1px solid #4a423c;background:transparent;color:#c8bcae;cursor:pointer}
+  .sfxRow button:hover{border-color:#96ffb4;color:#f7f1e4}
+  .sfxName{font-size:12.5px;color:#f7f1e4;min-width:9.5em}
+  .sfxTag{font-size:11px;color:#8b8177}
+  .sfxTag.many{color:#ffce50}
+  .sfxTag.spare{color:#8b8177}
+  .sfxTag.bad{color:#ff8ec4}
 </style>
 </head>
 <body>
@@ -49,6 +66,15 @@
 <h2>状態を作る</h2>
 <div id="presets"></div>
 <div id="state"></div>
+
+<h2>音</h2>
+<p class="lead" style="margin-bottom:12px">
+  <b>鳴らしているのは <code>src/sound.js</code>。</b>本編と同じ経路なので、
+  ここで聞こえるものがゲームで聞こえるものと同じ。<br>
+  打牌は <code>discard1</code>〜<code>discard4</code> の四本から選ばれる。
+  並べて押すと音量が揃っているか分かる。
+</p>
+<div id="sfx"></div>
 
 <h2>そのまま開く</h2>
 <div class="row">
@@ -74,6 +100,9 @@
   残り3つは自分で組む——<b>ラウンジ</b>はソファをカウンターの隣へ、
   <b>花道</b>は観葉植物（20,000円）を卓の左右へ、
   <b>静かな席</b>は入口から遠い卓に。どれも「模様替え」から。<br><br>
+  <b>音は最初の一押しで鳴るようになる。</b>ブラウザは操作のないうちは音を出さないので、
+  区画のどれかを押した時点で <code>AudioContext</code> が起きる。
+  スマホで聴くときは<b>マナーモードを切る</b>こと（iPhone はサイレントだと Web の音が出ない）。<br><br>
   <b>配布するときはこのファイルと <code>src/debug.js</code> を外すこと。</b>
   <code>build.py</code> は元から読んでいないが、ZIPに入れると
   URLを知っている人には届く（<code>README.md</code> の配布の手順）。
@@ -86,6 +115,9 @@
      characters.js の comp は全員 undefined で、実行時にここで埋まる -->
 <script src="src/tournament.js"></script>
 <script src="src/jansou-guests.js"></script>
+<!-- 音の確認の区画が使う。**`<audio>` で直に鳴らさないこと**——
+     playbackRate の揺らぎも音量設定も通らず、本編とは別の音を聴くことになる -->
+<script src="src/sound.js"></script>
 <script src="src/debug.js"></script>
 <script>
 const out = document.getElementById('state');
@@ -97,6 +129,8 @@ JandolDebug.panel(document.getElementById('presets'), {
     show(`「${p.label}」を書いた。下の「本編」を開くと続きから始まる。`);
   },
 });
+
+JandolDebug.soundPanel(document.getElementById('sfx'));
 
 document.getElementById('wipe').addEventListener('click', () => {
   JandolDebug.clear();
