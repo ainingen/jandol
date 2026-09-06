@@ -1852,7 +1852,7 @@ const Jansou = (() => {
         const isArashi = ch.kind === 'arashi';
         const buttons = [];
         buttons.push({ key: 'me', label: '受けて立つ', gold: true, disabled: challenged,
-          note: challenged ? '今日はもう打ちました' : '実際に一半荘を打つ' });
+          note: challenged ? '今日はもう打ちました' : '実際に東風戦を打つ' });
         if (isArashi) {
           const best = roster()[0];
           buttons.push({ key: 'ace', label: 'エースに任せる', note: '結果は自動処理', disabled: !best });
@@ -1892,7 +1892,11 @@ const Jansou = (() => {
               `<button type="button" class="jnBtBtn${b.gold ? ' gold' : ''}" data-key="${b.key}" ${b.disabled ? 'disabled' : ''}>
                 ${esc(b.label)}<span>${esc(b.note || '')}</span></button>`).join('')}</div>
             <div class="jnBtNotes">
-              <div>※ 受けると実際に一半荘を打ちます。${ch.kind === 'uchishi' ? '断ると評判が少し下がります。' : '断っても評判は下がりません。'}</div>
+              <!-- **打つのは東風戦（東1局〜東4局）。**Match.play に length を渡していないので
+                   Game の既定（'tonpuu'）に落ちる。**文面を実装に合わせてある**
+                   ——長さを半荘にするほうは選ばない（雀荘の夜に半荘は長すぎ、
+                   一日の時間の設計に効く）。ここを直すなら playOrSimulate の length と対で -->
+              <div>※ 受けると実際に<b>東風戦（東1局〜東4局）</b>を打ちます。${ch.kind === 'uchishi' ? '断ると評判が少し下がります。' : '断っても評判は下がりません。'}</div>
               <div>※ 代表が打てるのは <b>1日1回</b> まで（${challenged ? '今日はもう打ちました' : '今日はまだ打っていません'}）</div>
             </div>
           </div>

@@ -793,6 +793,28 @@ PC でも幽霊の経路を通せる。
 **「完走したか」だけを見ないこと。**おまかせに落ちた場合、局番号は東4局まで進む
 （残りを CPU が打っただけなので）。**局数だけでは捕まらない。**捕まえるのは `giveUp` の回数。
 
+### `window.UI` は `undefined`。`UI` は window の持ち物ではない（2026年9月5日）
+
+**ドライバやテストを書くと必ず踏む。**`src/ui.js` は `const UI = { ... }` で、
+`const` / `let` はスクリプトのグローバル**字句**環境に入り、**`window` のプロパティにはならない。**
+だから `page.evaluate(() => window.UI.game)` は永久に `undefined` を返す。
+
+**見え方が原因から遠い。**「対局が始まらない」「`UI.game` がいつまでも立たない」なので、
+`Match.play` の中を疑い、`requestFullscreen` が返ってこないのではないか、
+`screen.orientation.lock` で止まっているのではないか、と**対局側を掘ることになる。**
+実際に半日そこを掘った（`tools/drive-office.js --real` を書いたとき）。
+
+**書きかたは `typeof`。**
+
+    if (typeof UI === 'undefined' || !UI.game) return { wait: true };   // ○
+    if (!window.UI || !UI.game) return { wait: true };                  // ×（永久に wait）
+
+`Sound` も `Match` も `Game` も同じ（どれも `const`）。
+**逆に `window.__sfx` のように自分で `window.` に付けたものは見える**
+——数取りの控えを `window.` に置いているのはそのため。
+
+`tools/drive-match.js` と `tools/drive-office.js` は `typeof` で書いてある。写すならそちらから。
+
 ### iOS のマナーモードが WebAudio を黙らせる（2026年9月5日）
 
 **実装が正しくても鳴らない。**本体の消音スイッチが入っていると、
