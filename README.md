@@ -73,8 +73,11 @@ python3 build.py            index.html は約13KB
 ZIPに混ぜるとURLを知っている人には届いてしまう。
 
 ```
-zip -r jandol.zip . -x '.git/*' 'debug.html' 'src/debug.js' 'tools/*' 'docs/*'
+zip -r jandol.zip . -x '.git/*' '.gitignore' 'debug.html' 'src/debug.js' \
+  'tools/*' 'docs/*' 'audio_raw/*' '__pycache__/*'
 # audio/（効果音）と tiles/（牌の絵）と img/ と fonts/ は入れること
+# audio_raw/ は .gitignore に入っているが**手元のフォルダにはある**（4.8MB の音の素材）。
+# zip は .gitignore を見ないので、除外に書かないと配布物へ混ざる
 ```
 
 ## 直したあと
