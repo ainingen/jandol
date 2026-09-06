@@ -88,7 +88,10 @@
        ?start=1       開いた瞬間に始める（撮影用）
        ?flat=1|2|3    **診断用。**四人卓の3Dを段階的に外す（1=牌の厚み／
                       2=牌の3D／3=卓の傾きと遠近まで）。右下に flat=N の印が出る。
-                      絵は崩れる。**本番には入らない**（このページのインラインだけ） -->
+                      絵は崩れる。**本番には入らない**（このページのインラインだけ）
+       ?nofit=1       **診断用。**卓の寸法を測り直す 500ms の見張りを止める。
+                      **寸法は初回の一回だけで固定され、以後は追随しない**
+                      （画面の向きを変えても直らない）。右下に nofit の印が出る -->
 <div class="dbg">
   <span>対局の単体ページ：</span>
   <label>速さ <select id="dbgSpeed">
@@ -101,6 +104,26 @@
   <button id="dbgAuto">おまかせで流す</button>
 </div>
 
+<!-- 診断用：?nofit=1 で「卓の寸法を測り直す 500ms の見張り」を止める。
+     **`src/` の読み込みより前に仕込む。**`match.js:437` の
+       const watch = setInterval(function(){ fitTable(); clampTableScroll(false); }, 500);
+     は `Match.play()` の中で登録されるので、`window.setInterval` を差し替えて
+     **間隔 500 の登録だけ握り潰す**のがいちばん浅い介入
+     （`Match` は `fitFour` を外に出していないので、直に止められない）。
+     登録は一度きりなので、**一本飲んだらすぐ元に戻す**。
+     `clearInterval(0)` は何もしないので、後片づけ側も壊れない。
+     **本番には入らない。**このページのインラインだけ -->
+<script>
+(function () {
+  'use strict';
+  if (new URLSearchParams(location.search).get('nofit') !== '1') return;
+  const orig = window.setInterval;
+  window.setInterval = function (fn, ms) {
+    if (ms === 500) { window.setInterval = orig; return 0; }   // 一本だけ飲んで戻す
+    return orig.apply(window, arguments);
+  };
+})();
+</script>
 <script src="src/engine.js"></script>
 <script src="src/ai.js"></script>
 <script src="src/game.js"></script>
@@ -120,10 +143,12 @@
      **本番には入らない。**クエリが無ければ何もしない——印も出ない */
   const flat = Math.max(0, Math.min(3, Math.floor(num('flat', 0)) || 0));
   for (let i = 1; i <= flat; i++) document.body.classList.add('flat' + i);
-  if (flat) {
+  /* ?nofit=1 は上の（`src/` より前の）script が仕込んでいる。ここは印だけ */
+  const nofit = q.get('nofit') === '1';
+  if (flat || nofit) {
     const badge = document.createElement('div');
     badge.id = 'flatBadge';
-    badge.textContent = 'flat=' + flat;
+    badge.textContent = [flat ? 'flat=' + flat : '', nofit ? 'nofit' : ''].filter(Boolean).join(' ');
     document.body.appendChild(badge);
   }
 
