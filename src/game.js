@@ -62,13 +62,60 @@ class Game {
       ? ((opts.startDealer % 4) + 4) % 4
       : Math.floor(Math.random() * 4);
     this.startDealer = this.dealer;
-    /* 保険。実際の自風は deal() が入れるが、親が0でなくなると
-       描画が先に走ったとき「東が二人いる」瞬間が出る */
-    for (const p of this.players) p.jikaze = 27 + ((p.seat - this.dealer + 4) % 4);
     this.kyoku = 1;
     this.honba = 0;
     this.riichiSticks = 0;
     this.finished = false;
+
+    /* 局の頭から再開するための口（`docs/design/match/resume-spec.md` §7）。
+       **リテラル初期化のあとに上書きする形にする。**渡さなければ上の値が
+       そのまま残るので、**既定値のときの振る舞いは1ビットも変わらない**。
+
+       **範囲外は黙って丸めずに投げる。**読む側（§5）が先に弾くので、
+       ここまで来るのは実装ミス。丸めると「東4局のつもりが東の1局から始まっていた」
+       が黙って通る */
+    const whole = (v) => Number.isInteger(v);
+    if (opts.kyoku !== undefined) {
+      if (!whole(opts.kyoku) || opts.kyoku < 1 || opts.kyoku > this.maxKyoku) {
+        throw new RangeError('opts.kyoku は 1〜' + this.maxKyoku
+          + ' の整数（length: ' + this.opts.length + '）: ' + opts.kyoku);
+      }
+      this.kyoku = opts.kyoku;
+    }
+    if (opts.honba !== undefined) {
+      if (!whole(opts.honba) || opts.honba < 0) {
+        throw new RangeError('opts.honba は 0 以上の整数: ' + opts.honba);
+      }
+      this.honba = opts.honba;
+    }
+    if (opts.riichiSticks !== undefined) {
+      if (!whole(opts.riichiSticks) || opts.riichiSticks < 0) {
+        throw new RangeError('opts.riichiSticks は 0 以上の整数（本数）: '
+          + opts.riichiSticks);
+      }
+      this.riichiSticks = opts.riichiSticks;
+    }
+    /* 持ち点。**あれば startScore より優先**（§7）。添字は席順 */
+    if (opts.scores !== undefined) {
+      if (!Array.isArray(opts.scores) || opts.scores.length !== 4
+          || !opts.scores.every((v) => Number.isFinite(v))) {
+        throw new RangeError('opts.scores は長さ4の数値の配列: '
+          + JSON.stringify(opts.scores));
+      }
+      this.players.forEach((p, i) => { p.score = opts.scores[i]; });
+    }
+    /* 場風と親は `kyoku` から**派生させる**（§2）——保存しないと決めた。
+       式は `nextKyoku` と同じものを逆に見ているだけで、
+       **連荘では `kyoku` も `dealer` も動かない**（`nextKyoku` の renchan の枝）ので必ず合う。
+       `kyoku = 1` なら `dealer === startDealer` で、いままでと同じ */
+    if (this.kyoku > 4) this.bakaze = 28;
+    this.dealer = (this.startDealer + this.kyoku - 1) % 4;
+
+    /* 保険。実際の自風は deal() が入れるが、親が0でなくなると
+       描画が先に走ったとき「東が二人いる」瞬間が出る。
+       **`dealer` を確定させたあとに置くこと**——上で回しているので、
+       先に置くと復帰したときだけ自風が一周ずれる */
+    for (const p of this.players) p.jikaze = 27 + ((p.seat - this.dealer + 4) % 4);
   }
 
   get maxKyoku() {
@@ -212,6 +259,14 @@ class Game {
   /* ---------- 1局 ---------- */
   async playHand() {
     this.deal();
+    /* 局の頭の唯一の同期点（`resume-spec.md` §3）。局中の状態は
+       deal() が作り直したあとで、最初のツモの前。
+       **`?.` は必須。**`io` は UI だけではなく、
+       ヘッドレスの `io`（`tools/measure-fatigue.js`）は `handStart` を持たない。
+       **`Game` はブラウザAPIを知らない**（node で回る）ので、
+       ここでやるのは呼ぶことだけ。保存は呼ぶ側（`match.js`）の仕事。
+       `update` に乗せないのは、あちらが局中に何十回も呼ばれるため（§10） */
+    this.io.handStart?.(this);
     this.io.update();
     await this.io.event(`${KAZE[this.bakaze - 27]}${((this.kyoku - 1) % 4) + 1}局 ${this.honba}本場`, 900,
       { seat: this.dealer, kind: 'start' });
