@@ -1325,6 +1325,66 @@ function eq(a, b, name) {
 }
 
 /* ============================================================
+   遠征の二重締め（`taikai/resume-spec.md` §1）— 段0
+
+   `runTripDay` は「締め（`parlor.day` が進む）→ 対局 → 日数の減算」の順で、
+   **対局中に落ちると締めだけが残り、`trip.dayLeft` が減らないまま**
+   次に同じ遠征日をもう一度回した。日が余計に進み、日当が二重に引かれる。
+   減算を**締めのすぐあと・対局より前**へ移した。
+
+   `runTripDay` は `mount` の閉包（DOM）なので node からは呼べない。
+   **順序そのものをソースで固定する**（依頼の `when` を機械的に見ているのと同じ形）
+   ============================================================ */
+{
+  const osrc = require('fs').readFileSync(
+    require('path').join(__dirname, '../src/office.js'), 'utf8');
+  const a = osrc.indexOf('async function runTripDay()');
+  ok(a > 0, 'runTripDay が見つかる');
+  const b = osrc.indexOf('function playerCard(', a);
+  ok(b > a, 'runTripDay の終わりが見つかる');
+  /* **コメントを外してから見る。**説明文にも `await` や `dayLeft` を書くので、
+     本文だけを見ないと自分のコメントに引っかかる（`resolveAway` の錠と同じ形） */
+  const body = osrc.slice(a, b).replace(/\/\*[\s\S]*?\*\//g, '');
+
+  const iSettle = Math.max(body.indexOf('Jansou.runAwayDay('),
+                           body.indexOf('Jansou.runClosedDay('));
+  const iDec = body.indexOf('const left = trip.dayLeft - 1;');
+  const iWrite = body.indexOf('dayLeft: left');
+  const iMatch = body.indexOf('await playOrSimulate(');
+
+  ok(iSettle > 0, '締め（runAwayDay / runClosedDay）がある');
+  ok(iDec > 0, '日数の減算がある');
+  ok(iMatch > 0, '対局（playOrSimulate）がある');
+
+  ok(iDec > iSettle, '**減算は締めのあと**（締めの前に減らすと、店を回す前に日が減る）');
+  ok(iDec < iMatch, '**減算は対局より前**（ここが段0で直したところ）');
+  ok(iWrite > iDec && iWrite < iMatch, '減算の書き込みも対局より前');
+
+  /* **締めと減算のあいだに `await` を挟まないこと。**
+     `store.set` は localStorage への同期の書き込みなので、
+     あいだに待ちが無いかぎり片方だけ残ることはない */
+  const between = body.slice(iSettle, iDec);
+  ok(!/\bawait\b/.test(between), '締めと減算のあいだに await が無い（片方だけ残らない）');
+
+  /* 減算は一度だけ。末尾で宣言し直すと、上で減らした値と食い違う */
+  eq((body.match(/trip\.dayLeft - 1/g) || []).length, 1, '減算は一箇所だけ');
+
+  /* --- 減らしきったあとの見えかた（`tripOf` は純関数なので直に見る） --- */
+  const base = { pref: 'tokyo', purpose: 'woo', days: 3, members: [11], target: 1,
+                 log: [], found: [], signed: [], store: {} };
+  ok(Office.tripOf({ trip: Object.assign({}, base, { dayLeft: 1 }) }),
+     '残り1日なら遠征は生きている');
+  eq(Office.tripOf({ trip: Object.assign({}, base, { dayLeft: 0 }) }), null,
+     '**残り0日になった時点で遠征は死ぬ**（落ちても置き去りにならない）');
+  /* 同行者は出勤へ戻る——`assignFor` が「生きている遠征か」で見ているため */
+  eq(Office.assignFor({ trip: Object.assign({}, base, { dayLeft: 0 }) },
+                      11), 'parlor', '残り0日なら同行者は店へ戻る');
+  eq(Office.assignFor({ trip: Object.assign({}, base, { dayLeft: 1 }),
+                        assign: { 11: 'trip' } }, 11), 'trip',
+     '残っているあいだは遠征のまま');
+}
+
+/* ============================================================
    事務所の部屋（office/room.md）— A6 第一段
    `layout()` と `roomView()` は純関数。描画そのものはブラウザで見る
    ============================================================ */
