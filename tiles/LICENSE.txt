@@ -7,4 +7,14 @@ https://github.com/FluffyStuff/riichi-mahjong-tiles
 https://creativecommons.org/publicdomain/zero/1.0/
 
 作者の表示は不要だが、出典として残しておく。
-取得したまま無改変で置いてある。
+**Haku.svg 以外は取得したまま無改変で置いてある。**
+
+Haku.svg だけ差し替えた（2026年9月7日）。元のものは Inkscape の残骸
+（clipPath・marker・ガイド線）だけで、**描画される要素がゼロだった**
+——牌が真っ白に見えていた。いまのものはこちらで描いた枠一つで、
+CC0 の元データは一画も使っていない。同じく CC0 として扱ってよい。
+
+  <rect x="36" y="36" width="228" height="328" rx="10" ry="10"
+        fill="none" stroke="#19328c" stroke-width="20" />
+
+色 #19328c は風牌の実物の青。値を決めた経緯は docs/BACKLOG.md。
