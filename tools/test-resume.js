@@ -536,6 +536,23 @@ throws(() => new Game(NOOP_IO, { startDealer: Infinity }), 'startDealer が Infi
     dropped({ seats: [0, 1, 2, 99999] }, '引けないキャラIDなら捨てる');
     dropped({ seats: [1, 2, 3, 4] }, '自分（id 0）がいない卓なら捨てる');
 
+    /* **`done` の形**（`taikai/resume-spec.md` §3。§5 に足した条件） */
+    dropped({ done: [] }, 'done が空なら捨てる');
+    dropped({ done: [{ seat: 0, place: 1 }] }, 'done が4人ぶんでなければ捨てる');
+    dropped({ done: [{ seat: 0, place: 1 }, { seat: 0, place: 2 },
+                     { seat: 2, place: 3 }, { seat: 3, place: 4 }] },
+      'done の席がだぶれば捨てる');
+    dropped({ done: [{ seat: 0, place: 1 }, { seat: 1, place: 1 },
+                     { seat: 2, place: 3 }, { seat: 3, place: 4 }] },
+      'done の順位がだぶれば捨てる');
+    dropped({ done: [{ seat: 0, place: 0 }, { seat: 1, place: 2 },
+                     { seat: 2, place: 3 }, { seat: 3, place: 4 }] },
+      'done の順位が 1〜4 の外なら捨てる');
+    dropped({ done: [{ seat: 4, place: 1 }, { seat: 1, place: 2 },
+                     { seat: 2, place: 3 }, { seat: 3, place: 4 }] },
+      'done の席が 0〜3 の外なら捨てる');
+    dropped({ done: 'よんちゃく' }, 'done が配列でなければ捨てる');
+
     /* 長さで maxKyoku が変わること。**Game の式を写していない**ことの確認でもある */
     dropped({ kyoku: 5, opts: Object.assign({}, OPTS, { length: 'tonpuu' }) },
       '東風で kyoku 5 なら捨てる');
@@ -567,6 +584,70 @@ throws(() => new Game(NOOP_IO, { startDealer: Infinity }), 'startDealer が Infi
     ok(mem.data === null, 'clear で消える');
     Resume.clear();
     ok(mem.data === null, 'clear は二度呼んでも壊れない');
+
+    /* ---- 7.5 `markDone`（`taikai/resume-spec.md` §3） ----
+       **`Match.play` は控えを消さず、`done` を書くだけ。**
+       消すのは呼び出し元（`match.html` は `await` のあと、大会は `finish()` のあと）*/
+    {
+      const DONE = [{ seat: 2, place: 1 }, { seat: 0, place: 2 },
+                    { seat: 3, place: 3 }, { seat: 1, place: 4 }];
+
+      reset();
+      Resume.save(mkGame(), SEATS, OPTS);
+      const before = stored();
+      ok(before.done === undefined, '打ち切る前の控えに done は無い');
+      ok(Resume.load().done === undefined, '　load から見ても無い');
+
+      ok(Resume.markDone(DONE) === true, 'markDone が書ける');
+      ok(mem.data !== null, '**markDone は消さない**（ここが段1で変えたところ）');
+      const after = stored();
+      eq(JSON.stringify(after.done), JSON.stringify(DONE), 'done がそのまま入る');
+      /* 局の頭の値は触らない——復帰に要るものを壊さない */
+      eq(after.kyoku, before.kyoku, 'kyoku は動かさない');
+      eq(after.honba, before.honba, 'honba は動かさない');
+      eq(JSON.stringify(after.scores), JSON.stringify(before.scores), 'scores は動かさない');
+      eq(JSON.stringify(after.seats), JSON.stringify(before.seats), 'seats は動かさない');
+      ok(after.at >= before.at, 'at は書き直す（ここから24時間を数え直す）');
+
+      const got = Resume.load();
+      ok(got !== null, 'done 付きでも load は通る');
+      eq(JSON.stringify(got.done), JSON.stringify(DONE), 'load が done を返す');
+      ok(mem.data !== null, '　load しても消えない（消すのは呼び出し元）');
+
+      /* 余計な項は写さない。`seat` と `place` だけ */
+      reset();
+      Resume.save(mkGame(), SEATS, OPTS);
+      Resume.markDone(DONE.map((r) => Object.assign({ name: 'よけいなもの' }, r)));
+      ok(stored().done.every((r) => Object.keys(r).length === 2),
+        'done に写すのは seat と place だけ');
+
+      /* 控えが無ければ何もしない（`save` が書けていない環境） */
+      reset();
+      ok(Resume.markDone(DONE) === false, '控えが無ければ markDone は false');
+      ok(mem.data === null, '　控えを作りもしない');
+
+      /* 引数が壊れていれば何もしない */
+      reset();
+      Resume.save(mkGame(), SEATS, OPTS);
+      ok(Resume.markDone([]) === false, '空の配列なら false');
+      ok(Resume.markDone(null) === false, 'null なら false');
+      ok(stored().done === undefined, '　控えは書き換えない');
+
+      /* 書けない環境でも投げない（`save` / `load` / `clear` と同じ約束） */
+      reset();
+      Resume.save(mkGame(), SEATS, OPTS);
+      mem.failWrite = true;
+      let threwD = null;
+      try { ok(Resume.markDone(DONE) === false, '書けなければ false'); }
+      catch (e) { threwD = e; }
+      ok(threwD === null, '**setItem が投げても markDone は投げない**', String(threwD));
+      mem.failWrite = false;
+
+      /* `doneOk` そのもの */
+      ok(Resume.doneOk(DONE), 'doneOk：正しい形は通る');
+      ok(!Resume.doneOk(DONE.slice(0, 3)), 'doneOk：3人ぶんは通らない');
+      ok(!Resume.doneOk('x'), 'doneOk：配列でなければ通らない');
+    }
 
     /* ---- 8. localStorage が使えなくても続くこと（§8 段2） ---- */
     reset();

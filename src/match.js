@@ -469,13 +469,20 @@ const Match = (() => {
     UI.handStart = store ? ((game) => store.save(game, seats, opts)) : null;
 
     await g.run();
-    /* **`showResult` より前に外して消す**（§4）。半荘が正常に終わった＝
-       復帰するものは無い。ここで消さずに結果を見せたあとにすると、
-       順位を眺めている最中に落ちたときへ最後の局を打ち直させることになる */
+    /* **控えは消さない。`done` を書くだけ**（`taikai/resume-spec.md` §3）。
+       消していたころは、本編（大会）で `Match.play` のあとに `finish()` が
+       賞金を書くので、**結果の表示中に落ちると控えは消えているのに賞金も入らない。**
+       `done` を残せば、開き直した側が「その対局はもう終わっている」と分かる。
+
+       **消すのは呼び出し元**——`match.html` は `await` のあと、
+       本編（大会）は `finish()` の `store.set` のあと */
     UI.handStart = null;
-    if (store) store.clear();
 
     const rank = UI._lastRank || g.rankings();
+    /* 素点順の並びから順位を作る。**この式は一度だけ**
+       ——下の `return` もこれを使う（二か所に書くと片方だけ古びる） */
+    const done = rank.map((r, i) => ({ seat: r.seat, place: i + 1 }));
+    if (store) store.markDone(done);
 
     /* 結果を見せてから片付ける */
     await showResult(rank, seats, opts);
@@ -496,7 +503,7 @@ const Match = (() => {
     host.remove();
     UI.game = null;
 
-    return rank.map((r, i) => ({ chara: seats[r.seat], place: i + 1 }));
+    return done.map((r) => ({ chara: seats[r.seat], place: r.place }));
   }
 
   /* 半荘の締め（agari-spec.md §7）。**局の締め（帯）より重くてよい。**

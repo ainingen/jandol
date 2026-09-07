@@ -124,6 +124,50 @@ const Resume = (() => {
     return write(s);
   }
 
+  /* ---------- 打ち切ったことを控える（`taikai/resume-spec.md` §3） ----------
+     **`Match.play` は控えを消さない。**`g.run()` が返ったところで
+     `done` を書くだけにして、**消すのは呼び出し元**にする。
+
+     消していたころは、本編（大会）で `Match.play` のあとに `finish()` が
+     賞金を書くので、**結果の表示中に落ちると控えは消えているのに賞金も入らない**
+     という穴があった。`done` を残しておけば、開き直した側が
+     「その対局はもう終わっている」と分かる。
+
+     `done` は `[{ seat, place }, …]`。`seat` は控えた `seats` と同じ添字で、
+     `place` は 1〜4。**順位そのものは呼ぶ側が組む**——素点順の並びから
+     順位を作る規則は `Match.play` が持っていて、ここに書き写すと二か所に散る。
+
+     **控えが無ければ何もしない**（`save` が書けていない環境もある）。
+     `at` は書き直す——「いつ終わったか」に意味が移るので、
+     ここから 24時間（§5）を数え直すのが正しい */
+  function markDone(done) {
+    if (!Array.isArray(done) || !done.length) return false;
+    const raw = read();
+    if (!raw) return false;
+    let rec;
+    try { rec = JSON.parse(raw); } catch (e) { clear(); return false; }
+    if (!rec || typeof rec !== 'object') { clear(); return false; }
+    rec.done = done.map((r) => ({ seat: r.seat, place: r.place }));
+    rec.at = Date.now();
+    let str;
+    try { str = JSON.stringify(rec); } catch (e) { return false; }
+    return write(str);
+  }
+
+  /* `done` の形が壊れていないか（§5 の捨てる条件に足した一つ）。
+     4人ぶん・席が 0〜3 でだぶらず・順位が 1〜4 でだぶらないこと */
+  function doneOk(done) {
+    if (!Array.isArray(done) || done.length !== 4) return false;
+    const seats = new Set(), places = new Set();
+    for (const r of done) {
+      if (!r || typeof r !== 'object') return false;
+      if (!whole(r.seat) || r.seat < 0 || r.seat > 3) return false;
+      if (!whole(r.place) || r.place < 1 || r.place > 4) return false;
+      seats.add(r.seat); places.add(r.place);
+    }
+    return seats.size === 4 && places.size === 4;
+  }
+
   /* ---------- 読む（§5） ----------
      **捨てる条件はここに全部ある。**当たったら黙って消して null を返す
      ——古い保存を「再開しますか」と聞かれても意味が分からない（§5）。
@@ -168,6 +212,12 @@ const Resume = (() => {
     /* 人間（id 0）がいない卓は `Match.play` が座らせられない */
     if (!rec.seats.includes(0)) return bad();
 
+    /* **`done` は付いていてもいなくてもよいが、壊れていたら捨てる**
+       （`taikai/resume-spec.md` §3）。付いていれば「その対局はもう終わっている」
+       の印で、読んだ側がどう扱うかは呼ぶ側が決める
+       ——`match.html` は黙って消し、本編（大会）は結果として使う */
+    if (rec.done !== undefined && !doneOk(rec.done)) return bad();
+
     return Object.assign({}, rec, { opts, charas });
   }
 
@@ -178,7 +228,8 @@ const Resume = (() => {
     return ba + (((kyoku - 1) % 4) + 1) + '局 ' + honba + '本場';
   }
 
-  return { save, load, clear, charaOf, kyokuName, KEY, V, MAX_AGE, OPT_KEYS };
+  return { save, markDone, load, clear, charaOf, kyokuName, doneOk,
+           KEY, V, MAX_AGE, OPT_KEYS };
 })();
 
 if (typeof module !== 'undefined') module.exports = Resume;

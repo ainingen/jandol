@@ -214,6 +214,10 @@
       }, 50);
     }
     const rank = await p;
+    /* **控えを消すのはここ**（`taikai/resume-spec.md` §3）。
+       `Match.play` は `done` を書くだけで消さなくなった——
+       消す役目を呼び出し元へ移したので、`await` が返ったここで消す */
+    if (typeof Resume !== 'undefined') Resume.clear();
     document.body.classList.remove('inMatch');
     window.lastRank = rank;
     console.log('rank', rank.map((r) => `${r.place} ${r.chara.name}`).join(' / '));
@@ -244,7 +248,13 @@
      ——版・24時間・数の合わない配列・maxKyoku 超え・引けないキャラ。
      当たったものは黙って消えて null で返る。**古い控えを
      「再開しますか」と聞かれても意味が分からない**ので、ここでは何も出さない */
-  const saved = (typeof Resume !== 'undefined') ? Resume.load() : null;
+  let saved = (typeof Resume !== 'undefined') ? Resume.load() : null;
+
+  /* **`done` の付いた控えは黙って消す**（`taikai/resume-spec.md` §3）。
+     打ち切ったあと、結果を見ている最中に落ちたときのもの。
+     **結果画面を再現する価値は無い**ので、一言も出さずに従来の画面へ。
+     （本編の大会は同じ `done` を「打たずに結果として使う」——段2以降） */
+  if (saved && saved.done) { Resume.clear(); saved = null; }
 
   /* 保存の席から打ち直す。**`PLAYER` / `JANDOLS` を引き直す**（§6-3）
      ——控えているのは id だけで、キャラそのものではない。
@@ -270,6 +280,7 @@
       scores: rec.scores,
     });
     const rank = await Match.play(document.getElementById('matchRoot'), seatsOf(rec), opts);
+    if (typeof Resume !== 'undefined') Resume.clear();     // 上と同じ（§3）
     document.body.classList.remove('inMatch');
     window.lastRank = rank;
     console.log('rank', rank.map((r) => `${r.place} ${r.chara.name}`).join(' / '));
