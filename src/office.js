@@ -1954,6 +1954,21 @@ const Office = (() => {
         acc.days += 1;
       }
 
+      /* --- **日数の減算は締めのすぐあと＝対局より前に確定する**
+         （`taikai/resume-spec.md` §1） ---
+         以前は日を減らすのがこの関数のいちばん最後だったので、
+         **対局中に落ちると締めだけが残り、`trip.dayLeft` は減らないまま**
+         次に開いたときに同じ遠征日をもう一度回した——日が余計に進み、
+         日当が二重に引かれる。**復帰の有無に関係ないバグ。**
+
+         `store.set` は `localStorage` への同期の書き込みで、上の締めとの
+         あいだに `await` を一つも挟んでいないので、**片方だけ残ることはない。**
+         その日の交渉は失われるが、日は正しく進む。
+
+         **`left` を読む側（滞在が終わるか）は下のまま。**値を読むだけなので */
+      const left = trip.dayLeft - 1;
+      store.set({ trip: Object.assign({}, trip, { dayLeft: left }) });
+
       /* --- 遠征の出来事 --- */
       const log = trip.log.slice();
       const found = trip.found.slice();
@@ -2075,9 +2090,8 @@ const Office = (() => {
         }
       }
 
-      /* --- 日を減らす。0になったら帰還 --- */
+      /* --- 帰るかどうか。**日はもう減らしてある**（上の締めの直後） --- */
       st = store.get();
-      const left = trip.dayLeft - 1;
       if (left > 0) {
         store.set({ trip: Object.assign({}, trip, { dayLeft: left, log, found, signed, store: acc }) });
         night = { trip: { pref: trip.pref, left, line: log[log.length - 1], dayLine } };
