@@ -38,7 +38,24 @@ index.html は約30KBで、以後どれだけ足しても上限には掛から�
 
 ・module.exports は削らない。typeof で守られているのでブラウザでは
   無視される（node のテストから読むために置いてある）。
+
+--------------------------------------------------------------------
+版付け（?v=）
+--------------------------------------------------------------------
+<link> と <script> に ?v=<内容のハッシュ8桁> を付ける。付けないと、
+更新のあとに **新しい index.html と古い src/*.js** が混ざりうる。
+GitHub Pages の期限は10分ほどだが、**iOS Safari は再読み込みでも
+古い JS を動かし続ける**（HANDOVER.md §5 で二度踏んだ）。
+
+**版はファイルごとの内容ハッシュ。ビルド時刻でもコミットハッシュでもない。**
+そうしないと、**中身が変わっていないファイルの版まで毎回動き**、
+更新のたびに全部を落とし直させることになる。
+同じ入力からは同じ index.html が出る（2回続けて回しても差分は出ない）。
+
+**単体ページ（match.html / jansou.html など）には付かない。**
+あれらは build.py を通らず、手元で開くものなので、それでよい。
 """
+import hashlib
 import os
 import sys
 
@@ -75,12 +92,25 @@ def read(name, base=SRC):
         return f.read()
 
 
+def ver(name):
+    """src/<name> の内容ハッシュ（sha256 の先頭8桁）。
+
+    **内容だけから作ること。**ビルド時刻やコミットハッシュを混ぜると、
+    中身が変わっていないファイルの版まで毎回動き、更新のたびに
+    全部を落とし直させることになる。
+    """
+    with open(os.path.join(SRC, name), 'rb') as f:
+        return hashlib.sha256(f.read()).hexdigest()[:8]
+
+
 def build_styles():
-    return '\n'.join('<link rel="stylesheet" href="src/%s">' % n for n in CSS)
+    return '\n'.join('<link rel="stylesheet" href="src/%s?v=%s">' % (n, ver(n))
+                     for n in CSS)
 
 
 def build_scripts():
-    return '\n'.join('<script src="src/%s"></script>' % n for n in JS)
+    return '\n'.join('<script src="src/%s?v=%s"></script>' % (n, ver(n))
+                     for n in JS)
 
 
 def main():
@@ -120,7 +150,9 @@ def main():
           % (len(CSS + JS), total / 1024))
 
     # 開発用の入口が本番に混ざっていないことを、毎回ここで確かめる。
-    # 混ざっても画面は普通に動いてしまうので、目では気づけない
+    # 混ざっても画面は普通に動いてしまうので、目では気づけない。
+    # 照合はファイル名だけなので、?v= が付いていても引っかかる
+    # （src/debug.js?v=... の中に debug.js がある）
     leaked = [n for n in DEV_ONLY if os.path.basename(n) in out]
     if leaked:
         print('本番の index.html に開発用が入っています: %s' % ', '.join(leaked),
