@@ -88,7 +88,39 @@ const Taikai = (() => {
     return { tierId, tier, field, team: opts.team };
   }
 
-  /* 組んだ枠で実際に勝ち上がりを進める */
+  /* ------------------------------------------------------------
+     大会の進行の控え（`docs/design/taikai/resume-spec.md` §4・§5）— 段2
+
+     `runTournament` はメモリだけで回るので、対局中に落ちると
+     **賞金・成長・段位・戦績がまとめて消え、依頼も戻らない。**
+     控えを外へ出す口（`onProgress`）と、控えから続ける口（`progress`）を足す。
+
+     **`while` の中身は変えない**（§8）。足したのは
+     「卓割りと結果を控えから取れるなら取る」という**差し替えだけ**で、
+     勝ち上がりの集計（`lastPlace` / `eliminatedAt` / `alive`）も
+     `recordBeaten` も `met` も、**控えから戻した結果に対して同じ行が走る。**
+     復帰の側に集計を書き写すと、片方を直したときに必ずずれる。
+  ------------------------------------------------------------ */
+  const PROGRESS_V = 1;
+
+  /* 控えの卓割り・結果はキャラIDで持つ（§4）。戻すのは `field` から引き直す
+     ——`st` は大会中に一切書かれないので、同じカードができる */
+  const idsOf = (list) => list.map((c) => c.id);
+
+  /* 同じ卓か。**id の集合で見る**（§5）——`Match.play` は自分を先頭に
+     回転させるので、並び順は当てにならない */
+  function sameSeats(a, b) {
+    if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return false;
+    const s = new Set(a);
+    return b.every((id) => s.has(id)) && s.size === b.length;
+  }
+
+  /* 組んだ枠で実際に勝ち上がりを進める。
+
+       opts.playRealMatch … 自分の卓を実際に打つ口（無ければ全部 simulateTable）
+       opts.progress      … 控え（`st.pendingTaikai`）。無ければ最初から
+       opts.onProgress    … (progress) => void。控えを書き出す口。無ければ何もしない
+       opts.offerId       … 依頼の id。控えにそのまま載せる（`onDone` が要る） */
   async function runTournament(prepared, opts) {
     const { tier, tierId, field, team } = prepared;
 
@@ -100,22 +132,116 @@ const Taikai = (() => {
     const met = new Set();                  // 当たった相手（次回の抑制に使う）
     const beaten = new Set();               // 同じ卓で自分より下だった相手（契約条件に使う）
 
+    /* ---------- 控え（§4・§5） ---------- */
+    const byId = new Map(field.map((c) => [c.id, c]));
+    const charaOf = (id) => byId.get(id) || null;
+    const old = (opts.progress && typeof opts.progress === 'object') ? opts.progress : null;
+    const emit = typeof opts.onProgress === 'function' ? opts.onProgress : null;
+
+    const prog = {
+      v: PROGRESS_V,
+      tierId,
+      offerId: old ? (old.offerId != null ? old.offerId : null)
+        : (opts.offerId != null ? opts.offerId : null),
+      fieldIds: idsOf(field),
+      rounds: [],
+      ri: 0,
+    };
+    const push = () => { if (emit) emit(prog); };
+
+    /* その回戦の控え。**壊れていたら無いものとして扱う**——
+       捨てる条件は呼ぶ側が持つ（§7）ので、ここでは黙って最初から組み直す */
+    const recOf = (i) => {
+      const r = old && Array.isArray(old.rounds) ? old.rounds[i] : null;
+      return (r && typeof r === 'object') ? r : null;
+    };
+    /* 控えの卓割り。**一人でも引けなければ使わない**（キャラの改番のあと） */
+    function tablesFrom(rec) {
+      if (!rec || !Array.isArray(rec.tables) || !rec.tables.length) return null;
+      const out = [];
+      for (const ids of rec.tables) {
+        if (!Array.isArray(ids) || !ids.length) return null;
+        const t = ids.map(charaOf);
+        if (t.some((c) => !c)) return null;
+        out.push(t);
+      }
+      return out;
+    }
+    /* 控えの結果。`t` と顔ぶれが合っているものだけ戻す */
+    function resultFrom(rec, k, t) {
+      const rows = rec && Array.isArray(rec.results) ? rec.results[k] : null;
+      if (!Array.isArray(rows) || rows.length !== t.length) return null;
+      const out = rows.map((x) => (x && charaOf(x.id)
+        ? { chara: charaOf(x.id), place: x.place } : null));
+      if (out.some((x) => !x)) return null;
+      if (!sameSeats(out.map((x) => x.chara.id), idsOf(t))) return null;
+      return out;
+    }
+
+    /* ---------- 落ちた対局の控え（`match/resume-spec.md`）----------
+       **`progress` があるときだけ読む。**最初から始めるときに古い控えを
+       拾うと、関係のない卓を復帰させてしまう。
+       使ったら手放す（同じ控えを二つの卓に使わない） */
+    let saved = null;
+    if (old && typeof Resume !== 'undefined' && Resume && typeof Resume.load === 'function') {
+      try { saved = Resume.load(); } catch (e) { saved = null; }
+    }
+    /* 自分の卓を控えから片づける（§5 の 4）。返すのは
+         { result }  … `done` 付き。**打たずに結果にする**
+         { resume }  … `done` 無し。`playRealMatch` に渡して局の頭から
+         null        … 席が一致しない／控えが無い。いままでどおり東1局から */
+    function resumeFor(t) {
+      if (!saved) return null;
+      if (!sameSeats(saved.seats, idsOf(t))) return null;
+      const rec = saved;
+      saved = null;                                   // 一度きり
+      if (Array.isArray(rec.done)) {
+        const out = rec.done.map((d) => {
+          const c = charaOf(rec.seats[d.seat]);
+          return c ? { chara: c, place: d.place } : null;
+        });
+        if (out.some((x) => !x)) return null;
+        out.sort((a, b) => a.place - b.place);
+        return { result: out };
+      }
+      return { resume: rec };
+    }
+
     let ri = 0;
     while (alive.length > 4) {
-      const tables = makeTables(alive);
+      const rec = recOf(ri);
+      /* **控えに卓割りがあれば `makeTables` を呼ばない**（§5 の 2）。
+         呼ぶと乱数で割り直されて、控えた結果と噛み合わなくなる */
+      const tables = tablesFrom(rec) || makeTables(alive);
+      prog.ri = ri;
+      prog.rounds[ri] = { name: roundName(alive.length), size: alive.length,
+                          tables: tables.map(idsOf),
+                          results: tables.map((t, k) => {
+                            const r = resultFrom(rec, k, t);
+                            return r ? r.map((x) => ({ id: x.chara.id, place: x.place })) : null;
+                          }) };
+      push();                                          // 卓割りが決まった（§4 の 2）
       const results = [];
-      for (const t of tables) {
+      for (let k = 0; k < tables.length; k++) {
+        const t = tables[k];
         const hasPlayer = t.some((c) => c.id === 0);
         if (hasPlayer) t.forEach((c) => { if (c.id !== 0) met.add(c.id); });
         /* 実対局が用意されていない、または「自動で処理する」設定のときは
            playRealMatch が何も返さないので、そのまま数値処理に落とす */
-        let r = null;
-        if (hasPlayer && opts.playRealMatch) {
-          r = await opts.playRealMatch(t, { round: ri, tier, name: roundName(alive.length) });
+        let r = resultFrom(rec, k, t);                 // **控えにあれば打ち直さない**（§5 の 3）
+        if (!r && hasPlayer && opts.playRealMatch) {
+          const back = resumeFor(t);
+          if (back && back.result) r = back.result;    // `done` 付き＝もう打ち終わっている
+          else {
+            r = await opts.playRealMatch(t, { round: ri, tier, name: roundName(alive.length),
+              resume: back ? back.resume : null });
+          }
         }
         if (!r) r = simulateTable(t, STYLES);
         if (hasPlayer) recordBeaten(r, beaten);
         results.push({ table: t, result: r, hasPlayer, hasTeam: t.some((c) => teamIds.has(c.id)) });
+        prog.rounds[ri].results[k] = r.map((x) => ({ id: x.chara.id, place: x.place }));
+        push();                                        // 卓ごとに結果が出た（§4 の 3）
       }
       rounds.push({ name: roundName(alive.length), size: alive.length, results });
 
@@ -131,18 +257,31 @@ const Taikai = (() => {
       ri++;
     }
 
-    /* 決勝卓 */
-    const finalTable = alive;
+    /* 決勝卓。**上の回戦と同じ扱い**（§4 の 4） */
+    const finRec = recOf(ri);
+    const finTables = tablesFrom(finRec);
+    const finalTable = (finTables && finTables[0]) || alive;
     const hasPlayer = finalTable.some((c) => c.id === 0);
     if (hasPlayer) finalTable.forEach((c) => { if (c.id !== 0) met.add(c.id); });
-    let finalResult = null;
-    if (hasPlayer && opts.playRealMatch) {
-      finalResult = await opts.playRealMatch(finalTable, {
-        round: ri, tier, name: '決勝卓', isFinal: true,
-      });
+    prog.ri = ri;
+    prog.rounds[ri] = { name: '決勝卓', size: 4, isFinal: true,
+                        tables: [idsOf(finalTable)], results: [null] };
+    push();
+    let finalResult = resultFrom(finRec, 0, finalTable);   // 控えにあれば打ち直さない
+    if (!finalResult && hasPlayer && opts.playRealMatch) {
+      const back = resumeFor(finalTable);
+      if (back && back.result) finalResult = back.result;
+      else {
+        finalResult = await opts.playRealMatch(finalTable, {
+          round: ri, tier, name: '決勝卓', isFinal: true,
+          resume: back ? back.resume : null,
+        });
+      }
     }
     if (!finalResult) finalResult = simulateTable(finalTable, STYLES);
     if (hasPlayer) recordBeaten(finalResult, beaten);
+    prog.rounds[ri].results[0] = finalResult.map((x) => ({ id: x.chara.id, place: x.place }));
+    push();
     finalResult.forEach((x) => lastPlace.set(x.chara.id, x.place));
     rounds.push({
       name: '決勝卓', size: 4, isFinal: true,
