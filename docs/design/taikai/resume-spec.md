@@ -129,7 +129,7 @@ runTournament(prepared, {
 
 **復帰の手順（`progress` があるとき）**
 
-1. `progress.rounds` のうち結果が揃っている回戦を読み、`eliminatedAt` `lastPlace` `met` `beaten` `alive` を組み直す（いまの while の中でやっていることと同じ計算）
+1. **控えた結果を既存の while に流し込み、集計はいまの行にやらせる。**`eliminatedAt` `lastPlace` `met` `beaten` `alive` を復帰の側で組み直さない——**規則を二箇所に持たない**（`RULES.event` で通った話と同じ）。控えから戻した結果に対して、勝ち上がりの集計も `recordBeaten` も `met` も、いまと同じ行が走る
 2. `progress.rounds[ri]` に `tables` があれば `makeTables` を呼ばず、それを使う
 3. その回戦の `results[k]` が入っている卓は飛ばす
 4. 自分の卓（`results[k]` が `null` で `hasPlayer`）：
