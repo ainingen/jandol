@@ -19,7 +19,9 @@
        `kyoku = 1` なら `dealer === startDealer`。渡さなければ 25000 点の4人
        ——ここが崩れると、復帰の口を足しただけで普通の対局が変わる
     4. **範囲外は黙って丸めずに投げること**（§7）
-       丸めると「東4局のつもりが東1局から始まっていた」が黙って通る
+       丸めると「東4局のつもりが東1局から始まっていた」が黙って通る。
+       **`startDealer` も同じ扱い**（2026年9月7日）——以前は巻いていたが、
+       `Match.play` が転送するようになって `?dealer=abc` の NaN が届くようになった
     5. `io.handStart` を持たない `io` でも `playHand()` が回ること（§3）
        ——`io` は `UI` だけではない（`tools/measure-fatigue.js` はヘッドレスの `io`）
 
@@ -58,6 +60,7 @@ function eq(a, b, name) {
 }
 /* 投げること自体と、投げかたの両方を見る。
    `throw` を消して丸めに戻したら、ここが落ちる */
+const whole = (v) => Number.isInteger(v);
 function throws(fn, name) {
   try { fn(); } catch (e) { ok(e instanceof RangeError, name + '（RangeError）', String(e)); return; }
   fails.push(name + '  … 投げなかった');
@@ -223,6 +226,19 @@ throws(() => new Game(NOOP_IO, { scores: [1, 2, 3, NaN] }), 'scores に NaN が�
 throws(() => new Game(NOOP_IO, { scores: 25000 }), 'scores が配列でなければ投げる');
 throws(() => new Game(NOOP_IO, { scores: null }), 'scores が null なら投げる');
 
+/* 起家も同じ扱い（2026年9月7日）。**以前は `((n%4)+4)%4` で巻いていた。**
+   `Match.play` が転送するようになってから、`match.html` の `?dealer=abc` の
+   NaN がそのまま親になれるようになった——巻く式は NaN を NaN のまま返し、
+   「親が NaN の卓」が黙って立つ。丸めも巻きもせず、ここで止める */
+throws(() => new Game(NOOP_IO, { startDealer: 4 }), 'startDealer 4 は投げる（巻かない）');
+throws(() => new Game(NOOP_IO, { startDealer: 7 }), 'startDealer 7 は投げる');
+throws(() => new Game(NOOP_IO, { startDealer: -1 }), 'startDealer が負なら投げる（巻かない）');
+throws(() => new Game(NOOP_IO, { startDealer: 1.5 }), 'startDealer が整数でなければ投げる');
+throws(() => new Game(NOOP_IO, { startDealer: NaN }), 'startDealer が NaN なら投げる（?dealer=abc）');
+throws(() => new Game(NOOP_IO, { startDealer: '2' }), 'startDealer が文字列なら投げる');
+throws(() => new Game(NOOP_IO, { startDealer: null }), 'startDealer が null なら投げる');
+throws(() => new Game(NOOP_IO, { startDealer: Infinity }), 'startDealer が Infinity なら投げる');
+
 /* 境目は通ること。**投げすぎも壊れている** */
 {
   ok(new Game(NOOP_IO, { kyoku: 1 }).kyoku === 1, 'kyoku 1 は通る');
@@ -230,6 +246,23 @@ throws(() => new Game(NOOP_IO, { scores: null }), 'scores が null なら投げ�
   ok(new Game(NOOP_IO, { length: 'hanchan', kyoku: 8 }).kyoku === 8, '半荘の kyoku 8 は通る');
   ok(new Game(NOOP_IO, { honba: 0 }).honba === 0, 'honba 0 は通る');
   ok(new Game(NOOP_IO, { riichiSticks: 0 }).riichiSticks === 0, 'riichiSticks 0 は通る');
+  /* 起家は 0〜3 が通る。**投げすぎも壊れている**
+     ——`tools/measure-fatigue.js` は 0 を渡して数字を止めている */
+  for (let d = 0; d < 4; d++) {
+    eq(new Game(NOOP_IO, { startDealer: d }).startDealer, d, 'startDealer ' + d + ' は通る');
+    eq(new Game(NOOP_IO, { startDealer: d }).dealer, d, '　1局目の親はそのまま');
+  }
+  /* 渡さなければ**いままでどおり乱数**。投げないこと */
+  {
+    const seen = new Set();
+    for (let i = 0; i < 200; i++) {
+      const g = new Game(NOOP_IO, {});
+      seen.add(g.startDealer);
+      ok(whole(g.startDealer) && g.startDealer >= 0 && g.startDealer <= 3,
+        '渡さなければ 0〜3 の整数', String(g.startDealer));
+    }
+    eq(seen.size, 4, '渡さなければ四通りとも出る（乱数のまま）');
+  }
 }
 
 /* ============================================================

@@ -17,9 +17,15 @@
     4. `?dealer=` が効くこと（§7 の副産物）
        ——いままで `Match.play` が `Game` へ転送していなかった
 
-  あわせて、**opts の転送そのもの**も見る（段3 の前提）。
-  `Match.play` に `kyoku` / `honba` / `riichiSticks` / `scores` を渡して、
-  卓がその局から始まるか。**画面は段3 なので、ここでは直に呼ぶ。**
+  あわせて、**opts の転送そのもの**（`Match.play` に直に渡す経路）と、
+  **段3 の復帰画面**（§6）も見る。
+
+    5. 控えを手で置いて開くと、`.dbg` の位置に一言と釦二つが出ること。
+       **局名が控えどおり**であること。**「通信」と書いていない**こと
+    6. ［再開する］→ 画面の局名・4人の持ち点・親が控えどおりであること
+    7. ［破棄する］→ 控えが消えて、従来の釦が戻ること
+    8. **控えがあるときは `?start=1` でも始まらない**こと（§6-5）
+    9. `?dealer=abc` が `RangeError` で止まること（申し送りの回収）
 
   終了コードは 0（全部通った）か 1（どれか落ちた）。
 */
@@ -213,6 +219,12 @@ function ok(cond, name, detail) {
      ============================================================ */
   log('\n## ?dealer= が Game まで届く');
   for (const d of [0, 1, 2, 3]) {
+    /* **一つ前の走行の控えを消してから開く。**この見張りは卓が立った瞬間に
+       次へ行くので、対局は途中で捨てられ `Resume.clear()`（§4）まで届かない。
+       控えが残ったまま次を開くと **`?start=1` が止まる**（§6-5 のとおり）ので、
+       消しておかないと二つ目から「卓が立たなかった」になる（実際になった） */
+    await page.goto(base + '?sfx=0');
+    await page.evaluate((k) => { try { localStorage.removeItem(k); } catch (e) {} }, KEY);
     const q = new URLSearchParams({ start: '1', auto: '1', speed: '0',
       length: 'ikkyoku', seed: SEED, sfx: '0', dealer: String(d) });
     await page.goto(base + '?' + q.toString());
@@ -274,6 +286,210 @@ function ok(cond, name, detail) {
     const p = await peek();
     ok(p.rec && p.rec.kyoku === 6 && p.rec.honba === 2,
       'この経路でも局の頭が控えられる', JSON.stringify(p.rec || p));
+  }
+
+  /* ============================================================
+     5〜8. 復帰の画面（段3・§6）
+
+     **控えを手で置いて開く。**落ちるのを待っていられないので、
+     `localStorage` に直に書いてから読み直す
+     ============================================================ */
+  log('\n## 控えを置いて開く（§6）');
+
+  /* 控えを一つ組む。**`Resume.save` を通さない**
+     ——通すと「Resume が書いたものを Resume が読んだ」だけになり、
+     手で置いた古い控えを読めるかの確認にならない */
+  const plant = async (over) => {
+    await page.goto(base + '?sfx=0');
+    return page.evaluate(([k, o]) => {
+      const rec = Object.assign({
+        v: 1, at: Date.now(),
+        seats: [0, JANDOLS[0].id, JANDOLS[1].id, JANDOLS[2].id],
+        kyoku: 2, honba: 1, riichiSticks: 1,
+        scores: [26800, 24200, 25000, 24000],
+        startDealer: 3,
+        opts: { length: 'hanchan', speed: 0, showHints: true,
+          discardMode: 'single', title: '単体の対局' },
+      }, o || {});
+      localStorage.setItem(k, JSON.stringify(rec));
+      return rec.seats.map((id, i) => (id === 0 ? 'あなた' : JANDOLS[i - 1].name));
+    }, [KEY, over || {}]);
+  };
+  const notice = () => page.evaluate(() => {
+    const b = document.getElementById('dbgResume');
+    const dbg = document.querySelector('.dbg');
+    return {
+      shown: !!b && !b.hidden,
+      head: b && b.querySelector('h2') ? b.querySelector('h2').textContent : null,
+      body: b && b.querySelector('p') ? b.querySelector('p').textContent : null,
+      buttons: b ? Array.from(b.querySelectorAll('button')).map((x) => x.textContent) : [],
+      dbgShown: !!dbg && !dbg.hidden,
+      inMatch: document.body.classList.contains('inMatch'),
+    };
+  });
+
+  {
+    await plant();
+    await page.reload();
+    const n = await notice();
+    ok(n.shown, '控えがあると一言が出る');
+    ok(n.head === 'この局をやり直します', '見出しは「この局をやり直します」', String(n.head));
+    ok(n.body === '一時的に画面が止まったため、東2局 1本場 の最初から再開します',
+      '本文の局名が控えどおり（東2局 1本場）', String(n.body));
+    ok(!/通信|回線|ネット|オフライン|Wi-?Fi/i.test(String(n.body) + String(n.head)),
+      '**「通信」と書いていない**（§1）', String(n.body));
+    ok(JSON.stringify(n.buttons) === JSON.stringify(['再開する', '破棄する']),
+      '釦は二つ（再開する／破棄する）', JSON.stringify(n.buttons));
+    ok(n.dbgShown === false, '一言が出ているあいだ従来の釦は隠れている');
+    ok(n.inMatch === false, '勝手に始まっていない');
+  }
+
+  /* 局名の組み立て。**`kyoku > 4` なら南、表示は ((kyoku-1)%4)+1** */
+  for (const [k, h, want] of [[1, 0, '東1局 0本場'], [4, 3, '東4局 3本場'],
+    [5, 0, '南1局 0本場'], [8, 2, '南4局 2本場']]) {
+    await plant({ kyoku: k, honba: h });
+    await page.reload();
+    const n = await notice();
+    ok(n.body === '一時的に画面が止まったため、' + want + ' の最初から再開します',
+      '局名 ' + want + '（kyoku ' + k + ' / honba ' + h + '）', String(n.body));
+  }
+
+  /* §5：捨てる条件に当たった控えでは**一言を出さない**。黙って消す */
+  for (const [over, why] of [
+    [{ v: 2 }, '版が違う'],
+    [{ at: Date.now() - 25 * 3600 * 1000 }, '24時間を超えている'],
+    [{ kyoku: 9 }, 'maxKyoku を超えている'],
+    [{ seats: [0, 1, 2, 99999] }, '引けないキャラIDがいる'],
+  ]) {
+    await plant(over);
+    await page.reload();
+    const n = await notice();
+    ok(!n.shown, '捨てる控え（' + why + '）では一言を出さない');
+    ok(n.dbgShown === true, '　従来の画面のまま');
+    const p = await peek();
+    ok(p.gone === true, '　黙って消えている', JSON.stringify(p.rec || p));
+  }
+
+  /* ---- 6. ［再開する］ ---- */
+  log('\n## ［再開する］');
+  {
+    const names = await plant({ kyoku: 6, honba: 2, riichiSticks: 1, startDealer: 1,
+      scores: [30000, 20000, 28000, 22000] });
+    await page.reload();
+    await page.click('#dbgResumeGo');
+    let got = null;
+    const t0 = Date.now();
+    while (Date.now() - t0 < 20000 && !got) {
+      got = await live();
+      if (!got) await sleep(20);
+    }
+    ok(!!got, '［再開する］で卓が立つ');
+    if (got) {
+      ok(got.kyoku === 6, '局が控えどおり（南2局＝通し6局目）', String(got.kyoku));
+      ok(got.honba === 2, '本場が控えどおり', String(got.honba));
+      ok(got.sticks === 1, '供託が控えどおり', String(got.sticks));
+      ok(got.startDealer === 1, '起家が控えどおり', String(got.startDealer));
+      ok(got.dealer === (1 + 6 - 1) % 4, '親が控えから派生している（(1+6-1)%4=0）',
+        String(got.dealer));
+      ok(got.bakaze === 28, '南場になっている', String(got.bakaze));
+      ok(JSON.stringify(got.scores) === JSON.stringify([30000, 20000, 28000, 22000]),
+        '4人の持ち点が控えどおり', JSON.stringify(got.scores));
+    }
+    /* 画面に出ているもの（人が見るもの）。**中の値だけ合っていても足りない。**
+       席プレートは DOM の並びが席順ではない（top/left/right/bottom の順に置かれ、
+       席は bottom=0 / right=1 / top=2 / left=3）ので、**id で席順に読み直す** */
+    const shown = await page.evaluate(() => {
+      const ids = ['#plate-bottom', '#plate-right', '#plate-top', '#plate-left'];
+      const pick = (sel, cls) => {
+        const e = document.querySelector(sel + ' ' + cls);
+        return e ? e.textContent : null;
+      };
+      const k = document.querySelector('.kyoku');
+      const w = document.querySelector('.wall');
+      return {
+        kyoku: k ? k.textContent : null,
+        wall: w ? w.textContent : null,
+        scores: ids.map((sel) => pick(sel, '.pt')),
+        names: ids.map((sel) => pick(sel, '.nm')),
+      };
+    });
+    ok(shown.kyoku === '南2局', '画面の局名が「南2局」', String(shown.kyoku));
+    ok(/2本場/.test(String(shown.wall)), '画面の本場が「2本場」', String(shown.wall));
+    ok(JSON.stringify(shown.scores) === JSON.stringify(['30000', '20000', '28000', '22000']),
+      '画面の4人の持ち点が控えどおり（席順）', JSON.stringify(shown.scores));
+    /* 自分の席（seat 0）は SEAT_LABEL のまま「自分」。相手三人は控えの顔ぶれ */
+    ok(shown.names[0] === '自分', '自分の席は「自分」', String(shown.names[0]));
+    ok(JSON.stringify(shown.names.slice(1)) === JSON.stringify(names.slice(1)),
+      '相手三人が控えどおり（JANDOLS を引き直した）',
+      JSON.stringify(shown.names.slice(1)) + ' / ' + JSON.stringify(names.slice(1)));
+    /* 再開したあとも控えは残る——**ここでもう一度落ちたら、また同じ局から** */
+    const p = await peek();
+    ok(p.rec && p.rec.kyoku === 6, '再開しても控えは残っている（また落ちてもよい）',
+      JSON.stringify(p.rec || p));
+  }
+
+  /* ---- 7. ［破棄する］ ---- */
+  log('\n## ［破棄する］');
+  {
+    await plant();
+    await page.reload();
+    ok((await notice()).shown, '前提：一言が出ている');
+    await page.click('#dbgResumeDrop');
+    const n = await notice();
+    ok(!n.shown, '［破棄する］で一言が消える');
+    ok(n.dbgShown === true, '　従来の画面（釦）が戻る');
+    ok(n.inMatch === false, '　対局は始まらない');
+    const p = await peek();
+    ok(p.gone === true, '　控えが消えている', JSON.stringify(p.rec || p));
+    /* 読み直しても出てこないこと */
+    await page.reload();
+    ok(!(await notice()).shown, '読み直しても一言は出ない');
+  }
+
+  /* ---- 8. 控えがあるときは ?start=1 でも始めない（§6-5） ---- */
+  log('\n## ?start=1 と控えの同居（§6-5）');
+  {
+    await plant();
+    await page.goto(base + '?start=1&auto=1&speed=0&length=tonpuu&sfx=0');
+    await sleep(1500);
+    const n = await notice();
+    ok(n.shown, '控えがあれば ?start=1 でも一言が出る');
+    ok(n.inMatch === false, '**控えがあれば ?start=1 でも始まらない**（§6-5）');
+    const p = await peek();
+    ok(p.rec && p.rec.kyoku === 2, '　控えが新しい対局に上書きされていない',
+      JSON.stringify(p.rec || p));
+    /* 破棄すれば、そのあとは従来どおり自分で始められる */
+    await page.click('#dbgResumeDrop');
+    await page.goto(base + '?start=1&auto=1&speed=0&length=ikkyoku&sfx=0');
+    let ran = false;
+    const t0 = Date.now();
+    while (Date.now() - t0 < 20000 && !ran) {
+      ran = await page.evaluate(() => document.body.classList.contains('inMatch'));
+      if (!ran) await sleep(20);
+    }
+    ok(ran, '控えが無ければ ?start=1 はいままでどおり始まる');
+  }
+
+  /* ---- 9. ?dealer=abc は投げる（申し送りの回収） ---- */
+  log('\n## ?dealer= の範囲外');
+  {
+    await page.evaluate((k) => { try { localStorage.removeItem(k); } catch (e) {} }, KEY);
+    for (const [d, want] of [['abc', true], ['4', true], ['-1', true], ['2', false]]) {
+      const p2 = await ctx.newPage();
+      await p2.addInitScript(() => {
+        window.__err = [];
+        window.addEventListener('unhandledrejection',
+          (e) => { window.__err.push(String(e.reason && e.reason.name) + ': ' + String(e.reason && e.reason.message)); });
+      });
+      await p2.goto(base + '?start=1&auto=1&speed=0&length=ikkyoku&sfx=0&dealer=' + d);
+      await sleep(1200);
+      const errs = await p2.evaluate(() => window.__err || []);
+      const threw = errs.some((x) => /RangeError/.test(x) && /startDealer/.test(x));
+      ok(threw === want,
+        '?dealer=' + d + (want ? ' は RangeError で止まる' : ' は通る'),
+        JSON.stringify(errs));
+      await p2.close();
+    }
   }
 
   ok(errors.length === 0, 'ページで例外が出ていない', errors.slice(0, 3).join(' / '));

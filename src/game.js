@@ -53,14 +53,25 @@ class Game {
       jikaze: 27, name: (opts.foes && i > 0) ? opts.foes[i - 1] : SEAT_LABEL[i],
     }));
     this.bakaze = 27;
+    const whole = (v) => Number.isInteger(v);
     /* 起家。指定が無ければ毎回振り直す。席順（誰が下家か）は
        makeTables() が既に混ぜているので、ここで親を回せば
        「自分が必ず東家」だけが消える。
        opts.startDealer はリプレイ検証と席決め演出のために残してある
-       （tools/measure-fatigue.js は 0 を渡して、測った数字を動かさない） */
-    this.dealer = (opts.startDealer !== undefined)
-      ? ((opts.startDealer % 4) + 4) % 4
-      : Math.floor(Math.random() * 4);
+       （tools/measure-fatigue.js は 0 を渡して、測った数字を動かさない）。
+
+       **範囲外は黙って丸めずに投げる**（`kyoku` と同じ扱い。`resume-spec.md` §7）。
+       以前は `((n % 4) + 4) % 4` で巻いていたが、`Match.play` が転送するように
+       なってから **`?dealer=abc` の NaN がそのまま親になれる**ようになった
+       ——巻く式は NaN を NaN のまま返す。丸めも巻きもせず、ここで止める */
+    if (opts.startDealer !== undefined) {
+      if (!whole(opts.startDealer) || opts.startDealer < 0 || opts.startDealer > 3) {
+        throw new RangeError('opts.startDealer は 0〜3 の整数: ' + opts.startDealer);
+      }
+      this.dealer = opts.startDealer;
+    } else {
+      this.dealer = Math.floor(Math.random() * 4);
+    }
     this.startDealer = this.dealer;
     this.kyoku = 1;
     this.honba = 0;
@@ -73,8 +84,7 @@ class Game {
 
        **範囲外は黙って丸めずに投げる。**読む側（§5）が先に弾くので、
        ここまで来るのは実装ミス。丸めると「東4局のつもりが東の1局から始まっていた」
-       が黙って通る */
-    const whole = (v) => Number.isInteger(v);
+       が黙って通る（`whole` は起家の検査と同じものを上で置いてある） */
     if (opts.kyoku !== undefined) {
       if (!whole(opts.kyoku) || opts.kyoku < 1 || opts.kyoku > this.maxKyoku) {
         throw new RangeError('opts.kyoku は 1〜' + this.maxKyoku
