@@ -13,7 +13,9 @@
     2. 控えた値が、そのとき動いている `Game` と一致していること
        ——`kyoku` / `honba` / `riichiSticks` / 持ち点 / `startDealer`
     3. **半荘を打ち切ったら消えていること**（§4）
-       `showResult` の前に消すので、順位が出ている時点でもう無い
+       **段1 で変えた**（`taikai/resume-spec.md` §3）：`Match.play` は消さず
+       `done` を書くだけになり、消すのは呼び出し元（`match.html` の `await` のあと）。
+       順位が出ている時点では **`done` 付きで残っていて**、`await` が返ると消える
     4. `?dealer=` が効くこと（§7 の副産物）
        ——いままで `Match.play` が `Game` へ転送していなかった
 
@@ -186,11 +188,24 @@ function ok(cond, name, detail) {
       /* 対局終了のモーダル（結果へ）を押す */
       const btn = await page.$('#overlay .panel button');
       if (btn) {
-        /* 押す**前**に、もう消えていること（§4：showResult の前に消す） */
+        /* 押す**前**の状態を見る。**段1 で変わったところ**（`taikai/resume-spec.md` §3）：
+           以前は `Match.play` が `showResult` の前に消していたので「もう無い」だったが、
+           いまは**消さずに `done` を書く。**消すのは呼び出し元（`match.html` は
+           `await` のあと）。順位を眺めている最中に落ちても、
+           控えは `done` 付きで残っている */
         const atResult = await peek();
-        ok(atResult.gone === true,
-          '順位が出ている時点でもう消えている（showResult より前に消す）',
-          JSON.stringify(atResult.rec || atResult));
+        ok(atResult.gone !== true,
+          '順位が出ている時点では**まだ控えが残っている**（消すのは呼び出し元）',
+          JSON.stringify(atResult));
+        ok(!!(atResult.rec && Array.isArray(atResult.rec.done)),
+          '　そこに done が書かれている', JSON.stringify(atResult.rec && atResult.rec.done));
+        if (atResult.rec && Array.isArray(atResult.rec.done)) {
+          const d = atResult.rec.done;
+          ok(d.length === 4, '　done は4人ぶん', JSON.stringify(d));
+          ok(new Set(d.map((r) => r.seat)).size === 4, '　席がだぶらない', JSON.stringify(d));
+          ok(JSON.stringify(d.map((r) => r.place).sort()) === '[1,2,3,4]',
+            '　順位は 1〜4 が一つずつ', JSON.stringify(d));
+        }
         await btn.click();
       }
       await sleep(POLL);
@@ -210,8 +225,12 @@ function ok(cond, name, detail) {
       '控えの中身は動いている Game と一致している（' + sawLive + '回突き合わせた）',
       mismatches.slice(0, 3).join(' / '));
 
+    /* **`await` が返ったあとに `match.html` が消す**（§4 の書き換え後）。
+       `window.lastRank` が入った時点で `await` は返っている */
     const after = await peek();
-    ok(after.gone === true, '打ち切ったら消えている（§4）', JSON.stringify(after.rec || after));
+    ok(after.gone === true,
+      '打ち切って await が返ったら消えている（消すのは match.html。§4）',
+      JSON.stringify(after.rec || after));
   }
 
   /* ============================================================
@@ -368,6 +387,31 @@ function ok(cond, name, detail) {
     ok(n.dbgShown === true, '　従来の画面のまま');
     const p = await peek();
     ok(p.gone === true, '　黙って消えている', JSON.stringify(p.rec || p));
+  }
+
+  /* **`done` の付いた控えは黙って消す**（`taikai/resume-spec.md` §3）。
+     打ち切ったあと、結果を見ている最中に落ちたときのもの。
+     **結果画面を再現する価値は無い**ので一言も出さない
+     （本編の大会は同じ `done` を「打たずに結果として使う」——段2以降） */
+  {
+    const DONE = [{ seat: 2, place: 1 }, { seat: 0, place: 2 },
+                  { seat: 3, place: 3 }, { seat: 1, place: 4 }];
+    await plant({ done: DONE });
+    await page.reload();
+    const n = await notice();
+    ok(!n.shown, 'done 付きの控えでは一言を出さない');
+    ok(n.dbgShown === true, '　従来の画面のまま');
+    ok(n.inMatch === false, '　勝手に始まらない');
+    const p = await peek();
+    ok(p.gone === true, '　黙って消えている', JSON.stringify(p.rec || p));
+
+    /* **形が壊れた done は §5 が捨てる**（load の中で弾く） */
+    await plant({ done: [{ seat: 0, place: 1 }] });
+    await page.reload();
+    const n2 = await notice();
+    ok(!n2.shown, '壊れた done でも一言を出さない');
+    const p2 = await peek();
+    ok(p2.gone === true, '　黙って消えている', JSON.stringify(p2.rec || p2));
   }
 
   /* ---- 6. ［再開する］ ---- */
