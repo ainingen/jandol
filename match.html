@@ -23,6 +23,67 @@
   }
   .dbg span,.dbg label{font-size:11px;color:var(--muted)}
   .dbg select{font-size:12px;background:#111;color:var(--ivory);border:1px solid var(--gold-dim);border-radius:3px;padding:3px 6px}
+
+  /* 局の頭からの復帰（docs/design/match/resume-spec.md §6）。
+     **`.dbg` の位置に出す。**出ているあいだ `.dbg` は隠す
+     ——「破棄する」を押して初めて従来の画面に戻る（§6-4） */
+  .dbgResume{max-width:760px;margin:0 auto;padding:12px 8px 30px}
+  body.inMatch .dbgResume{display:none}
+  .dbgResume h2{margin:0 0 4px;font-size:15px;color:var(--ivory)}
+  .dbgResume p{margin:0 0 10px;font-size:12px;line-height:1.6;color:var(--muted)}
+  .dbgResume button{
+    font-size:12px;padding:6px 14px;border-radius:3px;cursor:pointer;margin-right:6px;
+    border:1px solid var(--gold-dim);background:var(--felt);color:var(--ivory);
+  }
+  .dbgResume button.ghost{border-color:var(--muted);background:transparent;color:var(--muted)}
+
+  /* ============================================================
+     診断用：四人卓の3Dを段階的に外す（?flat=1|2|3）
+     ------------------------------------------------------------
+     **本番には入らない。**このページのインラインにだけ置くこと。
+     `src/match.css` に書くと、GitHub Pages が `src/*.css` を10分キャッシュするので、
+     実機で古いものを見たまま「効かない」と誤読する。
+     `match.html` はURLにクエリが付くので必ず新しく取れる。
+
+     `!important` は `src/match.css` と詳細度で競わせないため。診断用なので汚くてよい。
+     `flat=2` は段1と段2、`flat=3` は三段とも積み上がる（`<body>` に flat1..flatN）。
+     **絵が崩れてよい。**打てて落ちないかだけを見る。
+     ============================================================ */
+
+  /* 段1：牌の厚み（::before）を消す */
+  body.flat1.inMatch.four .backs .tile::before,
+  body.flat1.inMatch.four .river .tile::before,
+  body.flat1.inMatch.four .opp .melds .tile::before{display:none !important}
+
+  /* 段2：牌そのものの3Dをやめる */
+  body.flat2.inMatch.four .backs .tile{
+    transform:none !important;transform-style:flat !important}
+  body.flat2.inMatch.four .river .tile,
+  body.flat2.inMatch.four .opp .melds .tile{transform-style:flat !important}
+
+  /* 段3：卓の傾きと遠近をやめる。**translate は残すこと**
+     （消すと #felt が画面外へ飛ぶ） */
+  body.flat3.inMatch.four #table{perspective:none !important}
+  body.flat3.inMatch.four #felt{
+    transform:translate(-50%,calc(-50% + var(--felt-y,0px))) !important;
+    transform-style:flat !important}
+  body.flat3.inMatch.four #center,
+  body.flat3.inMatch.four .rslot,
+  body.flat3.inMatch.four .river,
+  body.flat3.inMatch.four .opp,
+  body.flat3.inMatch.four .backs,
+  body.flat3.inMatch.four .opp .melds,
+  body.flat3.inMatch.four .meld,
+  body.flat3.inMatch.four .meldSide{transform-style:flat !important}
+
+  /* 効いていることの印。**これが無いと「効かなかった」と「効いたけど落ちた」が
+     区別できない**（実機では開発者ツールが使えない）。帯（z-index 8）より上に置く */
+  #flatBadge{
+    position:fixed;right:6px;bottom:4px;z-index:9999;pointer-events:none;
+    font:11px/1.4 ui-monospace,monospace;letter-spacing:.04em;
+    color:#fff;background:rgba(0,0,0,.62);border:1px solid rgba(255,255,255,.35);
+    border-radius:3px;padding:2px 6px;
+  }
 </style>
 </head>
 <body>
@@ -37,7 +98,19 @@
        ?dealer=2      起家を固定する（Game の opts.startDealer）
        ?sfx=0.5       効果音の音量（0 で無音）
        ?discard=double 打牌を二度押しにする（既定は一度押し）
-       ?start=1       開いた瞬間に始める（撮影用） -->
+       ?start=1       開いた瞬間に始める（撮影用）。**復帰の控えがあるときは
+                      始めない**（断りが見えないまま流れてしまうため。§6-5）
+       ?flat=1|2|3    **診断用。**四人卓の3Dを段階的に外す（1=牌の厚み／
+                      2=牌の3D／3=卓の傾きと遠近まで）。右下に flat=N の印が出る。
+                      絵は崩れる。**本番には入らない**（このページのインラインだけ）
+       ?nofit=1       **診断用。**卓の寸法を測り直す 500ms の見張りを止める。
+                      **寸法は初回の一回だけで固定され、以後は追随しない**
+                      （画面の向きを変えても直らない）。右下に nofit の印が出る -->
+<!-- 局の頭からの復帰の一言（docs/design/match/resume-spec.md §6）。
+     控えがあるときだけ中身が入る。**「通信」とは書かない**（§1）
+     ——原因は端末側で回線ではないので、Wi-Fi を疑わせると時間を無駄にさせる -->
+<div class="dbgResume" id="dbgResume" hidden></div>
+
 <div class="dbg">
   <span>対局の単体ページ：</span>
   <label>速さ <select id="dbgSpeed">
@@ -50,9 +123,34 @@
   <button id="dbgAuto">おまかせで流す</button>
 </div>
 
+<!-- 診断用：?nofit=1 で「卓の寸法を測り直す 500ms の見張り」を止める。
+     **`src/` の読み込みより前に仕込む。**`match.js:437` の
+       const watch = setInterval(function(){ fitTable(); clampTableScroll(false); }, 500);
+     は `Match.play()` の中で登録されるので、`window.setInterval` を差し替えて
+     **間隔 500 の登録だけ握り潰す**のがいちばん浅い介入
+     （`Match` は `fitFour` を外に出していないので、直に止められない）。
+     登録は一度きりなので、**一本飲んだらすぐ元に戻す**。
+     `clearInterval(0)` は何もしないので、後片づけ側も壊れない。
+     **本番には入らない。**このページのインラインだけ -->
+<script>
+(function () {
+  'use strict';
+  if (new URLSearchParams(location.search).get('nofit') !== '1') return;
+  const orig = window.setInterval;
+  window.setInterval = function (fn, ms) {
+    if (ms === 500) { window.setInterval = orig; return 0; }   // 一本だけ飲んで戻す
+    return orig.apply(window, arguments);
+  };
+})();
+</script>
 <script src="src/engine.js"></script>
 <script src="src/ai.js"></script>
 <script src="src/game.js"></script>
+<!-- 局の頭からの復帰（docs/design/match/resume-spec.md）。
+     **いまはこのページだけが読む**（§1）。`build.py` の JS リストには
+     入れていないので、本編には入らない——`match.js` は Resume が
+     無ければ黙って何もしない。characters.js より先でよい（引くのは呼ばれたとき） -->
+<script src="src/resume.js"></script>
 <script src="src/sound.js"></script>
 <script src="src/ui.js"></script>
 <script src="src/match.js"></script>
@@ -64,6 +162,19 @@
   'use strict';
   const q = new URLSearchParams(location.search);
   const num = (k, d) => (q.has(k) && q.get(k) !== '' ? Number(q.get(k)) : d);
+
+  /* 診断用：?flat=1|2|3 で四人卓の3Dを段階的に外す（上の <style> を見ること）。
+     **本番には入らない。**クエリが無ければ何もしない——印も出ない */
+  const flat = Math.max(0, Math.min(3, Math.floor(num('flat', 0)) || 0));
+  for (let i = 1; i <= flat; i++) document.body.classList.add('flat' + i);
+  /* ?nofit=1 は上の（`src/` より前の）script が仕込んでいる。ここは印だけ */
+  const nofit = q.get('nofit') === '1';
+  if (flat || nofit) {
+    const badge = document.createElement('div');
+    badge.id = 'flatBadge';
+    badge.textContent = [flat ? 'flat=' + flat : '', nofit ? 'nofit' : ''].filter(Boolean).join(' ');
+    document.body.appendChild(badge);
+  }
 
   /* 種を固定できる。線形合同法（jansou.js と同じ式） */
   if (q.has('seed')) {
@@ -115,8 +226,82 @@
     start(true, Number(dbgSpeed.value), dbgLen.value);
   });
 
+  /* ============================================================
+     局の頭からの復帰（docs/design/match/resume-spec.md §6）
+
+     落ちた理由は分かっていない（§0）。**分からないまま、続きを打てるようにする。**
+     その局の手は消えて配牌から引き直しになるので、**黙ってやらないこと**
+     ——断りがあれば「そういう仕様」として飲み込めるが、
+     何も言わずに手牌が変わると「バグった」と受け取られる（§1）。
+
+     **「通信」とは書かない**（§1）。原因は端末の側で回線ではないので、
+     通信のせいだと思った人は Wi-Fi を疑って無駄に時間を使う。
+     ============================================================ */
+  const box = document.getElementById('dbgResume');
+  const dbg = document.querySelector('.dbg');
+
+  /* 控えを読む。**捨てる条件は `Resume.load()` の中**（§5）
+     ——版・24時間・数の合わない配列・maxKyoku 超え・引けないキャラ。
+     当たったものは黙って消えて null で返る。**古い控えを
+     「再開しますか」と聞かれても意味が分からない**ので、ここでは何も出さない */
+  const saved = (typeof Resume !== 'undefined') ? Resume.load() : null;
+
+  /* 保存の席から打ち直す。**`PLAYER` / `JANDOLS` を引き直す**（§6-3）
+     ——控えているのは id だけで、キャラそのものではない。
+     `Resume.load()` が §5 の確認で既に引いているので、それをそのまま使う。
+     自分（id 0）だけは `pickSeats` と同じ形（顔を足す）にそろえる */
+  function seatsOf(rec) {
+    return rec.charas.map((c) => (c.id === 0 ? Object.assign({}, c, { face: 'p01' }) : c));
+  }
+
+  async function resume(rec) {
+    box.hidden = true;
+    Sound.init(); Sound.volume(num('sfx', 1)); Sound.load();
+    document.body.classList.add('inMatch');
+    /* 控えた `opts`（長さ・速さ・ヒント・打牌の押し方・見出し）に
+       **局の頭の値を足して渡す**（§6-3）。`Match.play` がそのまま `Game` へ流す（§7）。
+       控えは消さない——**ここでもう一度落ちたら、また同じ局から始めたい。**
+       消すのは半荘を打ち切ったとき（`Match.play` の中。§4） */
+    const opts = Object.assign({}, rec.opts, {
+      startDealer: rec.startDealer,
+      kyoku: rec.kyoku,
+      honba: rec.honba,
+      riichiSticks: rec.riichiSticks,
+      scores: rec.scores,
+    });
+    const rank = await Match.play(document.getElementById('matchRoot'), seatsOf(rec), opts);
+    document.body.classList.remove('inMatch');
+    window.lastRank = rank;
+    console.log('rank', rank.map((r) => `${r.place} ${r.chara.name}`).join(' / '));
+  }
+
+  if (saved) {
+    /* 局名は控えた `kyoku` / `honba` から組む（§6-2）。
+       表示は `((kyoku-1)%4)+1`、`kyoku > 4` なら南——`game.js` の帯と同じ式で、
+       `Resume.kyokuName` が一箇所で持っている */
+    box.innerHTML = '<h2>この局をやり直します</h2>'
+      + '<p>一時的に画面が止まったため、' + Resume.kyokuName(saved.kyoku, saved.honba)
+      + ' の最初から再開します</p>'
+      + '<button type="button" id="dbgResumeGo">再開する</button>'
+      + '<button type="button" class="ghost" id="dbgResumeDrop">破棄する</button>';
+    box.hidden = false;
+    /* 出ているあいだは従来の釦を隠す。**「破棄する」で従来の画面に戻る**（§6-4） */
+    dbg.hidden = true;
+    document.getElementById('dbgResumeGo').addEventListener('click', () => { resume(saved); });
+    document.getElementById('dbgResumeDrop').addEventListener('click', () => {
+      Resume.clear();
+      box.hidden = true;
+      dbg.hidden = false;
+    });
+  }
+
   window.startMatch = start;
-  if (q.get('start') === '1') {
+  window.resumeMatch = resume;
+  /* **控えがあるときは `?start=1` でも始めない**（§6-5）。
+     落ちて読み直されたとき `start=1` は URL に残っているので、
+     放っておくと**断りが見えないまま次の対局が始まる**——
+     そのうえ控えは新しい対局に上書きされて、戻る先が消える */
+  if (q.get('start') === '1' && !saved) {
     start(q.get('auto') === '1', num('speed', 520), q.get('length') || 'tonpuu');
   }
 })();
