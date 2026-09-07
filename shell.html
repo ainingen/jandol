@@ -162,6 +162,10 @@ body.inMatch #matchRoot{flex:1;min-height:0}
          未読 ＝ offers のうちここに無いもの。**三箇所に書くこと**
          （blankState / loadState / onStart）——落とすと毎回ぜんぶ未読に戻る */
       mailRead: [],
+      /* 大会の途中で落ちたときの控え（taikai/resume-spec.md §4）。
+         **`Resume` の控えは別の localStorage キー**なので、
+         「最初からはじめる」と「セーブを消す」では別に `Resume.clear()` を呼ぶ */
+      pendingTaikai: null,
       /* 県ごとの「認められた度合い」0〜100（scout/spec.md §10.4）。
          **最上位。減らない。**三箇所に書くこと（blankState / loadState / onStart） */
       local: {},
@@ -219,6 +223,8 @@ body.inMatch #matchRoot{flex:1;min-height:0}
         trip: s.trip && typeof s.trip === 'object' ? s.trip : null,
         offers: Array.isArray(s.offers) ? s.offers : [],
         mailRead: Array.isArray(s.mailRead) ? s.mailRead : [],
+        pendingTaikai: (s.pendingTaikai && typeof s.pendingTaikai === 'object')
+          ? s.pendingTaikai : null,
         local: s.local && typeof s.local === 'object' ? s.local : {},
         offerFired: Array.isArray(s.offerFired) ? s.offerFired : [],
         offerAccepted: Array.isArray(s.offerAccepted) ? s.offerAccepted : [],
@@ -262,8 +268,15 @@ body.inMatch #matchRoot{flex:1;min-height:0}
     /* 大会は「事務所に届く依頼」から入る（office/spec.md §8.2）。
        大会の画面へ降りて、終わったら事務所へ結果を持ち帰る。
        **大会選択の画面は通らない。**入口を一本にするため */
-    goTaikai: function (tierId, offerId) {
-      go('taikai', { tierId: tierId, onDone: function (res) {
+    goTaikai: function (tierId, offerId, resume) {
+      /* `resume` は `st.pendingTaikai`（taikai/resume-spec.md §6）。
+         **経路は依頼から入るときと同じ。**`onDone` の中身も同じものを使う
+         ——`offerId` を控えているのはこのため */
+      /* **`offerId` は opts にも渡す。**`onDone` の閉包に持つだけだと、
+         控え（`pendingTaikai`）に載らない——落ちて「続きから」で戻ったとき、
+         `onDone` が `Offers.byId(null)` を引いて日数も夜の日報も出なくなる */
+      go('taikai', { tierId: tierId, offerId: offerId || null,
+        resume: resume || null, onDone: function (res) {
         /* **結果は opts で渡す。**画面を替えると Office は組み直されるので、
            前の mount の閉包に控えた関数は宙に浮く（呼んでも何も出ない） */
         go('office', { phase: 'night', taikai: { tierId: tierId, offerId: offerId, res: res } });
@@ -274,7 +287,17 @@ body.inMatch #matchRoot{flex:1;min-height:0}
     onDecided: function () { go('office'); },
 
     /* 表紙から */
-    onContinue: function () { go(state.teamDecided ? 'office' : 'team'); },
+    onContinue: function () {
+      /* **大会の途中で落ちていたら、事務所ではなく大会へ**（§6）。
+         捨てる条件（§7）は taikai.js が見て、当たれば黙って消して事務所へ返す
+         ——ここで二重に見ない */
+      var p = state.pendingTaikai;
+      if (state.teamDecided && p && p.tierId) {
+        store.goTaikai(p.tierId, p.offerId, p);
+        return;
+      }
+      go(state.teamDecided ? 'office' : 'team');
+    },
     onStart: function () {
       /* 「最初からはじめる」は進行だけ消す。**いま決めたものは残す**
          ——名前・顔と、事務所名・本拠地（title.js が onStart の直前に
@@ -290,6 +313,9 @@ body.inMatch #matchRoot{flex:1;min-height:0}
       keep.local = {};
       state = Object.assign(blankState(), keep);
       saveState(state);
+      /* **`Resume` の控えは別の localStorage キー**（§4）。
+         `blankState()` では消えないので、ここで明示的に落とす */
+      if (typeof Resume !== 'undefined') Resume.clear();
       go('team');
     },
     onSigned: function () { paintTop(); },
@@ -302,7 +328,19 @@ body.inMatch #matchRoot{flex:1;min-height:0}
          ここが最初の入口。AudioContext は一つだけ（init は二度目から何もしない） */
       Sound.init(); Sound.volume(state.sfxVolume); Sound.load();
       document.body.classList.add('inMatch');
-      return Match.play(document.getElementById('matchRoot'), table, {
+      /* **落ちた対局の続き**（taikai/resume-spec.md §5）。`ctx.resume` があれば
+         局の頭の値をそのまま `Match.play` へ流す。無ければ何も足さない
+         ——渡さなければ `Game` は既定（東1局・25000点・起家は乱数）のまま */
+      var withResume = function (o, rec) {
+        if (!rec) return o;
+        o.startDealer = rec.startDealer;
+        o.kyoku = rec.kyoku;
+        o.honba = rec.honba;
+        o.riichiSticks = rec.riichiSticks;
+        o.scores = rec.scores;
+        return o;
+      };
+      return Match.play(document.getElementById('matchRoot'), table, withResume({
         title: ctx.tier.name + '　' + ctx.name,
         speed: state.matchSpeed || 520,
         showHints: state.showHints !== false,
@@ -310,7 +348,7 @@ body.inMatch #matchRoot{flex:1;min-height:0}
         /* 遠征先の常連との一局は 'ikkyoku'（scout/spec.md §10.3）。
            渡さなければ既定の東風のまま */
         length: ctx.length || undefined,
-      }).then(function (rank) {
+      }, ctx.resume)).then(function (rank) {
         document.body.classList.remove('inMatch');
         return rank;
       }, function (e) {
@@ -375,6 +413,7 @@ body.inMatch #matchRoot{flex:1;min-height:0}
   document.getElementById('appReset').addEventListener('click', function () {
     if (!window.confirm('セーブを消して最初からやり直します。よろしいですか。')) return;
     try { localStorage.removeItem(SAVE_KEY); } catch (e) {}
+    if (typeof Resume !== 'undefined') Resume.clear();      // 別のキー（§4）
     state = blankState();
     go('team');
   });

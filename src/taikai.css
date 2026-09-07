@@ -172,3 +172,20 @@
 }
 .tkSeg button[aria-pressed="true"]{background:var(--felt);color:var(--ivory);border-color:var(--gold)}
 .tkSeg button:focus-visible{outline:2px solid var(--gold);outline-offset:1px}
+
+/* 落ちた大会の続き（docs/design/taikai/resume-spec.md §6）。
+   出走表の上に一言と釦二つ。**「卓に着く」はこのとき出さない**
+   ——「続ける」がその代わりなので、押す先が二つあると迷う */
+.tkResume{
+  border:1px solid var(--gold-dim);border-radius:6px;
+  background:rgba(201,162,74,.07);padding:12px 13px;margin:10px 0 14px;
+}
+.tkResume h2{font-family:var(--maru);font-weight:800;font-size:15px;color:var(--gold);margin:0 0 6px}
+.tkResume p{font-size:12.5px;line-height:1.7;color:var(--text);margin:0 0 10px}
+.tkResumeBtns{display:flex;gap:8px;flex-wrap:wrap}
+.tkResumeBtns .tkGo{margin:0;flex:1 1 auto}
+.tkGhost{
+  font:inherit;font-size:12px;padding:9px 14px;border-radius:4px;cursor:pointer;
+  border:1px dashed var(--gold-dim);background:transparent;color:var(--muted);
+}
+.tkGhost:focus-visible{outline:2px solid var(--gold);outline-offset:2px}

@@ -337,6 +337,9 @@ const Taikai = (() => {
                  （第四段で、大会は「事務所に届く依頼」から入るようになった。
                   office/spec.md §8.2）
        onDone  … 大会が終わったら呼ぶ（事務所の夜へ返す）
+       resume  … `st.pendingTaikai`（`taikai/resume-spec.md` §6）。
+                 大会の途中で落ちたとき、表紙の「続きから」がこれを持って来る。
+                 **捨てる条件（§7）はここで見る**——当たれば黙って消して事務所へ
 
      **大会選択の画面は、事務所がいるときだけ外す。**入口を一本にするため。
      単体ページの store は `startDay` を持たないので、いままでどおり出る */
@@ -492,12 +495,39 @@ const Taikai = (() => {
             `<span class="tkName${teamIds.has(c.id) ? ' own' : ''}">${esc(c.name)}</span>`).join('')}</div>
         </div>`).join('');
 
+      /* 復帰の一言（§6）。**`resume` があるときだけ。**
+         「卓に着く」は出さない——「続ける」がその代わり。
+
+         **「通信」とは書かない**（`match/resume-spec.md` §1）。
+         原因は端末の側で回線ではないので、通信のせいだと思った人は
+         Wi-Fi を疑って無駄に時間を使う */
+      let notice = '';
+      if (resume) {
+        const rec = (typeof Resume !== 'undefined') ? Resume.load() : null;
+        const rd = (resume.rounds || [])[resume.ri || 0];
+        const where = esc(prepared.tier.name) + ' ' + esc((rd && rd.name) || '一回戦');
+        /* 局名は控えから。**無ければ東1局**（まだ一局も打っていない） */
+        const tail = (rec && Array.isArray(rec.done))
+          ? '前回の対局は終わっています。結果から続けます'
+          : 'を ' + esc(rec ? Resume.kyokuName(rec.kyoku, rec.honba) : '東1局')
+            + ' の最初から再開します';
+        notice = `<div class="tkResume">
+          <h2>この大会をやり直します</h2>
+          <p>一時的に画面が止まったため、${where} ${tail}</p>
+          <div class="tkResumeBtns">
+            <button type="button" class="tkGo" data-act="resume">続ける</button>
+            <button type="button" class="tkGhost" data-act="abandon">この大会を諦める</button>
+          </div>
+        </div>`;
+      }
+
       root.innerHTML = `
         <div class="tkHead"><h1 class="tkTitle">${esc(prepared.tier.name)}　出走表</h1>
           <div class="tkStatus"><span class="tkStat">${prepared.field.length}名</span></div></div>
+        ${notice}
         <p class="tkHint">金色があなたの事務所の四人です。</p>
         ${groups}
-        <button type="button" class="tkGo" data-act="start">卓に着く</button>`;
+        ${resume ? '' : '<button type="button" class="tkGo" data-act="start">卓に着く</button>'}`;
     }
 
     /* ---------- 進行 ---------- */
@@ -574,15 +604,21 @@ const Taikai = (() => {
 
     /* ---------- 進行の実処理 ---------- */
     let prepared = null;
+    /* 復帰の控え（§6）。**`renderField` が一言を出すかどうかもこれで決まる** */
+    let resume = null;
+
+    /* **枠を組むときだけ疲労と調子を乗せる**（`office/spec.md` §9）。
+       `teamCards()` そのものは素のまま——`finish()` の育成が
+       `st.comp` を読み直すので二重に効かないが、表示にも使われているため。
+       `Office` は「あれば使う」（単体ページでは素の子が出る） */
+    function cardedOf(st) {
+      return (c) => (typeof Office !== 'undefined' && Office.tableCardOf)
+        ? Office.tableCardOf(st, c) : c;
+    }
 
     function start(tierId) {
       const st = store.get();
-      /* **枠を組むときだけ疲労と調子を乗せる**（`office/spec.md` §9）。
-         `teamCards()` そのものは素のまま——`finish()` の育成が
-         `st.comp` を読み直すので二重に効かないが、表示にも使われているため。
-         `Office` は「あれば使う」（単体ページでは素の子が出る） */
-      const carded = (c) => (typeof Office !== 'undefined' && Office.tableCardOf)
-        ? Office.tableCardOf(st, c) : c;
+      const carded = cardedOf(st);
       prepared = prepare(tierId, {
         team: teamCards().map((c) => (c.id === 0 ? c : carded(c))), pool: poolCards(),
         region: st.region || (teamCards()[1] || {}).region || null,
@@ -593,11 +629,88 @@ const Taikai = (() => {
       renderField();
     }
 
+    /* ---------- 復帰（`taikai/resume-spec.md` §6・§7） ----------
+       **`prepare()` は呼ばない。**あれは乱数で `field` を組むので、
+       呼ぶたびに違う顔ぶれになる。控えた `fieldIds` から引き直す
+       ——`st` は大会中に一切書かれないので、**同じカードができる** */
+    function rebuild(p) {
+      const st = store.get();
+      const carded = cardedOf(st);
+      const byId = new Map();
+      poolCards().forEach((c) => byId.set(c.id, c));
+      /* チームは後から被せる（`start` と同じ——自分だけ素のまま） */
+      teamCards().forEach((c) => byId.set(c.id, c.id === 0 ? c : carded(c)));
+      const field = p.fieldIds.map((id) => byId.get(id) || null);
+      if (field.some((c) => !c)) return null;
+      return { tierId: p.tierId, tier: TOURNAMENTS[p.tierId], field, team: teamCards() };
+    }
+
+    /* **捨てる条件**（§7）。どれか一つでも当たれば false。
+       当たったら黙って消して事務所へ——一言は出さない */
+    function progressOk(p) {
+      if (!p || typeof p !== 'object') return false;
+      if (p.v !== 1) return false;
+      if (!p.tierId || !TOURNAMENTS[p.tierId]) return false;
+      if (!Array.isArray(p.fieldIds) || !p.fieldIds.length) return false;
+      const all = new Set(ALL().map((c) => c.id).concat([0]));
+      if (!p.fieldIds.every((id) => all.has(id))) return false;
+      /* 自分と、いまのチーム全員が出走表にいること */
+      const st = store.get();
+      const ids = new Set(p.fieldIds);
+      if (!ids.has(0)) return false;
+      if (!(st.team || []).every((id) => ids.has(id))) return false;
+      /* 回戦の形 */
+      if (!Array.isArray(p.rounds)) return false;
+      for (const r of p.rounds) {
+        if (!r || typeof r !== 'object') return false;
+        if (!Array.isArray(r.tables) || !r.tables.length) return false;
+        if (!Array.isArray(r.results) || r.results.length !== r.tables.length) return false;
+        for (const t of r.tables) {
+          if (!Array.isArray(t) || !t.length) return false;
+          if (!t.every((id) => ids.has(id))) return false;
+        }
+      }
+      return true;
+    }
+
+    /* 控えを捨てて事務所へ（§6 の「諦める」と §7）。
+       **`onDone` は通さない**——あれは大会が終わったことにして日数を消化するので、
+       打っていないのに一日が過ぎる。ここは朝の事務所へ戻すだけ */
+    function abandon() {
+      store.set({ pendingTaikai: null });
+      if (typeof Resume !== 'undefined') Resume.clear();
+      resume = null;
+      if (typeof store.go === 'function') { store.go('office'); return; }
+      screen = 'select'; renderSelect();
+    }
+
+    /* 控えから始める。**「続ける」を押すまで進まない**（§6） */
+    function startResume(p) {
+      const built = rebuild(p);
+      if (!built) { abandon(); return; }
+      prepared = built;
+      resume = p;
+      run = null;
+      screen = 'field';
+      renderField();
+    }
+
     /* 「卓に着く」を押してから対局に入る。
        自分の卓は実対局、他の卓は数値処理（taikai の runTournament が振り分ける） */
     async function playRounds() {
       root.innerHTML = `<p class="tkQuiet tkLoading">卓が立ちました…</p>`;
-      run = await runTournament(prepared, { playRealMatch: store.playRealMatch });
+      /* **卓割りと結果が出るたびに控える**（§4 の 1〜4）。
+         `store.set` は localStorage への同期の書き込みなので、
+         次の対局に入る前に必ず残っている。
+         `offerId` は控えに載せるだけ——`onDone` が事務所へ返すときに要る */
+      const offerId = resume ? resume.offerId : (opts.offerId != null ? opts.offerId : null);
+      run = await runTournament(prepared, {
+        playRealMatch: store.playRealMatch,
+        progress: resume || null,
+        offerId,
+        onProgress: (p) => { store.set({ pendingTaikai: p }); },
+      });
+      resume = null;               // ここから先は「続き」ではない
       screen = 'rounds';
       renderRounds();
     }
@@ -670,7 +783,14 @@ const Taikai = (() => {
         money: (st.money || 0) + prize.total,
         comp, compMax, grades, playerRank, playerWins, records, beaten, wins,
         recent: run.met.slice(0, 40),
+        /* **大会は終わった。控えは用済み**（§4・§5）。
+           賞金を書いたのと**同じ `store.set`** で落とすこと——
+           別々に書くと、あいだで落ちたときに「控えはあるが賞金は入っている」
+           という、もう一度打てる状態が残る */
+        pendingTaikai: null,
       });
+      /* `Resume` の控えは別の localStorage キーなので、続けて落とす（§5） */
+      if (typeof Resume !== 'undefined') Resume.clear();
       lastPromotion = promotedRank;
       /* 依頼から入ったときは、結果を事務所へ持ち帰る（§8.2） */
       lastRun = { tierId: run.tierId, tierName: run.tier.name,
@@ -710,6 +830,14 @@ const Taikai = (() => {
         }
         playRounds();
       }
+      else if (act.dataset.act === 'resume') {
+        /* 復帰の「続ける」（§6）。音の初期化は「卓に着く」と同じ扱い */
+        if (typeof Sound !== 'undefined') {
+          Sound.init(); Sound.volume(store.get().sfxVolume); Sound.load();
+        }
+        playRounds();
+      }
+      else if (act.dataset.act === 'abandon') abandon();
       else if (act.dataset.act === 'result') finish();
       else if (act.dataset.act === 'back') {
         /* 依頼から入ったときは、戻る先が事務所（大会選択の画面は無い） */
@@ -718,8 +846,15 @@ const Taikai = (() => {
       }
     });
 
+    /* **落ちた大会の続き**（`taikai/resume-spec.md` §6・§7）。
+       捨てる条件に当たったら**黙って消して事務所へ**——一言は出さない。
+       古い控えを「再開しますか」と聞かれても意味が分からない */
+    if (opts.resume) {
+      if (progressOk(opts.resume)) startResume(opts.resume);
+      else abandon();
+    }
     /* 依頼から直行するときは、大会を選ぶ画面を出さない（§8.2） */
-    if (opts.tierId && TOURNAMENTS[opts.tierId]) start(opts.tierId);
+    else if (opts.tierId && TOURNAMENTS[opts.tierId]) start(opts.tierId);
     else renderSelect();
     return { refresh: () => { if (screen === 'select') renderSelect(); } };
   }
