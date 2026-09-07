@@ -506,9 +506,11 @@ const Taikai = (() => {
         const rec = (typeof Resume !== 'undefined') ? Resume.load() : null;
         const rd = (resume.rounds || [])[resume.ri || 0];
         const where = esc(prepared.tier.name) + ' ' + esc((rd && rd.name) || '一回戦');
-        /* 局名は控えから。**無ければ東1局**（まだ一局も打っていない） */
+        /* 局名は控えから。**無ければ東1局**（まだ一局も打っていない）。
+           **`done` 付きは局名を出さない**——その対局はもう終わっていて、
+           戻る先が局の頭ではなく「結果」なので、局名を出すと打ち直すように読める */
         const tail = (rec && Array.isArray(rec.done))
-          ? '前回の対局は終わっています。結果から続けます'
+          ? 'の対局は終わっていました。結果から続けます'
           : 'を ' + esc(rec ? Resume.kyokuName(rec.kyoku, rec.honba) : '東1局')
             + ' の最初から再開します';
         notice = `<div class="tkResume">
