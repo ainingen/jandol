@@ -7,3 +7,9 @@ audio_raw/
 
 # tools/ を import したときに出る
 __pycache__/
+
+# Playwright をローカルに入れたときに出る（`npm i playwright`）。
+# **tools/ の drive-*.js が探すのはグローバル**（`npm i -g playwright`）で、
+# `loadPlaywright()` が `npm root -g` まで見に行く。
+# ここに置いても動くが、数十MBあるのでコミットしない
+node_modules/
