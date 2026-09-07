@@ -648,6 +648,103 @@ function fakeStore(st) {
     ok(/事務所ランク/.test(v.detail), 'そのときの detail は格の話');
   }
 
+  /* --- 値引きの内訳と、画面に出す一行（§5.3） ---
+     出す場所は三つ（名鑑・スカウトのカード・遠征の交渉）。**文面はここ一つ**で、
+     見た目は `style.css` の `.costOff` 一つ。どちらかを画面側に書き写すと、
+     同じ値引きが画面ごとに違う字面で出る（`RULES.event` で通った罠と同じ形） */
+  {
+    const c = all.find((x) => x.contract === 'free') || all[0];
+    const raw = RANK_INFO[c.rank].scoutCost;
+
+    const d0 = Scout.discountOf(c, { favor: {} });
+    eq(d0.cost, raw, 'favor 0：素の額のまま');
+    eq(d0.base, raw, 'favor 0：base も素の額');
+    eq(d0.favor, 0, 'favor 0');
+    eq(d0.off, 0, '引き率 0');
+    eq(d0.note, null, '**favor 0 では二行目を出さない**');
+
+    const d50 = Scout.discountOf(c, { favor: { [c.id]: 50 } });
+    eq(d50.off, 25, 'favor 50 → 25%引き');
+    eq(d50.base, raw, 'base は値引き前');
+    eq(d50.cost, Math.round(raw * 0.75), 'favor 50 の額');
+    eq(d50.note, `好感度 50 → 25%引き（素の額 ${raw.toLocaleString('ja-JP')}円）`,
+       'favor 50 の文面');
+
+    const d100 = Scout.discountOf(c, { favor: { [c.id]: 100 } });
+    eq(d100.off, 50, 'favor 100 → 50%引き');
+    eq(d100.cost, Math.round(raw * 0.5), 'favor 100 は半額');
+
+    /* 半端な好感度は小数で出す（丸めると額と食い違う） */
+    eq(Scout.discountOf(c, { favor: { [c.id]: 25 } }).off, 12.5, 'favor 25 → 12.5%引き');
+
+    /* **`st` 無しで落ちない**（セーブを持たない単体ページのため） */
+    eq(Scout.discountOf(c).cost, raw, 'st を渡さなくても落ちない');
+    eq(Scout.discountOf(c).note, null, 'st 無しなら二行目も出ない');
+
+    /* **`costOf` は数値のまま。**既存の呼び出しが壊れない形 */
+    eq(typeof Scout.costOf(c, { favor: { [c.id]: 50 } }), 'number', 'costOf は数値を返す');
+    eq(Scout.costOf(c, { favor: { [c.id]: 50 } }), d50.cost, 'costOf は discountOf().cost');
+
+    /* **`base` は cheap（半額）/ money（倍）を掛けたあと。**
+       値引き前の額であって、RANK_INFO の素の値ではない */
+    const cheap = all.find((x) => x.contract === 'cheap');
+    const money = all.find((x) => x.contract === 'money');
+    eq(Scout.discountOf(cheap, {}).base, Math.round(RANK_INFO[cheap.rank].scoutCost * 0.5),
+       'cheap の base は ×0.5 のあと');
+    eq(Scout.discountOf(money, {}).base, RANK_INFO[money.rank].scoutCost * 2,
+       'money の base は ×2 のあと');
+    /* 値引きはそのあとに掛かる */
+    eq(Scout.discountOf(cheap, { favor: { [cheap.id]: 100 } }).cost,
+       Math.round(Scout.discountOf(cheap, {}).base * 0.5), 'cheap も満額で半額');
+
+    /* 言葉は「引き」で揃える */
+    ok(!/割引|ディスカウント/.test(d50.note), '「割引」「ディスカウント」を使わない');
+  }
+
+  /* --- 三画面が同じ一行を出す（書き写していないこと） ---
+     `office.js` が条件文を書き写していないか見ているのと同じ形で、
+     機械的に固定する */
+  {
+    const fs = require('fs');
+    const path = require('path');
+    const read = (f) => fs.readFileSync(path.join(__dirname, '../src/', f), 'utf8')
+      .replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+
+    ['meikan.js', 'scout.js', 'office.js'].forEach((f) => {
+      const src = read(f);
+      ok(/discountOf\(/.test(src), f + ' は discountOf を呼ぶ');
+      ok(!/割引|ディスカウント/.test(src), f + ' は「割引」を使っていない');
+    });
+    /* 文面を組むのは `scout.js` の `discountOf` **一箇所だけ**。
+       出す側（名鑑・遠征の交渉）が組み直したら、そこで字面がずれる */
+    eq((read('scout.js').match(/引き（素の額/g) || []).length, 1,
+       'scout.js が値引きの文面を組むのは一箇所だけ');
+    ['meikan.js', 'office.js'].forEach((f) => {
+      ok(!/引き（素の額/.test(read(f)), f + ' は値引きの文面を書き写していない');
+    });
+
+    /* 名鑑は素の額（`RANK_INFO[...].scoutCost`）を直に出さない */
+    ok(!/scoutCost\s*\)\s*\}/.test(read('meikan.js')),
+       'meikan.js は RANK_INFO の素の額をそのまま出さない');
+
+    /* 見た目は style.css の一箇所だけ。画面ごとに定義し直さない */
+    const css = (f) => fs.readFileSync(path.join(__dirname, '../src/', f), 'utf8');
+    const defs = ['style.css', 'meikan.css', 'scout.css', 'office.css']
+      .filter((f) => /^\.costOff\s*\{/m.test(css(f)));
+    eq(defs.join(','), 'style.css', '.costOff の定義は style.css の一箇所だけ');
+
+    /* 三画面とも `.costOff` で出す（＝同じ見た目になる） */
+    ['meikan.js', 'scout.js', 'office.js'].forEach((f) => {
+      ok(/costOff/.test(read(f)), f + ' は .costOff で出す');
+    });
+
+    /* `meikan.html` は `Scout` を読む（値引きを出せる形になっている） */
+    const mk = fs.readFileSync(path.join(__dirname, '../meikan.html'), 'utf8');
+    ok(/src\/scout\.js/.test(mk), 'meikan.html が scout.js を読む');
+    ok(mk.indexOf('src/scout.js') < mk.indexOf('src/meikan.js'),
+       'scout.js は meikan.js より前（読み込み順）');
+  }
+
   /* --- 交渉の一行は「性格の一言」＋「既存の detail」（§5.4） --- */
   {
     const c = all[0];

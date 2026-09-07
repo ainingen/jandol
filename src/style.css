@@ -188,3 +188,16 @@ button.act.ghost{background:transparent;color:var(--muted)}
   margin:10px 0;text-align:left}
 .perk{font-size:12.5px;color:var(--text);margin:6px 0;text-align:left;line-height:1.6}
 .opt{flex-wrap:wrap}
+
+/* 契約金の値引きの一行（`docs/design/scout/spec.md` §5.3）。
+   出す場所は三つ——名鑑の詳細・スカウトのカード・遠征の交渉——で、
+   **文面は `Scout.discountOf` 一つ、見た目はここ一つ**に寄せてある。
+   どの画面も `style.css` を読むので、ここに置けば三つが必ず揃う。
+   金額の要素の**中**に入れて `display:block` で下へ落とす
+   （金額が `.scCost` のように太字の丸ゴシックなので、字体と太さを戻す）。
+   色は `.scCond.ok` と同じ緑——「条件が足りている」と同じ、
+   プレイヤーに得が起きているという意味 */
+.costOff{
+  display:block;font-style:normal;font-family:var(--sans);font-weight:400;
+  font-size:11px;line-height:1.6;letter-spacing:0;color:#6fbf95;margin-top:2px;
+}

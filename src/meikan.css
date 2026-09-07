@@ -211,6 +211,10 @@
 .mkRow dt{color:var(--muted)}
 .mkRow dd{margin:0;color:var(--text)}
 .mkQuiet{font-size:12px;color:var(--muted);line-height:1.7}
+/* 契約金の行。値引きの一行（`.costOff`）を dd の下にぶら下げるので、
+   dd が横に広がる。**右寄せにしないと金額だけ左に流れる**
+   （`.mkRow` は dt|dd の space-between） */
+.mkCost{text-align:right}
 
 /* 打ち筋の係数バー */
 .mkBars{display:grid;grid-template-columns:repeat(2,1fr);gap:5px 16px}

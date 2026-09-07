@@ -255,6 +255,13 @@ const Meikan = (() => {
       }
 
       const info = RANK_INFO[c.rank];
+      /* 契約金は好感度で値引きが乗る（`scout/spec.md` §5.3）。**素の額を出さない。**
+         **名鑑には好感度の行が無いので、この一行が好感度の初出になる。**
+         `Scout` が読まれていない場面（他の単体ページから借りたとき）は素の額に落ちる
+         ——`meikan.html` には `scout.js` を足してあるので、そこでは出る */
+      const money = typeof Scout !== 'undefined'
+        ? Scout.discountOf(c, st)
+        : { text: yen(info.scoutCost), note: null };
       const comp = st.comp[c.id];
       const compRow = signed && comp != null
         ? `<h2 class="mkSecT">育成</h2>
@@ -296,7 +303,8 @@ const Meikan = (() => {
           <h2 class="mkSecT">契約</h2>
           <dl>
             <div class="mkRow"><dt>条件</dt><dd>${esc(CONTRACTS[c.contract])}</dd></div>
-            <div class="mkRow"><dt>契約金の目安</dt><dd>${yen(info.scoutCost)}</dd></div>
+            <div class="mkRow"><dt>契約金の目安</dt><dd class="mkCost">${esc(money.text)}${
+              money.note ? `<i class="costOff">${esc(money.note)}</i>` : ''}</dd></div>
             <div class="mkRow"><dt>年俸</dt><dd>${yen(c.salary)}</dd></div>
           </dl>
           <div class="mkExtra" data-extra="${c.id}"></div>

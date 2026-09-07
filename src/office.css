@@ -266,6 +266,10 @@
   text-align:left;overflow-wrap:anywhere;
 }
 .ofSayNote{font-size:11px;line-height:1.7;color:var(--muted);margin:0 0 10px}
+/* 交渉の契約金（`scout/spec.md` §5.3）。値引きの一行は `.costOff` で下に付く
+   ——見た目は `style.css` の一箇所で、名鑑・スカウトのカードと揃えてある */
+.ofSayCost{font-size:12px;line-height:1.6;color:var(--muted);margin:0 0 8px}
+.ofSayCost b{font-family:var(--maru);font-weight:800;font-size:13.5px;color:var(--gold)}
 .ofSayBtns{display:flex;justify-content:center}
 .ofSayBtn{
   font:inherit;font-size:13px;padding:9px 26px;border-radius:7px;cursor:pointer;
