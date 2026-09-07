@@ -43,6 +43,7 @@ global.JANDOLS = chars.JANDOLS;
 global.FREE_AGENTS = chars.FREE_AGENTS;
 global.STYLES = chars.STYLES;
 global.PLAYER = chars.PLAYER;
+global.popOf = chars.popOf;          // 人気の読み口（元データ + popUp）
 const { Jansou } = require('../src/jansou.js');
 
 function arg(name, fallback) {

@@ -16,6 +16,8 @@ Object.assign(global, {
   JANDOLS: chars.JANDOLS, FREE_AGENTS: chars.FREE_AGENTS, STYLES: chars.STYLES,
   PLAYER: chars.PLAYER, REGIONS: chars.REGIONS, RANK_INFO: chars.RANK_INFO,
   CONTRACTS: chars.CONTRACTS,
+  /* 人気の読み口。ブラウザでは characters.js の <script> がそのまま置く */
+  popOf: chars.popOf,
 });
 Object.assign(global, require('../src/tournament.js'));
 const { Geo } = require('../src/geo.js');

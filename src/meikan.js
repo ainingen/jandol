@@ -10,7 +10,13 @@
        discovered : number[]  発見済みの雀ドルid
        contracted : number[]  契約済みの雀ドルid
        comp       : { [id]: 0-100 }  完成度（契約済みのみ意味を持つ）
-       favor      : { [id]: 0-100 }  好感度（未使用。枠だけ確保）
+       favor      : { [id]: 0-100 }  好感度。雀荘のゲスト来店・遠征の交渉・
+                    アイドル案件で貯まる（上限100・減らない）。
+                    `Scout.costOf` が契約金の値引きに読む（favor/200。100で半額）
+       popUp      : { [id]: 人気の底上げ }  アイドル案件で貯まる。
+                    表示は `characters.js` の `popOf(st, chara)` を通すこと
+                    ——元データの `pop` を直に出すと、事務所の名簿や
+                    雀エイト表と違う数字になる
 
    画像は img/<3桁>.webp。読めない場合はシルエットに自動で落ちる。
    ============================================================ */
@@ -282,7 +288,7 @@ const Meikan = (() => {
           <dl>
             <div class="mkRow"><dt>性格</dt><dd>${esc(c.chara)}</dd></div>
             <div class="mkRow"><dt>成長タイプ</dt><dd>${esc(c.growth)}</dd></div>
-            <div class="mkRow"><dt>人気</dt><dd>${c.pop}</dd></div>
+            <div class="mkRow"><dt>人気</dt><dd>${popOf(st, c)}</dd></div>
           </dl>
 
           ${compRow}

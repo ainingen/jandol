@@ -329,8 +329,14 @@ python3 -m http.server 8000
   セーブに `job:` を書くと**古びたまま残る**危険のほうが大きい。
   **日当の母数からは外さない**（契約基準なので）
 - **人気は元データ ＋ セーブの `popUp`。**`characters.js` の `pop` は
-  書き換えない。`office.js` の `rosterOf` と `jansou.js` の `roster()` が
-  **同じ読みかたをすること**——ここがずれると、事務所の表示と客足が食い違う
+  書き換えない。**読み口は `characters.js` の `popOf(st, chara)` ただ一つで、
+  式を書き写さないこと**——`office.js`（`rosterOf` / `eightTable`）・
+  `jansou.js`（`roster`）・`scout.js`（`roster`）・`meikan.js`（詳細）の
+  四つが呼ぶ。ずれると事務所の表示と客足が食い違い、
+  **同じ子が画面によって契約できたりできなかったりする**
+  （`scout.js` だけが底上げを見ておらず、実際にそうなっていた。2026年9月7日に直した）。
+  **`parlorRoster` / `rosterOf` の写しに `popOf` を重ねないこと**——
+  あれの `pop` にはもう乗っているので、二度足しになる（`deputyOf`）
 
 ### テスト
 

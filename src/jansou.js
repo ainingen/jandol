@@ -213,14 +213,17 @@ const Jansou = (() => {
     const workerDays = Object.keys(month.work).reduce((a, id) => a + month.work[id].days, 0);
 
     const nameOf = (id) => (ctx.names[id] && ctx.names[id].name) || '';
-    const popOf = (id) => (ctx.names[id] && ctx.names[id].pop) | 0;
+    /* **`popOf` という名前にしないこと。**`characters.js` の
+       `popOf(st, chara)` を隠す。ここが読むのは `ctx.names` に控えた
+       「その月の出勤者の人気」で、底上げはもう乗っている */
+    const monPop = (id) => (ctx.names[id] && ctx.names[id].pop) | 0;
 
     /* 「人気 × 出勤日数」は**月報を出すための表示上の指標**であって、
        computeDay に入れる値ではない（monthly.md §7） */
     const top = Object.keys(month.work)
       .filter((id) => ctx.names[id])
-      .map((id) => ({ name: nameOf(id), pop: popOf(id), days: month.work[id].days,
-                      score: popOf(id) * month.work[id].days }))
+      .map((id) => ({ name: nameOf(id), pop: monPop(id), days: month.work[id].days,
+                      score: monPop(id) * month.work[id].days }))
       .sort((a, b) => b.score - a.score).slice(0, 3);
 
     const nominate = Object.keys(month.nominate)
@@ -1099,8 +1102,10 @@ const Jansou = (() => {
           compMax: (st.compMax || {})[id],
           rank: (st.grades || {})[id] || base.rank,
           /* **人気は元データ + セーブの底上げ**（アイドル活動。office/spec.md §8.2）。
-             ここが客足（`slotPop`）に効くので、事務所の読みかたと必ず揃えること */
-          pop: (base.pop || 0) + (((st.popUp || {})[id]) | 0),
+             ここが客足（`slotPop`）に効くので、事務所の読みかたと必ず揃える
+             ——揃えかたは「同じ式を書く」ではなく
+             **`characters.js` の `popOf` を呼ぶ**こと */
+          pop: popOf(st, base),
         });
       }).filter(Boolean);
     }
