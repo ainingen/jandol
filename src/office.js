@@ -2022,7 +2022,12 @@ const Office = (() => {
           if (!won) {
             const lose = typeof SERIFU !== 'undefined'
               ? SERIFU.pick(c.chara, 'scoutLose') : '';
+            /* **いま積んだぶんを含めた額。**`store.get()` を読み直す
+               ——`st` は `store.set` の前に取ったもので、実装によっては古い。
+               負けても条件は明かさない（§5.1 の 3）が、**契約金は
+               スカウト画面に既に出ている数字**なので、ここで出しても隠しごとは増えない */
             await say({ id: c.id, name: c.name, rank: c.rank, line: lose,
+              money: Scout.discountOf(c, store.get()),
               note: `好感度 +${gain}（いま ${Math.min(100, base + gain)}）`, label: '引き上げる' });
           } else {
             /* --- 4. 勝ったら交渉。ここで初めて条件が明かされる（§5.1 の 3） --- */
@@ -2049,8 +2054,10 @@ const Office = (() => {
               });
               signed.push(c.id);
               log.push(`${c.name}と契約した（${v.cost ? yen(v.cost) : '契約金なし'}）`);
+              /* 額は契約金の行が言うので、`note` では繰り返さない */
               await say({ id: c.id, name: c.name, rank: c.rank, line: n.line,
-                note: `契約した（${v.cost ? yen(v.cost) : '契約金なし'}）`, label: '連れて帰る' });
+                money: Scout.discountOf(c, st),
+                note: '契約した', label: '連れて帰る' });
             } else {
               /* --- 5. 足りない。**空手で帰らせない**——課題として事務所に届ける（§5.2）。
                  **相手ごとに一枠。**二度失敗しても二件にならない */
@@ -2061,7 +2068,8 @@ const Office = (() => {
               log.push(`${c.name}「${short}」`);
               if (q) log.push(`${c.name}の課題が事務所に届いた`);
               await say({ id: c.id, name: c.name, rank: c.rank, line: n.line,
-                sub: short, note: q ? '事務所に課題として届きます' : '', label: '出直す' });
+                sub: short, money: Scout.discountOf(c, st),
+                note: q ? '事務所に課題として届きます' : '', label: '出直す' });
             }
           }
         }
@@ -2117,6 +2125,8 @@ const Office = (() => {
               ? `<i>${esc(o.rank)}級</i>` : ''}</div>
             ${o.line ? `<p class="ofSayLine">「${esc(o.line)}」</p>` : ''}
             ${o.sub ? `<p class="ofSaySub">${esc(o.sub)}</p>` : ''}
+            ${o.money ? `<p class="ofSayCost">契約金 <b>${esc(o.money.text)}</b>${
+              o.money.note ? `<i class="costOff">${esc(o.money.note)}</i>` : ''}</p>` : ''}
             ${o.note ? `<p class="ofSayNote">${esc(o.note)}</p>` : ''}
             <div class="ofSayBtns">
               <button type="button" class="ofSayBtn" data-key="ok">${esc(o.label || '……')}</button>

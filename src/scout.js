@@ -70,22 +70,49 @@ const Scout = (() => {
     return { ok: true, label: res.detail || CONTRACTS[chara.contract], detail: '', cost };
   }
 
-  /* 契約金。free は「条件なし」であって「ただ」ではない。
-     0円にすると cheap（半額）より安くなって逆転する。
+  /* 契約金の内訳（`scout/spec.md` §5.3）。**値引きの式はここ一つだけ。**
 
-     **`st` を渡すと好感度で値引きが乗る**（`scout/spec.md` §5.3）。
+     free は「条件なし」であって「ただ」ではない。0円にすると
+     cheap（半額）より安くなって逆転する。
+
+     **`st` を渡すと好感度で値引きが乗る。**
        契約金 = 素の額 × (1 − favor/200)      favor 100 で半額
      **緩むのは金だけ。**`RULES` の判定と事務所ランクの条件は動かない
      ——「通えば安くなるが、格が足りなければ会ってもくれない」。
-     `st` 無しで呼ぶと素の額（名鑑など、相手が決まっていない場面のため） */
-  function costOf(chara, st) {
-    const base = RANK_INFO[chara.rank].scoutCost;
-    let cost = base;
-    if (chara.contract === 'cheap') cost = Math.round(base * 0.5);
-    else if (chara.contract === 'money') cost = base * 2;
+     `st` 無しで呼ぶと素の額（名鑑など、セーブを持たない単体ページのため）。
+
+     返すもの:
+       cost  … 実際に払う額
+       base  … **値引き前**の額（cheap は半額・money は倍を掛けたあと）
+       favor … 好感度 0〜100
+       off   … 引き率（％）＝ favor / 2
+       text  … 金額の文字列
+       note  … 画面に出す二行目。**favor が 0 なら null**
+               ——引かれていないときに「0%引き」と出しても何も言っていない
+
+     **文面もここで組む。**出す場所は三つ（名鑑・スカウトのカード・
+     遠征の交渉）あって、`yen()` は画面ごとに別に定義されている
+     （`meikan.js` は 0 を「なし」と書く、`office.js` は丸める）ので、
+     数字だけ返すと同じ値引きが画面ごとに違う字面で出る。
+     見た目のほうは `style.css` の `.costOff` 一つに寄せてある */
+  function discountOf(chara, st) {
+    const raw = RANK_INFO[chara.rank].scoutCost;
+    let base = raw;
+    if (chara.contract === 'cheap') base = Math.round(raw * 0.5);
+    else if (chara.contract === 'money') base = raw * 2;
     const favor = st ? Math.min(100, Math.max(0, ((st.favor || {})[chara.id]) | 0)) : 0;
-    return Math.round(cost * (1 - favor / 200));
+    const off = favor / 2;
+    const cost = Math.round(base * (1 - favor / 200));
+    return {
+      cost, base, favor, off,
+      text: yen(cost),
+      /* 「割引」ではなく「引き」で揃える */
+      note: favor > 0 ? `好感度 ${favor} → ${off}%引き（素の額 ${yen(base)}）` : null,
+    };
   }
+
+  /* 契約金の額だけ。**既存の呼び出しはこのまま数値を受け取る** */
+  function costOf(chara, st) { return discountOf(chara, st).cost; }
 
   /* 条件ごとの判定。数値は後から触りやすいよう一か所にまとめてある */
   const POP_NEEDED = { S: 480, A: 320, B: 190, C: 90, D: 40 };
@@ -228,6 +255,9 @@ const Scout = (() => {
 
       const cards = found.map((c) => {
         const v = evaluate(c, st, list);
+        /* 値引きの一行（§5.3）。**額が出ない場面（事務所が小さい・定員いっぱい）では
+           出さない**——金額の下に付く一行なので、金額が無ければ宙に浮く */
+        const money = v.cost === null ? null : discountOf(c, st);
         return `<div class="scCard${v.ok ? ' ready' : ''}">
           <div class="scFace"><span class="mkFace sil"><img src="img/${pad3(c.id)}.webp"
             alt="" loading="lazy" onerror="this.remove()"></span>
@@ -239,7 +269,9 @@ const Scout = (() => {
             <div class="scCond${v.ok ? ' ok' : ''}">${esc(v.label)}</div>
             ${v.detail ? `<div class="scDetail">${esc(v.detail)}</div>` : ''}
             <div class="scFoot">
-              <span class="scCost">${v.cost === null ? '—' : (v.cost ? '契約金 ' + yen(v.cost) : '契約金なし')}</span>
+              <span class="scCost">${v.cost === null ? '—'
+                : (v.cost ? '契約金 ' + money.text : '契約金なし')}${
+                money && money.note ? `<i class="costOff">${esc(money.note)}</i>` : ''}</span>
               <span class="scSalary">年俸 ${c.salary ? yen(c.salary) : 'なし'}</span>
               <button type="button" class="scSign" data-sign="${c.id}" ${v.ok ? '' : 'disabled'}>契約する</button>
             </div>
@@ -385,7 +417,7 @@ const Scout = (() => {
 
   /* 抽選の中身も公開する。**遠征先の店（scoutshop.js）が同じ重みで引くため。**
      ここを別に持たせると「探す」と「店で見つける」で当たりかたが割れる */
-  return { mount, evaluate, costOf, drawOne, findCandidates, discoverWeights,
+  return { mount, evaluate, costOf, discountOf, drawOne, findCandidates, discoverWeights,
            AGENCY, agencyOf, SCOUT_COST, RULES };
 })();
 
