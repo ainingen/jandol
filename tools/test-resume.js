@@ -351,7 +351,16 @@ throws(() => new Game(NOOP_IO, { startDealer: Infinity }), 'startDealer が Infi
     });
     const g = new Game(io, { spectate: true, length: 'tonpuu', startDealer: 0 });
     await g.run();
-    ok(calls >= 4, '東風なら handStart は4回以上（連荘があれば増える）', 'calls ' + calls);
+    /* **飛びで終わった走行を数に入れないこと。**`game.js` の `nextKyoku` は
+       `score < 0` の子がいたらそこで終える（頭のコメントの `tobi`）ので、
+       東風でも3局で終わりうる。`calls >= 4` の決め打ちにしていたら、
+       **20回に1回ほどそこだけ落ちた**（calls 3）。
+       見たいのは「局の頭ごとに一度」なので、飛んだ走行は回数を問わない
+       ——そちらは下の「二度呼ばれない」が受け持つ */
+    const tobi = g.players.some((p) => p.score < 0);
+    ok(tobi ? calls >= 1 : calls >= 4,
+      '東風なら handStart は4回以上（連荘があれば増える。飛べば途中で終わる）',
+      'calls ' + calls + (tobi ? '・飛びで終局' : ''));
     ok(keys.length === new Set(keys).size,
       '同じ「局:本場」で二度呼ばれない', keys.join(' / '));
     ok(g.finished === true || g.kyoku > g.maxKyoku, '対局は終わっている');
@@ -372,9 +381,15 @@ throws(() => new Game(NOOP_IO, { startDealer: Infinity }), 'startDealer が Infi
     eq(keys[0], 7, '始まりは渡した局（南3局）');
     ok(g.kyoku >= 7, '局は戻らない', 'kyoku ' + g.kyoku);
     ok(g.finished === true, '南4局まで打って終わる');
-    /* 供託1本は誰かが持っていく。点棒の合計は 25000×4 ＋ 供託1000 */
+    /* 点棒の合計は 25000×4 ＋ 持ち込みの供託1000。
+       **卓に残っている供託を足して見ること。**「供託は誰かが持っていく」と
+       決め打ちにしていたら、**最後の局が流局で終わった走行だけ落ちた**
+       （5回に1回ほど。got 100000 / want 101000）。
+       リーチ宣言は持ち点から棒へ移すだけなので、
+       **持ち点の合計 ＋ 卓の供託 は最後まで動かない** */
     const total = g.players.reduce((n, p) => n + p.score, 0);
-    eq(total, 100000 + 1000, '点棒の合計は持ち込みぶんと供託で閉じる');
+    eq(total + g.riichiSticks * 1000, 100000 + 1000,
+       '点棒の合計は持ち込みぶんと供託で閉じる');
   }
 
   /* ============================================================
