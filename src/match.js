@@ -14,6 +14,11 @@
      rank  … [{ chara, place }, ...] を place 順で返す
 
    大会から呼ぶときは taikai.js の playRealMatch がこれを包む。
+
+   局の頭からの復帰（docs/design/match/resume-spec.md）は、
+   `src/resume.js` を読み込んでいるページでだけ効く（いまは match.html）。
+   opts に kyoku / honba / riichiSticks / scores / startDealer を足すと
+   そこから始まる（§7）。
    ============================================================ */
 
 const Match = (() => {
@@ -358,9 +363,19 @@ const Match = (() => {
     host.innerHTML = TABLE_HTML;
     (root || document.body).append(host);
 
+    /* 局の頭の状態をそのまま `Game` へ渡す（`resume-spec.md` §7）。
+       **どれも undefined なら既定に落ちる**ので、ふつうの対局では
+       いままでと1ビットも変わらない（`tools/test-resume.js` が固定している）。
+       `startDealer` はもともと `Game` にあったのに転送していなかったため、
+       **`match.html` の `?dealer=` はここまで届いていなかった。**これで効く */
     const g = new Game(UI, {
       length: opts.length || 'tonpuu',
       foes: seats.slice(1).map((c) => c.name),
+      startDealer: opts.startDealer,
+      kyoku: opts.kyoku,
+      honba: opts.honba,
+      riichiSticks: opts.riichiSticks,
+      scores: opts.scores,
     });
 
     /* 打ち筋の係数を配る。人間（id 0）には入れない。
@@ -442,7 +457,24 @@ const Match = (() => {
     UI.showHints = opts.showHints !== false;
     UI.discardMode = opts.discardMode === 'double' ? 'double' : 'single';   // 無ければ一度押し
 
+    /* 局の頭ごとに控える（`resume-spec.md` §3）。**`UI.game = g` と同じ作法。**
+       `Game` は `deal()` の直後に `io.handStart?.(this)` を呼ぶだけで、
+       ブラウザAPIを知らない——書き出すのはこちら側。
+
+       **`src/resume.js` を読み込んでいるページだけで効く。**いまは
+       `match.html` だけ（§1）で、本編（`index.html`）は `build.py` の
+       JS リストに入れていないので `Resume` が無く、ここは何もしない。
+       本編へ移すときに決めることは §9 にある */
+    const store = (typeof Resume !== 'undefined') ? Resume : null;
+    UI.handStart = store ? ((game) => store.save(game, seats, opts)) : null;
+
     await g.run();
+    /* **`showResult` より前に外して消す**（§4）。半荘が正常に終わった＝
+       復帰するものは無い。ここで消さずに結果を見せたあとにすると、
+       順位を眺めている最中に落ちたときへ最後の局を打ち直させることになる */
+    UI.handStart = null;
+    if (store) store.clear();
+
     const rank = UI._lastRank || g.rankings();
 
     /* 結果を見せてから片付ける */

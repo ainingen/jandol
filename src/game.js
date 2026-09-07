@@ -118,11 +118,16 @@ class Game {
     for (const p of this.players) p.jikaze = 27 + ((p.seat - this.dealer + 4) % 4);
   }
 
-  get maxKyoku() {
-    if (this.opts.length === 'hanchan') return 8;
-    if (this.opts.length === 'ikkyoku') return 1;
+  /* 長さから決まる最大の局数。**静的にも引けるようにしてある**
+     ——`src/resume.js` が「その保存を読んでよいか」を判じるのに要る（`resume-spec.md` §5）。
+     **式を向こうに書き写させないため**で、規則そのものは変えていない */
+  static maxKyokuOf(length) {
+    if (length === 'hanchan') return 8;
+    if (length === 'ikkyoku') return 1;
     return 4;
   }
+
+  get maxKyoku() { return Game.maxKyokuOf(this.opts.length); }
 
   /* ---------- 配牌 ---------- */
   deal() {

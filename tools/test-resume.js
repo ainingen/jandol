@@ -1,14 +1,14 @@
 #!/usr/bin/env node
 /*
-  対局の復帰 — `Game` の口の錠（段1）
+  対局の復帰 — `Game` の口と `Resume` の錠（段1・段2）
 
     node tools/test-resume.js
 
-  `docs/design/match/resume-spec.md` §8 段1。ここで見るのは **`Game` だけ**
-  ——保存そのもの（`Resume` / `localStorage` / `match.html` の復帰画面）は段2以降で、
-  この道具はブラウザを立てない（`test-match.js` と同じ方針）。
+  `docs/design/match/resume-spec.md` §8。**DOMに触らない側だけ**を見る
+  （`test-match.js` と同じ方針）。実際に打って `localStorage` が
+  更新されるかは `tools/drive-resume.js`、復帰の画面は段3。
 
-  見るのは五つ。
+  段1（`Game` の口）で見るのは五つ。
 
     1. `opts` で局の頭の状態が入ること（§7）
        `kyoku` `honba` `riichiSticks` `scores`、および
@@ -22,6 +22,18 @@
        丸めると「東4局のつもりが東1局から始まっていた」が黙って通る
     5. `io.handStart` を持たない `io` でも `playHand()` が回ること（§3）
        ——`io` は `UI` だけではない（`tools/measure-fatigue.js` はヘッドレスの `io`）
+
+  段2（`Resume`）で見るのは三つ。
+
+    6. 控えた記録の形（§2）
+       局中の状態（山・手牌・河・ドラ）を持たないこと、
+       `bakaze` と `dealer` を持たないこと（`kyoku` から派生するので）、
+       `opts` は5つだけ控えること
+    7. **捨てる条件が全部効くこと**（§5）
+       版・24時間・数の合わない配列・`maxKyoku` 超え・引けないキャラ。
+       **捨てるときは黙って消すこと**——投げない
+    8. **`localStorage` が使えなくても対局が続くこと**（§8 段2）
+       Safari のプライベートモードは `setItem` で投げる
 
   **`deal()` と `nextKyoku()` には触らない**（§10）ので、ここでも見ない。
   局の進みかたの錠は `tools/test-match.js` の側にある。
@@ -332,8 +344,222 @@ throws(() => new Game(NOOP_IO, { scores: null }), 'scores が null なら投げ�
     eq(total, 100000 + 1000, '点棒の合計は持ち込みぶんと供託で閉じる');
   }
 
+  /* ============================================================
+     6〜8. `Resume`（段2）
+
+     **ブラウザは立てない。**`localStorage` だけを差し替えて、
+     保存の形と「捨てる条件」（§5）を見る。
+     実際に打って更新されるかは `tools/drive-resume.js`（Playwright）
+     ============================================================ */
+  {
+    /* 最小の localStorage。**投げる版にも差し替えられる**ようにしておく */
+    const mem = { data: null, failWrite: false, failRead: false };
+    global.localStorage = {
+      getItem: (k) => {
+        if (mem.failRead) throw new Error('読めない環境');
+        return k === 'jandol_match_resume_v1' ? mem.data : null;
+      },
+      setItem: (k, v) => {
+        if (mem.failWrite) throw new Error('QuotaExceededError');
+        if (k === 'jandol_match_resume_v1') mem.data = String(v);
+      },
+      removeItem: (k) => { if (k === 'jandol_match_resume_v1') mem.data = null; },
+    };
+    const chars = require('../src/characters.js');
+    global.JANDOLS = chars.JANDOLS;
+    global.FREE_AGENTS = chars.FREE_AGENTS;
+    global.PLAYER = chars.PLAYER;
+    global.Game = Game;
+    const Resume = require('../src/resume.js');
+
+    const SEATS = [
+      Object.assign({}, chars.PLAYER),
+      chars.JANDOLS[0], chars.JANDOLS[1], chars.JANDOLS[2],
+    ];
+    const OPTS = { title: '単体の対局', speed: 520, length: 'hanchan',
+      showHints: true, discardMode: 'single' };
+    const mkGame = (over) => new Game(NOOP_IO, Object.assign(
+      { length: 'hanchan', startDealer: 3, kyoku: 2, honba: 1, riichiSticks: 2,
+        scores: [25000, 26000, 24000, 25000] }, over || {}));
+    const stored = () => JSON.parse(mem.data);
+    const reset = () => { mem.data = null; mem.failWrite = false; mem.failRead = false; };
+
+    /* ---- 6. 控えた記録の形（§2） ---- */
+    reset();
+    ok(Resume.save(mkGame(), SEATS, OPTS) === true, 'save は書けたら true');
+    {
+      const r = stored();
+      eq(r.v, 1, '版が入る');
+      eq(r.kyoku, 2, 'kyoku を控える');
+      eq(r.honba, 1, 'honba を控える');
+      eq(r.riichiSticks, 2, 'riichiSticks を控える');
+      eq(r.startDealer, 3, 'startDealer を控える');
+      ok(JSON.stringify(r.scores) === JSON.stringify([25000, 26000, 24000, 25000]),
+        '持ち点を席順で控える', JSON.stringify(r.scores));
+      ok(JSON.stringify(r.seats) === JSON.stringify(SEATS.map((c) => c.id)),
+        'キャラIDを席順で控える（自分が先頭）', JSON.stringify(r.seats));
+      ok(Number.isInteger(r.at) && Math.abs(Date.now() - r.at) < 5000, '時刻が入る');
+
+      /* **派生できるものは控えない**（§2）。控えると二か所になって必ずずれる */
+      ok(!('bakaze' in r), 'bakaze は控えない（kyoku から派生する）');
+      ok(!('dealer' in r), 'dealer は控えない（kyoku から派生する）');
+      /* **局中の状態は控えない。**deal() が作り直す */
+      const keys = Object.keys(r).join(' ');
+      ok(!/wall|deadWall|hand|discard|dora|melds/i.test(keys),
+        '山・手牌・河・ドラ・副露は控えない', keys);
+
+      /* opts は5つだけ（§2）。復帰の値を混ぜると最上位と二重になる */
+      ok(JSON.stringify(Object.keys(r.opts).sort())
+        === JSON.stringify(['discardMode', 'length', 'showHints', 'speed', 'title']),
+        'opts は5つだけ控える', JSON.stringify(Object.keys(r.opts)));
+    }
+    /* 復帰の値が opts に紛れ込まないこと（段3 で opts に足して渡すため） */
+    reset();
+    Resume.save(mkGame(), SEATS, Object.assign({}, OPTS,
+      { kyoku: 5, honba: 9, scores: [0, 0, 0, 0], startDealer: 1 }));
+    {
+      const o = stored().opts;
+      ok(!('kyoku' in o) && !('honba' in o) && !('scores' in o) && !('startDealer' in o),
+        '復帰の値は opts に控えない（最上位と二重にしない）', JSON.stringify(o));
+      eq(stored().kyoku, 2, '最上位は Game の値のまま');
+    }
+
+    /* 読み戻せること。**Game にそのまま渡して投げないこと**が約束（§7） */
+    reset();
+    Resume.save(mkGame(), SEATS, OPTS);
+    {
+      const rec = Resume.load();
+      ok(!!rec, '書いた直後は読める');
+      eq(rec.kyoku, 2, '読み戻した kyoku');
+      eq(rec.startDealer, 3, '読み戻した startDealer');
+      ok(rec.charas.length === 4 && rec.charas[0].id === 0,
+        'キャラを引き直して添える（§6-3）');
+      ok(rec.charas[1] === chars.JANDOLS[0], '引いたのは元データそのもの');
+      /* 通った記録は Game が受け取れること——ここが段3 の前提 */
+      let g2 = null;
+      try {
+        g2 = new Game(NOOP_IO, Object.assign({}, rec.opts, {
+          startDealer: rec.startDealer, kyoku: rec.kyoku, honba: rec.honba,
+          riichiSticks: rec.riichiSticks, scores: rec.scores,
+        }));
+      } catch (e) { fails.push('load を通った記録で Game が投げた  … ' + e); }
+      if (g2) {
+        eq(g2.kyoku, 2, '復帰した Game の kyoku');
+        eq(g2.dealer, 0, '復帰した Game の親（(3+2-1)%4）');
+        eq(g2.players[1].score, 26000, '復帰した Game の持ち点');
+      }
+      ok(mem.data !== null, 'load は消さない（通ったものは残す）');
+    }
+
+    /* 局名（§6 の一言）。表示は ((kyoku-1)%4)+1、kyoku>4 なら南 */
+    eq(Resume.kyokuName(2, 1), '東2局 1本場', '局名（東場）');
+    eq(Resume.kyokuName(5, 0), '南1局 0本場', '局名（南場）');
+    eq(Resume.kyokuName(8, 3), '南4局 3本場', '局名（南4局）');
+
+    /* ---- 7. 捨てる条件（§5）。**黙って消すこと** ---- */
+    const put = (over) => {
+      reset();
+      Resume.save(mkGame(), SEATS, OPTS);
+      const r = Object.assign(stored(), over || {});
+      mem.data = JSON.stringify(r);
+    };
+    const dropped = (over, name) => {
+      put(over);
+      let got;
+      try { got = Resume.load(); } catch (e) { fails.push(name + '  … 投げた: ' + e); return; }
+      ok(got === null, name + '（null を返す）', JSON.stringify(got && got.kyoku));
+      ok(mem.data === null, name + '（黙って消す）');
+    };
+
+    dropped({ v: 2 }, '版が違えば捨てる');
+    dropped({ v: 0 }, '版が 0 でも捨てる');
+    dropped({ at: Date.now() - 25 * 3600 * 1000 }, '24時間を超えたら捨てる');
+    dropped({ at: Date.now() + 10 * 60 * 1000 }, '未来の時刻なら捨てる（時計が動いた）');
+    dropped({ seats: [0, 1, 2] }, 'seats が3つなら捨てる');
+    dropped({ seats: [0, 1, 2, 3, 4] }, 'seats が5つなら捨てる');
+    dropped({ scores: [1, 2, 3] }, 'scores が3つなら捨てる');
+    dropped({ scores: [1, 2, 3, 'x'] }, 'scores に数でないものが混ざれば捨てる');
+    dropped({ kyoku: 0 }, 'kyoku が 1 未満なら捨てる');
+    dropped({ kyoku: 9 }, '半荘で kyoku 9 なら捨てる（maxKyoku 超え）');
+    dropped({ kyoku: 1.5 }, 'kyoku が整数でなければ捨てる');
+    dropped({ honba: -1 }, 'honba が負なら捨てる');
+    dropped({ riichiSticks: -1 }, 'riichiSticks が負なら捨てる');
+    dropped({ startDealer: 4 }, 'startDealer が 0〜3 の外なら捨てる');
+    dropped({ seats: [0, 1, 2, 99999] }, '引けないキャラIDなら捨てる');
+    dropped({ seats: [1, 2, 3, 4] }, '自分（id 0）がいない卓なら捨てる');
+
+    /* 長さで maxKyoku が変わること。**Game の式を写していない**ことの確認でもある */
+    dropped({ kyoku: 5, opts: Object.assign({}, OPTS, { length: 'tonpuu' }) },
+      '東風で kyoku 5 なら捨てる');
+    dropped({ kyoku: 2, opts: Object.assign({}, OPTS, { length: 'ikkyoku' }) },
+      '一局で kyoku 2 なら捨てる');
+    {
+      put({ kyoku: 4, opts: Object.assign({}, OPTS, { length: 'tonpuu' }) });
+      ok(Resume.load() !== null, '東風の kyoku 4 は通る（境目を投げすぎない）');
+      put({ kyoku: 8 });
+      ok(Resume.load() !== null, '半荘の kyoku 8 は通る');
+    }
+
+    /* 壊れた中身。**投げずに捨てる** */
+    reset(); mem.data = 'これはJSONではない';
+    ok(Resume.load() === null, '壊れた JSON なら捨てる');
+    ok(mem.data === null, '　黙って消す');
+    reset(); mem.data = 'null';
+    ok(Resume.load() === null, 'null が入っていれば捨てる');
+    reset(); mem.data = '[1,2,3]';
+    ok(Resume.load() === null, '配列が入っていれば捨てる');
+    reset();
+    ok(Resume.load() === null, '何も無ければ null');
+
+    /* clear は消す。二度呼んでも壊れない */
+    reset();
+    Resume.save(mkGame(), SEATS, OPTS);
+    ok(mem.data !== null, '前提：書けている');
+    Resume.clear();
+    ok(mem.data === null, 'clear で消える');
+    Resume.clear();
+    ok(mem.data === null, 'clear は二度呼んでも壊れない');
+
+    /* ---- 8. localStorage が使えなくても続くこと（§8 段2） ---- */
+    reset();
+    mem.failWrite = true;
+    let threw = null;
+    try {
+      ok(Resume.save(mkGame(), SEATS, OPTS) === false, '書けなければ false を返す');
+    } catch (e) { threw = e; }
+    ok(threw === null, '**setItem が投げても save は投げない**（対局は続く）', String(threw));
+
+    reset();
+    mem.failRead = true;
+    threw = null;
+    try { ok(Resume.load() === null, '読めなければ null'); } catch (e) { threw = e; }
+    ok(threw === null, '**getItem が投げても load は投げない**', String(threw));
+
+    reset();
+    mem.failWrite = true;
+    threw = null;
+    try { Resume.clear(); } catch (e) { threw = e; }
+    ok(threw === null, 'clear も投げない');
+    mem.failWrite = false;
+
+    /* 座っている人が言えない卓は控えない（書いても §5 が捨てるだけ） */
+    reset();
+    ok(Resume.save(mkGame(), [SEATS[0], SEATS[1], SEATS[2], {}], OPTS) === false,
+      'id の無い席が混ざれば控えない');
+    ok(mem.data === null, '　何も書かない');
+    ok(Resume.save(mkGame(), [SEATS[0], SEATS[1]], OPTS) === false,
+      '4人でなければ控えない');
+
+    /* **毎局上書きされること**（§3）。局が進むたびに新しい頭が入る */
+    reset();
+    Resume.save(mkGame({ kyoku: 2, honba: 0 }), SEATS, OPTS);
+    eq(stored().kyoku, 2, '2局目を控えた');
+    Resume.save(mkGame({ kyoku: 3, honba: 0 }), SEATS, OPTS);
+    eq(stored().kyoku, 3, '3局目で上書きされる（増えない）');
+  }
+
   /* ---------------- 結果 ---------------- */
-  console.log('対局の復帰 — Game の口の錠（段1）');
+  console.log('対局の復帰 — Game の口と Resume の錠（段1・段2）');
   console.log('通過 ' + pass + ' 件' + (fails.length ? ' / 失敗 ' + fails.length + ' 件' : ''));
   if (fails.length) {
     fails.forEach((f) => console.log('  ✗ ' + f));

@@ -127,6 +127,11 @@
 <script src="src/engine.js"></script>
 <script src="src/ai.js"></script>
 <script src="src/game.js"></script>
+<!-- 局の頭からの復帰（docs/design/match/resume-spec.md）。
+     **いまはこのページだけが読む**（§1）。`build.py` の JS リストには
+     入れていないので、本編には入らない——`match.js` は Resume が
+     無ければ黙って何もしない。characters.js より先でよい（引くのは呼ばれたとき） -->
+<script src="src/resume.js"></script>
 <script src="src/sound.js"></script>
 <script src="src/ui.js"></script>
 <script src="src/match.js"></script>
