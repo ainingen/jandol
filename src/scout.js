@@ -201,9 +201,17 @@ const Scout = (() => {
     let flash = null;          // 直前の探索結果
 
     const ALL = () => JANDOLS.concat(FREE_AGENTS);
+    /* 所属の写し。**人気は底上げ込みで載せる**（`characters.js` の `popOf`）。
+       `RULES.pop` が読むのは「事務所の合計人気」なので、素の元データを渡すと
+       **アイドル活動で上げたぶんが契約条件に効かない**。
+       `office.js` の遠征の交渉は `Office.rosterOf`（底上げ込み）を渡していたので、
+       **同じ子がこの画面では契約できず、遠征ではできる**状態になっていた */
     function roster() {
       const st = store.get();
-      return (st.contracted || []).map((id) => ALL().find((c) => c.id === id)).filter(Boolean);
+      return (st.contracted || [])
+        .map((id) => ALL().find((c) => c.id === id))
+        .filter(Boolean)
+        .map((c) => Object.assign({}, c, { pop: popOf(st, c) }));
     }
 
     function render() {

@@ -107,8 +107,9 @@ const Office = (() => {
         rank: (st.grades || {})[id] || base.rank,
         favor: (st.favor || {})[id] || 0,
         /* **人気は元データ + セーブの底上げ。**元データは書き換えない
-           （アイドル活動で貯まる。§8.2） */
-        pop: (base.pop || 0) + (((st.popUp || {})[id]) | 0),
+           （アイドル活動で貯まる。§8.2）。読み口は `characters.js` の
+           `popOf` ただ一つ——ここで式を書き写さないこと */
+        pop: popOf(st, base),
       });
     }).filter(Boolean);
   }
@@ -293,6 +294,9 @@ const Office = (() => {
     const skip = new Set(exclude || []);
     const cand = parlorRoster(st).filter((c) => !skip.has(c.id));
     if (!cand.length) return null;
+    /* 同点は人気で割る。**ここで `popOf` を通さないこと。**
+       `cand` は `parlorRoster` ＝ `rosterOf` の写しで、`pop` にはもう
+       底上げが乗っている。重ねて通すと `popUp` を二度足すことになる */
     return cand.slice().sort((a, b) => (b.comp || 0) - (a.comp || 0)
       || (b.pop || 0) - (a.pop || 0) || a.id - b.id)[0];
   }
@@ -370,11 +374,10 @@ const Office = (() => {
     store.set({ offerAccepted: acc, offers: (st.offers || []).filter((o) => o.id !== id) });
   }
 
-  /* 人気の底上げ（アイドル活動で貯まる）。**元データは書き換えない。**
-     `characters.js` の `pop` に、セーブの `popUp` を足して読む */
-  function popOf(st, c) {
-    return (c.pop || 0) + (((st.popUp || {})[c.id]) | 0);
-  }
+  /* 人気の読み口は **`characters.js` の `popOf` ただ一つ**（office/spec.md §8.2）。
+     ここには置かない——以前ここと `jansou.js` と `scout.js` に写しがあり、
+     `scout.js` のぶんだけ底上げを見ていなかった。
+     `Office.popOf` として公開しているのは、そのままそれ */
 
   /* アイドル案件の効き目（純関数・§8.2）。
      `chara`（性格19種）で向き不向き。向いていれば伸びが大きい。

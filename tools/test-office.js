@@ -31,6 +31,9 @@ global.STYLES = chars.STYLES;
 global.PLAYER = chars.PLAYER;
 global.RANK_INFO = chars.RANK_INFO;
 global.CONTRACTS = chars.CONTRACTS;
+/* 人気の読み口（元データ + popUp）。office.js / jansou.js / scout.js /
+   meikan.js が共有する。ブラウザでは characters.js の <script> が置く */
+global.popOf = chars.popOf;
 Object.assign(global, require('../src/tournament.js'));
 global.Tournament = require('../src/tournament.js');
 global.Scout = require('../src/scout.js');
@@ -485,6 +488,78 @@ function eq(a, b, name) {
   /* rosterOf も同じ読みかたをすること（雀荘の客足に効くので、ずれると嘘になる） */
   const st = { contracted: [a.id], comp: {}, popUp: { [a.id]: 5 } };
   eq(Office.rosterOf(st)[0].pop, basePop + 5, 'rosterOf も底上げを反映する');
+
+  /* **`Office.popOf` は `characters.js` の `popOf` そのもの。**
+     写しを置き直すと、また経路で違う人気が出る */
+  ok(Office.popOf === chars.popOf, 'Office.popOf は characters.js の popOf そのもの');
+  eq(chars.popOf(null, a), basePop, 'st が無くても落ちない（名鑑の未契約など）');
+  eq(chars.popOf({}, null), 0, 'chara が無ければ 0');
+
+  /* `deputyOf` の同点処理（完成度が同じなら人気 → id の順）。
+     `parlorRoster` ＝ `rosterOf` の写しなので `pop` にはもう底上げが乗っている。
+     **`popOf` を重ねて通すと二度足しになる**ので、そうなっていないことも見る */
+  {
+    const pair = (() => {
+      for (const p of JANDOLS) for (const q of JANDOLS) {
+        if (p.id < q.id && p.pop > q.pop && p.pop - q.pop >= 4) return [q, p];
+      }
+      return null;
+    })();
+    ok(pair, '試せる二人がいる');
+    const [low, high] = pair;                 // low は素では負けているほう
+    const gap = high.pop - low.pop;
+    const base = { comp: { [low.id]: 50, [high.id]: 50 }, assign: {}, parlor: { shifts: {} },
+                   contracted: [low.id, high.id] };
+    eq(Office.deputyOf(Object.assign({ popUp: {} }, base)).id, high.id,
+       '完成度が同点なら人気の高いほうが留守番');
+    eq(Office.deputyOf(Object.assign({ popUp: { [low.id]: gap + 1 } }, base)).id, low.id,
+       '**底上げで逆転したら留守番も入れ替わる**');
+    /* 半分だけ足しても逆転しない＝`popUp` を二度足していない */
+    eq(Office.deputyOf(Object.assign({ popUp: { [low.id]: Math.floor(gap / 2) } }, base)).id,
+       high.id, '**底上げを二度足していない**（半分では逆転しない）');
+  }
+}
+
+/* ---------- 人気の読み口は一箇所（characters.js の popOf）だけ ----------
+   直す前は `office.js` / `jansou.js` / `scout.js` に同じ式の写しがあり、
+   **`scout.js` のぶんだけ底上げを見ていなかった。**その結果、
+   `RULES.pop`（事務所の合計人気）が経路で割れ、**同じ子がスカウト画面では
+   契約できず、遠征の交渉ではできる**状態になっていた。
+   式を書き写していないことを、`quirk` や依頼の `when` と同じ形で機械的に見る */
+{
+  const fs = require('fs');
+  const path = require('path');
+  const read = (f) => fs.readFileSync(path.join(__dirname, '../src/', f), 'utf8')
+    /* 行コメントとブロックコメントを外してから見る（本文だけを見たい） */
+    .replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+
+  /* 定義は characters.js の一つだけ */
+  const defs = ['characters.js', 'office.js', 'jansou.js', 'scout.js', 'meikan.js']
+    .filter((f) => /function\s+popOf\s*\(\s*st/.test(read(f)));
+  eq(defs.join(','), 'characters.js', 'popOf の定義は characters.js だけ');
+
+  /* 読む側は式を書き写さない。`popUp` を直に触っていいのは、
+     characters.js（定義）と office.js の書き込み（アイドル案件）だけ */
+  ['jansou.js', 'scout.js', 'meikan.js'].forEach((f) => {
+    ok(!/popUp/.test(read(f)), f + ' は popUp を直に触らない（popOf を呼ぶ）');
+  });
+  const osrc = read('office.js');
+  const popUpLines = osrc.split('\n').filter((l) => /popUp/.test(l));
+  eq(popUpLines.length, 3, 'office.js が popUp に触るのはアイドル案件の書き込みだけ',
+     popUpLines.map((l) => l.trim()).join(' | '));
+  ok(popUpLines.every((l) => /store\.set|Object\.assign|popUp\[k\]/.test(l)),
+     'その三行はどれも書き込み（読みは popOf を通る）',
+     popUpLines.map((l) => l.trim()).join(' | '));
+
+  /* 四つとも popOf を呼んでいる */
+  ['office.js', 'jansou.js', 'scout.js', 'meikan.js'].forEach((f) => {
+    ok(/popOf\(/.test(read(f)), f + ' は popOf を呼ぶ');
+  });
+
+  /* **`jansou.js` の月報が `popOf` という名前を再利用していないこと。**
+     局所変数で隠すと、同じ名前で別の意味になる */
+  ok(!/const\s+popOf\s*=/.test(read('jansou.js')),
+     'jansou.js が popOf という名前を局所で使い回していない');
 }
 
 /* ============================================================

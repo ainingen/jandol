@@ -53,6 +53,31 @@ const CONTRACTS = {
 };
 
 /* ------------------------------------------------------------
+   人気の読み口（docs/design/office/spec.md §8.2）
+
+   **人気 ＝ 元データの `pop` ＋ セーブの `popUp[id]`。**
+   `popUp` はアイドル活動で貯まる底上げで、**下の `pop` は書き換えない**
+   （`Office.compFor` が `comp` でやっているのと同じ作法）。
+
+   **読むのはこの関数だけ。書き写さないこと。**書き写した結果、
+   `scout.js` の `roster()` だけが底上げを見ておらず、
+   **同じ子がスカウト画面では契約できず、遠征の交渉ではできる**という
+   食い違いが実際に起きていた（`RULES.pop` は事務所の合計人気を見るため）。
+
+   置き場所がここなのは、`pop` を読む四つ——`office.js`（`rosterOf` /
+   `deputyOf` / `eightTable`）・`jansou.js`（`roster`）・`scout.js`（`roster`）・
+   `meikan.js`（詳細）——が載るどのページでも、
+   **`characters.js` が必ず先に読まれている**ため
+   （`build.py` の `JS` の並びと、単体ページ6枚の `<script>` で確認済み）。
+
+   `st` が無くても落ちない（名鑑など、セーブを持たない場面のため）。
+------------------------------------------------------------ */
+function popOf(st, c) {
+  if (!c) return 0;
+  return (c.pop || 0) + ((((st && st.popUp) || {})[c.id]) | 0);
+}
+
+/* ------------------------------------------------------------
    雀ドル本体
    atk 攻撃力 / def 守備力 / pop 人気 / pot 伸びしろ（いずれも0-100）
    look はMJ用の外見メモ。画像は img/<id>.webp を読む
@@ -918,5 +943,6 @@ const RANK_INFO = {
 };
 
 if (typeof module !== 'undefined') {
-  module.exports = { JANDOLS, FREE_AGENTS, PLAYER, STYLES, REGIONS, CONTRACTS, RANK_INFO };
+  module.exports = { JANDOLS, FREE_AGENTS, PLAYER, STYLES, REGIONS, CONTRACTS, RANK_INFO,
+                     popOf };
 }
