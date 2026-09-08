@@ -55,6 +55,50 @@ const Taikai = (() => {
     ? `img/${c.face || 'p01'}.webp`
     : `img/${pad3(c.id)}.webp`);
 
+  /* 注目の三人（`field-spec.md` §3）。**因縁 → 強さ の順に三人まで。**
+
+     1. **因縁枠**——`st.recent` に入っていて、`st.beaten` に**入っていない**相手
+        （＝前に当たったが、まだ勝てていない相手）。`recent` は新しい順なので先頭から
+     2. **強さ枠**——残りを `strengthOf` の降順で埋める
+     3. 自事務所（`[0].concat(st.team)`）は入れない
+     4. 同じ子を二度入れない
+
+     `st.beaten` は一度勝てば積み上がったまま消えないので、因縁枠は
+     **「取りこぼしたまま」の相手だけ**になり、倒すと自然に卒業していく。
+     初回は `recent` が空なので三人とも強さ枠になる。それも正しい姿。
+
+     **強さが同じなら id で固定する**——雀エイト表と同じ理由で、
+     開くたびに並びが揺れると表として読めなくなる。
+
+     返すのは `[{ chara, why }]`。`why` は 'grudge'（因縁）か 'strong'（強さ）で、
+     **見出し語の文面は画面側が持つ**（ここは選ぶだけ） */
+  function pickSpotlight(field, st, n) {
+    st = st || {};
+    n = n == null ? 3 : n;
+    const own = new Set([0].concat(st.team || []));
+    const beaten = new Set(st.beaten || []);
+    /* `buildField` は人数が足りないとプールを使い回す（`dup`）ので、
+       **id で畳んでから**選ぶ。畳まないと同じ子が二枠を食う */
+    const byId = new Map();
+    (field || []).forEach((c) => {
+      if (c && !own.has(c.id) && !byId.has(c.id)) byId.set(c.id, c);
+    });
+
+    const out = [];
+    const taken = new Set();
+    const add = (c, why) => {
+      if (!c || taken.has(c.id) || out.length >= n) return;
+      taken.add(c.id);
+      out.push({ chara: c, why });
+    };
+    (st.recent || []).forEach((id) => { if (!beaten.has(id)) add(byId.get(id), 'grudge'); });
+    Array.from(byId.values())
+      .filter((c) => !taken.has(c.id))
+      .sort((a, b) => (strengthOf(b, STYLES) - strengthOf(a, STYLES)) || (a.id - b.id))
+      .forEach((c) => add(c, 'strong'));
+    return out;
+  }
+
   /* 勝ち上がりの梯子（`field-spec.md` §5）。**人数から作る。**
      卓数を書き写すと、大会の `size` を変えたときに必ずずれる。
      16人 → ['16名','4卓','決勝卓'] / 64人 → ['64名','16卓','4卓','決勝卓']
@@ -607,6 +651,20 @@ const Taikai = (() => {
           cardHTML(c, { mine: c.id === 0 })).join('')}</div>
       </section>`;
 
+      /* ④ 注目の雀ドル（§2・§3）。**「この中の誰かと当たります」とは書かない**
+         ——卓割りはまだ決まっていない。一回戦で当たらないことも、
+         決勝まで一度も当たらないこともある。
+
+         **注目に出した子を⑤の全員一覧から消さないこと**（§1）。
+         上で見た名前を下で探して見つからないと、壊れて見える。二か所に出てよい */
+      const WHY = { grudge: '前に当たって、勝てなかった相手', strong: '優勝候補' };
+      const spot = pickSpotlight(prepared.field, st);
+      const spotHTML = spot.length ? `<section class="tkFieldSec">
+        <h2 class="tkSecT">注目の雀ドル</h2>
+        <div class="tkCards tkCardsSpot">${spot.map((x) =>
+          cardHTML(x.chara, { why: WHY[x.why] })).join('')}</div>
+      </section>` : '';
+
       /* ② 賞金と梯子（§2・§5）。**賞金は大会によらず金**（`--gold`）——
          金は「お金の色」として既に働いているので、大会ごとに変えると意味が壊れる。
          梯子は `prepared.field.length` から作る。①の「N名」と同じ数から出すので、
@@ -630,6 +688,7 @@ const Taikai = (() => {
         ${notice}
         ${stakes}
         ${oursHTML}
+        ${spotHTML}
         <p class="tkHint">金色があなたの事務所の四人です。</p>
         ${groups}
         ${resume ? '' : '<button type="button" class="tkGo" data-act="start">卓に着く</button>'}`;
@@ -979,7 +1038,7 @@ const Taikai = (() => {
     document.documentElement.style.setProperty('--sil-img', `url("data:image/svg+xml,${svg}")`);
   }
 
-  return { mount, prepare, runTournament, prizeFor, canEnter, ladderOf,
+  return { mount, prepare, runTournament, prizeFor, canEnter, ladderOf, pickSpotlight,
            PAYOUT, PLAYER_STRENGTH };
 })();
 

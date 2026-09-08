@@ -60,6 +60,109 @@ Object.keys(global.TOURNAMENTS).forEach((id) => {
 });
 
 /* ------------------------------------------------------------
+   §3 注目の三人 — 因縁 → 強さ
+------------------------------------------------------------ */
+{
+  const pool = global.JANDOLS.concat(global.FREE_AGENTS);
+  const pick = (ids) => ids.map((id) => pool.find((c) => c.id === id));
+  const byStrength = (list) => list.slice()
+    .sort((a, b) => (global.strengthOf(b, global.STYLES) - global.strengthOf(a, global.STYLES))
+      || (a.id - b.id));
+  const ids = (r) => r.map((x) => x.chara.id);
+  const whys = (r) => r.map((x) => x.why);
+
+  /* 顔ぶれ。自分（0）＋仲間3人＋よそ10人 */
+  const team = [67, 70, 73];
+  const others = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+  const field = [Object.assign({}, global.PLAYER)].concat(pick(team)).concat(pick(others));
+
+  /* --- 因縁が三人いるとき --- */
+  {
+    const st = { team, recent: [5, 3, 9, 1], beaten: [] };
+    const r = Taikai.pickSpotlight(field, st);
+    same(ids(r), [5, 3, 9], '因縁が三人 … recent の先頭から三人');
+    same(whys(r), ['grudge', 'grudge', 'grudge'], '因縁が三人 … 三人とも因縁枠');
+  }
+  /* --- 因縁が一人だけのとき（残りは強さ順で埋まる） --- */
+  {
+    const st = { team, recent: [7], beaten: [] };
+    const r = Taikai.pickSpotlight(field, st);
+    ok(r[0].chara.id === 7 && r[0].why === 'grudge', '因縁が一人 … 先頭は因縁枠', J(ids(r)));
+    same(whys(r), ['grudge', 'strong', 'strong'], '因縁が一人 … 残りは強さ枠');
+    const rest = byStrength(pick(others).filter((c) => c.id !== 7)).slice(0, 2).map((c) => c.id);
+    same(ids(r).slice(1), rest, '因縁が一人 … 残りは強さの降順');
+  }
+  /* --- 因縁が一人もいないとき（初回） --- */
+  {
+    const r = Taikai.pickSpotlight(field, { team, recent: [], beaten: [] });
+    same(whys(r), ['strong', 'strong', 'strong'], '因縁ゼロ … 三人とも強さ枠');
+    same(ids(r), byStrength(pick(others)).slice(0, 3).map((c) => c.id),
+      '因縁ゼロ … 強さの降順');
+  }
+  /* --- 一度勝った相手は因縁枠にしない（beaten は消えない） --- */
+  {
+    const st = { team, recent: [5, 3, 9], beaten: [5, 9] };
+    const r = Taikai.pickSpotlight(field, st);
+    ok(r[0].chara.id === 3 && r[0].why === 'grudge',
+      'beaten の相手は因縁枠にしない', J(ids(r)));
+    ok(ids(r).slice(1).indexOf(5) < 0 || whys(r)[ids(r).indexOf(5)] === 'strong',
+      'beaten の相手が因縁枠で戻ってこない', J(whys(r)));
+  }
+  /* --- 自事務所は入れない --- */
+  {
+    const st = { team, recent: [67, 0, 70, 5], beaten: [] };
+    const r = Taikai.pickSpotlight(field, st);
+    ok(r.every((x) => [0, 67, 70, 73].indexOf(x.chara.id) < 0),
+      '自事務所は注目に入れない', J(ids(r)));
+    ok(r[0].chara.id === 5, '自事務所を飛ばして次の因縁が来る', J(ids(r)));
+  }
+  /* --- 出走していない相手は因縁枠にならない --- */
+  {
+    const st = { team, recent: [999, 5], beaten: [] };
+    const r = Taikai.pickSpotlight(field, st);
+    ok(r[0].chara.id === 5, '出走表にいない recent は飛ばす', J(ids(r)));
+  }
+  /* --- 同じ子を二度入れない（recent が重複していても） --- */
+  {
+    const st = { team, recent: [5, 5, 5], beaten: [] };
+    const r = Taikai.pickSpotlight(field, st);
+    same(ids(r).filter((id) => id === 5).length, 1, 'recent の重複で二枠を食わない');
+    same(r.length, 3, '重複しても三人そろう');
+  }
+  /* --- field の重複（buildField の dup）で二重にならない --- */
+  {
+    const dup = field.concat(pick([5]).map((c) => Object.assign({}, c, { dup: true })));
+    const r = Taikai.pickSpotlight(dup, { team, recent: [], beaten: [] });
+    same(ids(r).length, new Set(ids(r)).size, 'field の dup で同じ子が二枠に出ない');
+  }
+  /* --- n を超えない／n を変えられる --- */
+  same(Taikai.pickSpotlight(field, { team }, 1).length, 1, 'n = 1');
+  same(Taikai.pickSpotlight(field, { team }, 5).length, 5, 'n = 5');
+  same(Taikai.pickSpotlight(field, { team }).length, 3, 'n の既定は 3');
+  /* --- 人数が足りないときは足りないなりに返す --- */
+  {
+    const tiny = [Object.assign({}, global.PLAYER)].concat(pick([1, 2]));
+    same(Taikai.pickSpotlight(tiny, { team: [] }).length, 2, '相手が二人しかいなければ二人');
+    same(Taikai.pickSpotlight([], { team: [] }).length, 0, '相手がいなければ空');
+  }
+  /* --- st が空でも落ちない（単体ページ・新規セーブ） --- */
+  {
+    const r = Taikai.pickSpotlight(field, {});
+    same(r.length, 3, 'st が空でも三人');
+    ok(r.every((x) => x.chara.id !== 0), 'st が空でも自分は入らない', J(ids(r)));
+    same(Taikai.pickSpotlight(field, null).length, 3, 'st が null でも落ちない');
+    same(Taikai.pickSpotlight(null, {}).length, 0, 'field が null でも落ちない');
+  }
+  /* --- 同じ入力なら同じ並び（強さが同じなら id で固定） --- */
+  {
+    const st = { team, recent: [], beaten: [] };
+    const a = ids(Taikai.pickSpotlight(field, st));
+    const b = ids(Taikai.pickSpotlight(field.slice().reverse(), st));
+    same(a, b, '並べ替えても同じ三人（同点は id で固定）');
+  }
+}
+
+/* ------------------------------------------------------------
    §4.1 罠 — `root` の `data-tier` と大会選択の釦が同じ名前
 ------------------------------------------------------------ */
 ok(/closest\('button\[data-tier\]'\)/.test(BODY),
