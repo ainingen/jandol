@@ -8,6 +8,20 @@
   font-family:var(--sans);color:var(--text);
 }
 
+/* ---------- 大会ごとの色（docs/design/taikai/field-spec.md §4） ----------
+   **色は変数だけで差し替える。**要素ごとに色を書くと、変えるときに散る。
+   使うのは三つだけ——**見出し帯の罫・カードの縁・梯子の線**。
+   **賞金は大会によらず金のまま**（`--gold`）——金は「お金の色」として
+   `.tkPrize` / `.tkPrizeYen` / `.tkChampion` で既に働いているので、
+   大会ごとに変えるとその意味が壊れる。
+   `data-tier` は出走表・進行・結果の三画面に付く（一枚だけ色が違うと間違いに見える） */
+.tkRoot{--tk-accent:var(--gold);--tk-accent-dim:var(--gold-dim)}
+.tkRoot[data-tier="rookie"]{--tk-accent:#7fb08a;--tk-accent-dim:rgba(127,176,138,.38)}
+.tkRoot[data-tier="local"] {--tk-accent:#6d8fb8;--tk-accent-dim:rgba(109,143,184,.38)}
+.tkRoot[data-tier="open"]  {--tk-accent:#b9c2c6;--tk-accent-dim:rgba(185,194,198,.38)}
+.tkRoot[data-tier="title"] {--tk-accent:var(--gold);--tk-accent-dim:var(--gold-dim)}
+.tkRoot[data-tier="eight"] {--tk-accent:#c0392b;--tk-accent-dim:rgba(192,57,43,.42)}
+
 /* ---------- 見出し ---------- */
 .tkHead{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;margin:4px 2px 12px}
 .tkTitle{
@@ -71,6 +85,52 @@
 .tkGo:focus-visible{outline:2px solid var(--ivory);outline-offset:2px}
 
 /* ---------- 出走表 ---------- */
+/* ①見出し帯。罫だけ大会の色にする（§4）。**`.tkHead` そのものは触らない**
+   ——大会選択・進行・結果が同じものを使っているので、ここだけの別名を足す */
+.tkFieldHead{
+  border-bottom:2px solid var(--tk-accent);
+  padding-bottom:7px;margin-bottom:12px;
+}
+
+/* ②賞金と梯子。**何のために打つのか**と**何回打てば終わるのか**の二行 */
+.tkStakes{
+  border:1px solid var(--tk-accent-dim);border-radius:6px;
+  background:linear-gradient(var(--urushi-2),rgba(19,36,32,.45));
+  padding:10px 12px;margin:0 0 14px;
+}
+.tkPrizeBig{display:flex;align-items:baseline;gap:8px}
+.tkPrizeBigL{font-size:11.5px;color:var(--muted);letter-spacing:.08em}
+.tkPrizeBig b{
+  font-family:var(--maru);font-weight:800;font-size:22px;color:var(--gold);
+  letter-spacing:.03em;line-height:1.2;
+}
+/* 梯子。横一列、あいだに細い矢印。**最後の「決勝卓」だけ光らせる** */
+.tkLadder{
+  display:flex;align-items:center;flex-wrap:wrap;gap:6px 19px;
+  list-style:none;margin:8px 0 0;padding:0;
+}
+.tkLadder li{
+  position:relative;font-size:11.5px;color:var(--muted);
+  border:1px solid var(--tk-accent-dim);border-radius:3px;padding:2px 8px;
+  background:rgba(0,0,0,.22);white-space:nowrap;
+}
+/* 矢印は**枠の外**に置く（`position:absolute`）。`display:inline-block` で
+   組むと枠の内側に入り、「— 4卓」と書いてあるように読める（実際に読めた） */
+.tkLadder li+li::before{
+  content:"";position:absolute;left:-16px;top:50%;
+  width:9px;height:1px;background:var(--tk-accent);opacity:.75;
+}
+.tkLadder li+li::after{
+  content:"";position:absolute;left:-8px;top:50%;transform:translateY(-3px);
+  border-left:4px solid var(--tk-accent);
+  border-top:3px solid transparent;border-bottom:3px solid transparent;
+  opacity:.75;
+}
+.tkLadder li.last{
+  color:var(--ivory);border-color:var(--tk-accent);
+  font-family:var(--maru);font-weight:800;letter-spacing:.04em;
+}
+
 .tkGroup{margin-bottom:12px}
 .tkGroupT{
   font-family:var(--maru);font-weight:800;font-size:13px;color:var(--ivory);
