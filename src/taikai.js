@@ -187,7 +187,9 @@ const Taikai = (() => {
        opts.playRealMatch … 自分の卓を実際に打つ口（無ければ全部 simulateTable）
        opts.progress      … 控え（`st.pendingTaikai`）。無ければ最初から
        opts.onProgress    … (progress) => void。控えを書き出す口。無ければ何もしない
-       opts.offerId       … 依頼の id。控えにそのまま載せる（`onDone` が要る） */
+       opts.offerId       … 依頼の id。控えにそのまま載せる（`onDone` が要る）
+       opts.onRoundStart  … async (info) => void。回戦のあいだの中継
+                            （`round-spec.md` §3）。**待つ。**無ければ何もしない */
   async function runTournament(prepared, opts) {
     const { tier, tierId, field, team } = prepared;
 
@@ -204,6 +206,9 @@ const Taikai = (() => {
     const charaOf = (id) => byId.get(id) || null;
     const old = (opts.progress && typeof opts.progress === 'object') ? opts.progress : null;
     const emit = typeof opts.onProgress === 'function' ? opts.onProgress : null;
+    /* 中継の口（`round-spec.md` §3）。**`emit` と同じ形で先に畳んでおく**
+       ——呼ぶ側が `if (onRound)` で括れるようにするため（下の `bridge` の注記） */
+    const onRound = typeof opts.onRoundStart === 'function' ? opts.onRoundStart : null;
 
     const prog = {
       v: PROGRESS_V,
@@ -253,6 +258,11 @@ const Taikai = (() => {
     if (old && typeof Resume !== 'undefined' && Resume && typeof Resume.load === 'function') {
       try { saved = Resume.load(); } catch (e) { saved = null; }
     }
+    /* **覗くだけ。`saved` を消費しない**（`round-spec.md` §2.2）。
+       中継を出すかどうかの判定にだけ使う——ここで `resumeFor` を呼ぶと
+       控えが一度きりで消え、**本来の復帰が死ぬ** */
+    const hasSavedFor = (t) => !!saved && sameSeats(saved.seats, idsOf(t));
+
     /* 自分の卓を控えから片づける（§5 の 4）。返すのは
          { result }  … `done` 付き。**打たずに結果にする**
          { resume }  … `done` 無し。`playRealMatch` に渡して局の頭から
@@ -274,6 +284,42 @@ const Taikai = (() => {
       return { resume: rec };
     }
 
+    /* ------------------------------------------------------------
+       回戦のあいだの中継（`round-spec.md` §3）— `onRoundStart`
+
+       **`onProgress` と同じ「渡さなければ何もしない」口。**呼ぶのは二か所で、
+       どちらも**卓割りが決まって `push()` した直後、卓を打ち始める前**。
+       ここなら前の回戦の結果（`rounds` にもう入っている）と
+       次の卓の顔ぶれの両方が揃う。これより前だと卓が無く、これより後だと
+       打ち始めてしまう。
+
+       **出す条件は §2 の一文だけ**——「自分の卓をこれから東1局から打つ回戦だけ」。
+       それを `table` 一つに畳んで渡す（`null` なら画面側が黙って返す）ので、
+       **判定を二か所に書かない。**畳んでいるのは三つ：
+
+         - 自分がその回戦にいない（敗退・自分が出ていない決勝卓）
+         - 控えに結果がある（もう打ち終わっている）
+         - `Resume` の控えがその卓を指している（東1局からではない）
+
+       **「自動で処理する」の見分けはここではしない**（§2.1）。`autoMatch` のとき
+       `playRealMatch` は在るが何も返さないので `runTournament` からは区別できない。
+       呼ぶ側（`playRounds`）が `onRoundStart` を渡さないことで決める */
+    /* **呼ぶ側で `if (onRound)` を書くこと。`await bridge(...)` を素で置かない。**
+       中の頭で返しても `await` そのものが残り、**`playRealMatch` を渡さない走行が
+       同期から非同期に変わる**（あの経路は一度も `await` しない）。
+       種を固定して二度回す錠が、それだけで落ちる
+       ——`tools/test-taikai-resume.js` の「`onProgress` を渡しても結果が変わらない」
+       が実際に落ちた。渡さないときに一行も挙動が変わらないのが段1 の検品 */
+    async function bridge(ri2, name, aliveNow, tables, rec, isFinal) {
+      const k = tables.findIndex((t) => t.some((c) => c.id === 0));
+      const mine = k < 0 ? null
+        : (resultFrom(rec, k, tables[k]) || hasSavedFor(tables[k])) ? null : tables[k];
+      await onRound({
+        ri: ri2, name, size: aliveNow.length, isFinal,
+        table: mine, prev: rounds[rounds.length - 1] || null, alive: aliveNow,
+      });
+    }
+
     let ri = 0;
     while (alive.length > 4) {
       const rec = recOf(ri);
@@ -288,6 +334,7 @@ const Taikai = (() => {
                             return r ? r.map((x) => ({ id: x.chara.id, place: x.place })) : null;
                           }) };
       push();                                          // 卓割りが決まった（§4 の 2）
+      if (onRound) await bridge(ri, roundName(alive.length), alive, tables, rec, false);
       const results = [];
       for (let k = 0; k < tables.length; k++) {
         const t = tables[k];
@@ -334,6 +381,7 @@ const Taikai = (() => {
     prog.rounds[ri] = { name: '決勝卓', size: 4, isFinal: true,
                         tables: [idsOf(finalTable)], results: [null] };
     push();
+    if (onRound) await bridge(ri, '決勝卓', finalTable, [finalTable], finRec, true);
     let finalResult = resultFrom(finRec, 0, finalTable);   // 控えにあれば打ち直さない
     if (!finalResult && hasPlayer && opts.playRealMatch) {
       const back = resumeFor(finalTable);
@@ -919,6 +967,9 @@ const Taikai = (() => {
         progress: resume || null,
         offerId,
         onProgress: (p) => { store.set({ pendingTaikai: p }); },
+        /* 回戦のあいだの中継（`round-spec.md` §3）。**段1 は口を開けるだけ。**
+           画面は段2 で足す */
+        onRoundStart: async () => {},
       });
       resume = null;               // ここから先は「続き」ではない
       screen = 'rounds';
