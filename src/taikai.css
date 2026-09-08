@@ -131,6 +131,63 @@
   font-family:var(--maru);font-weight:800;letter-spacing:.04em;
 }
 
+/* ③④ 顔つきカード。**顔は七枚まで**（§7）——四人＋三人。
+   ⑤の全員一覧には顔を出さない（768×1024 の webp を64枚読むと数MBになる） */
+.tkFieldSec{margin:0 0 14px}
+.tkFieldSec .tkSecT{margin-top:0}
+.tkCards{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
+.tkCardsSpot{grid-template-columns:repeat(3,1fr)}
+.tkCard{
+  display:flex;flex-direction:column;gap:3px;
+  border:1px solid var(--tk-accent-dim);border-radius:5px;
+  background:linear-gradient(var(--urushi-2),rgba(19,36,32,.5));
+  padding:5px 5px 6px;min-width:0;
+}
+/* **自分のカードだけ縁を金に。**下の一覧の金色はそのまま残す（§2③）
+   ——上のカードは「誰が出るか」、下の金色は「どれが自分たちか」で目的が違う */
+.tkCard.mine{border-color:var(--gold);background:rgba(201,162,74,.08)}
+.tkFace{
+  position:relative;display:block;width:100%;aspect-ratio:3/4;
+  border-radius:3px;overflow:hidden;
+  background:
+    radial-gradient(90% 60% at 50% 20%,rgba(255,255,255,.06),transparent 60%),
+    linear-gradient(165deg,var(--back),var(--back-2));
+}
+/* 画像が無い id は `onerror` で消え、この影絵が下から出る（§7） */
+.tkFace::after{
+  content:"";position:absolute;inset:0;
+  background:var(--sil-img) center 62%/78% no-repeat;opacity:.9;
+}
+.tkFace img{
+  position:relative;z-index:1;
+  width:100%;height:100%;object-fit:cover;object-position:50% 8%;display:block;
+}
+.tkCardName{
+  font-family:var(--maru);font-weight:800;font-size:12px;color:var(--ivory);
+  line-height:1.3;letter-spacing:.01em;margin-top:2px;
+  overflow-wrap:anywhere;
+}
+.tkCardSub{display:flex;flex-wrap:wrap;gap:2px 5px;align-items:baseline;font-size:10px;color:var(--muted)}
+.tkCardSub b{font-family:var(--maru);font-weight:800;font-size:11px;color:var(--ivory-2)}
+/* 打ち筋は**必ず改行して**段位の下へ。折り返しに任せると、短い名前
+   （「逆境型」）だけ段位と同じ行に乗り、四枚の完成度バーの高さが揃わない */
+.tkCardStyle{display:block;width:100%;font-size:9.5px;color:var(--muted);overflow-wrap:anywhere}
+/* バーと調子は**カードの底に揃える。**名前や打ち筋の行数が一枚ずつ違うので、
+   上から積むと同じものが四枚とも違う高さに出る */
+.tkCard .tkTrack{margin-top:auto;padding-top:3px;background-clip:content-box}
+/* 調子（§6.3）。事務所の所属一覧（`.ofCond`）と同じ色分けにする
+   ——同じことを言っているので、画面が変わって色が変わると覚え直しになる */
+.tkCond{
+  display:flex;align-items:baseline;gap:3px;font-size:9.5px;color:var(--muted);
+  border:1px solid var(--gold-dim);border-radius:2px;padding:1px 4px;margin-top:1px;
+}
+.tkCond i{font-style:normal;font-size:10px;color:var(--ivory-2)}
+.tkCond.cm2{border-color:#b0503c;color:#f08a70}
+.tkCond.cm1{border-color:#8a5a44;color:#d09a80}
+.tkCond.cp0,.tkCond.cm0{border-color:var(--gold-dim)}
+.tkCond.cp1{border-color:#5a7a9a;color:#9cc0e0}
+.tkCond.cp2{border-color:#4a8ab0;color:#8fd0f0}
+
 .tkGroup{margin-bottom:12px}
 .tkGroupT{
   font-family:var(--maru);font-weight:800;font-size:13px;color:var(--ivory);

@@ -91,12 +91,18 @@ ok(!/--tk-accent/.test(prizeBig), '賞金に --tk-accent を使っていない',
   ok(CSS.indexOf(sel) >= 0, '⑤ の ' + sel + ' が残っている');
 });
 {
-  /* `taikai.css` が定義するクラスは全部 `tk` で始まること
-     （CSSはページ全体で一つの名前空間しかない） */
-  const bad = Array.from(new Set((CSS.replace(/\/\*[\s\S]*?\*\//g, '')
-    .match(/\.[A-Za-z_][\w-]*/g) || []).map((s) => s.slice(1))))
-    .filter((c) => !/^tk/.test(c) && !/^(last|mine|own|locked|p[1-4])$/.test(c));
-  same(bad, [], '新しいクラスは全部 tk で始まる');
+  /* `taikai.css` の**組の先頭に来るクラスは全部 `tk` で始まる**こと。
+     CSSはページ全体で一つの名前空間しかないので、`tk` の付かない名前を
+     単独で使うと他の画面に漏れる。`.tkCond.cm2` のように **`tk` の付いた
+     クラスに重ねる**のはよい——単独では効かないので漏れようがない
+     （`office.css` の `.ofCond.cm2` と同じ作法）。
+     見るのはコメントを外した本文（仕様の引用に釣られないため） */
+  const cssBody = CSS.replace(/\/\*[\s\S]*?\*\//g, '');
+  const bad = Array.from(new Set(
+    (cssBody.match(/(^|[\s,>+~(])\.[A-Za-z_][\w-]*/gm) || [])
+      .map((s2) => s2.replace(/^[^.]*\./, ''))
+  )).filter((c) => !/^tk/.test(c));
+  same(bad, [], '組の先頭に来るクラスは全部 tk で始まる');
 }
 
 /* ------------------------------------------------------------ */

@@ -512,6 +512,20 @@ const Taikai = (() => {
     }
 
     /* ---------- 出走表 ---------- */
+    /* 調子（`field-spec.md` §6.3）。**`Office` があるときだけ。**
+       単体ページ（`taikai.html`）では office.js が読まれていないので何も出ない。
+       **`st.cond` にその子の目が入っているときだけ出す**——`Office.condOf` は
+       知らない id に 0 を返すので、有無を見ずに出すと**まだ引いていない朝でも
+       全員が「ふつう」と言う。**既定値をここに書かない（二か所に持つと片方が古びる） */
+    function condHTML(c) {
+      if (typeof Office === 'undefined' || !Office.condOf || !Office.condLabel) return '';
+      const st = store.get();
+      if (!st.cond || typeof st.cond[c.id] !== 'number') return '';
+      const v = Office.condOf(st, c.id);
+      return `<span class="tkCond c${v >= 0 ? 'p' : 'm'}${Math.abs(v)}">調子
+        <i>${v > 0 ? '+' : ''}${v}</i>${esc(Office.condLabel(v))}</span>`;
+    }
+
     function renderField() {
       const st = store.get();
       const teamIds = new Set([0].concat(st.team || []));
@@ -556,6 +570,43 @@ const Taikai = (() => {
         </div>`;
       }
 
+      /* ③ カード一枚（§2）。③と④で同じものを使う——載せるものは同じで、
+         違うのは見出し語（`why`）と縁の色だけ。
+         **顔は七枚まで**（§7）——四人＋三人。⑤の全員一覧には出さない */
+      const cardHTML = (c, o) => {
+        o = o || {};
+        const isMe = c.id === 0;
+        /* 段位は**自分は `st.playerRank`、仲間は完成度から**（§2③）。
+           完成度は `prepared.field` の値をそのまま使う——`teamCards()` を
+           引き直すと、疲労と調子のぶんだけ下の一覧と食い違う */
+        const comp = c.comp != null ? c.comp : compFromRank(c.rank);
+        const grade = isMe ? (st.playerRank || 'D') : gradeOf(comp);
+        const style = (!isMe && STYLES[c.style]) ? STYLES[c.style].name : '';
+        return `<div class="tkCard${o.mine ? ' mine' : ''}">
+          ${o.why ? `<span class="tkWhy">${esc(o.why)}</span>` : ''}
+          <span class="tkFace"><img src="${esc(faceOf(c))}" alt=""
+            decoding="async" onerror="this.remove()"></span>
+          <span class="tkCardName">${esc(c.name)}</span>
+          <span class="tkCardSub"><b>${esc(grade)}級</b>${
+            style ? `<span class="tkCardStyle">${esc(style)}</span>` : ''}</span>
+          ${isMe ? '' : `<span class="tkTrack"><span class="tkFill"
+            style="width:${Math.round(Math.max(0, Math.min(100, comp)))}%"></span></span>`}
+          ${condHTML(c)}
+        </div>`;
+      };
+
+      /* ③ あなたの事務所（§2）。順序は**自分が先頭**、あとは `st.team` の順。
+         中身は `prepared.field` から引く——上のカードと下の一覧が
+         同じ数字を見るため（§2③） */
+      const inField = new Map();
+      prepared.field.forEach((c) => { if (!inField.has(c.id)) inField.set(c.id, c); });
+      const ours = teamCards().map((c) => inField.get(c.id) || c);
+      const oursHTML = `<section class="tkFieldSec">
+        <h2 class="tkSecT">あなたの事務所</h2>
+        <div class="tkCards">${ours.map((c) =>
+          cardHTML(c, { mine: c.id === 0 })).join('')}</div>
+      </section>`;
+
       /* ② 賞金と梯子（§2・§5）。**賞金は大会によらず金**（`--gold`）——
          金は「お金の色」として既に働いているので、大会ごとに変えると意味が壊れる。
          梯子は `prepared.field.length` から作る。①の「N名」と同じ数から出すので、
@@ -578,6 +629,7 @@ const Taikai = (() => {
           <div class="tkStatus"><span class="tkStat">${prepared.field.length}名</span></div></div>
         ${notice}
         ${stakes}
+        ${oursHTML}
         <p class="tkHint">金色があなたの事務所の四人です。</p>
         ${groups}
         ${resume ? '' : '<button type="button" class="tkGo" data-act="start">卓に着く</button>'}`;
