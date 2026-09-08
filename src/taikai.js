@@ -659,6 +659,35 @@ const Taikai = (() => {
       root.addEventListener('pointerdown', skipEnter);
     }
 
+    /* 顔つきカード一枚（`field-spec.md` §2）。出走表の③④と、回戦のあいだの
+       中継（`round-spec.md` §4）が**同じものを使う**——載せるものは同じで、
+       違うのは見出し語（`why`）と縁の色だけ。**中継では `why` を付けない**
+       （「優勝候補」は出走表の文脈のもので、卓に着く直前では意味が変わる）。
+       **顔は七枚まで**（`field-spec.md` §7）——出走表の四人＋三人。
+       全員一覧には出さない */
+    const cardHTML = (c, o) => {
+      o = o || {};
+      const st = store.get();
+      const isMe = c.id === 0;
+      /* 段位は**自分は `st.playerRank`、仲間は完成度から**（§2③）。
+         完成度は `prepared.field` の値をそのまま使う——`teamCards()` を
+         引き直すと、疲労と調子のぶんだけ下の一覧と食い違う */
+      const comp = c.comp != null ? c.comp : compFromRank(c.rank);
+      const grade = isMe ? (st.playerRank || 'D') : gradeOf(comp);
+      const style = (!isMe && STYLES[c.style]) ? STYLES[c.style].name : '';
+      return `<div class="tkCard${o.mine ? ' mine' : ''}">
+        ${o.why ? `<span class="tkWhy">${esc(o.why)}</span>` : ''}
+        <span class="tkFace"><img src="${esc(faceOf(c))}" alt=""
+          decoding="async" onerror="this.remove()"></span>
+        <span class="tkCardName">${esc(c.name)}</span>
+        <span class="tkCardSub"><b>${esc(grade)}級</b>${
+          style ? `<span class="tkCardStyle">${esc(style)}</span>` : ''}</span>
+        ${isMe ? '' : `<span class="tkTrack"><span class="tkFill"
+          style="width:${Math.round(Math.max(0, Math.min(100, comp)))}%"></span></span>`}
+        ${condHTML(c)}
+      </div>`;
+    };
+
     function renderField() {
       const st = store.get();
       const teamIds = new Set([0].concat(st.team || []));
@@ -702,31 +731,6 @@ const Taikai = (() => {
           </div>
         </div>`;
       }
-
-      /* ③ カード一枚（§2）。③と④で同じものを使う——載せるものは同じで、
-         違うのは見出し語（`why`）と縁の色だけ。
-         **顔は七枚まで**（§7）——四人＋三人。⑤の全員一覧には出さない */
-      const cardHTML = (c, o) => {
-        o = o || {};
-        const isMe = c.id === 0;
-        /* 段位は**自分は `st.playerRank`、仲間は完成度から**（§2③）。
-           完成度は `prepared.field` の値をそのまま使う——`teamCards()` を
-           引き直すと、疲労と調子のぶんだけ下の一覧と食い違う */
-        const comp = c.comp != null ? c.comp : compFromRank(c.rank);
-        const grade = isMe ? (st.playerRank || 'D') : gradeOf(comp);
-        const style = (!isMe && STYLES[c.style]) ? STYLES[c.style].name : '';
-        return `<div class="tkCard${o.mine ? ' mine' : ''}">
-          ${o.why ? `<span class="tkWhy">${esc(o.why)}</span>` : ''}
-          <span class="tkFace"><img src="${esc(faceOf(c))}" alt=""
-            decoding="async" onerror="this.remove()"></span>
-          <span class="tkCardName">${esc(c.name)}</span>
-          <span class="tkCardSub"><b>${esc(grade)}級</b>${
-            style ? `<span class="tkCardStyle">${esc(style)}</span>` : ''}</span>
-          ${isMe ? '' : `<span class="tkTrack"><span class="tkFill"
-            style="width:${Math.round(Math.max(0, Math.min(100, comp)))}%"></span></span>`}
-          ${condHTML(c)}
-        </div>`;
-      };
 
       /* ③ あなたの事務所（§2）。順序は**自分が先頭**、あとは `st.team` の順。
          中身は `prepared.field` から引く——上のカードと下の一覧が
@@ -782,6 +786,83 @@ const Taikai = (() => {
         ${groups}
         ${resume ? '' : '<button type="button" class="tkGo" data-act="start">卓に着く</button>'}`;
       playEntrance();
+    }
+
+    /* ---------- 回戦のあいだ（`round-spec.md` §4） ----------
+       `runTournament` の `onRoundStart` から呼ばれる。出す・出さないの判定は
+       向こう側で `info.table` 一つに畳んであるので、**ここでは `null` を見て
+       黙って返すだけ**（判定を二か所に書かない。§3）。
+
+       **解決関数は一つしか持たない**（§7）。二回目の回戦に入るときに
+       前の回戦のぶんが残っていると、押していないのに進む */
+    let roundGo = null;
+
+    /* ② 勝ち上がり（§4）。**自事務所の四人だけ見る**——64人ぶんの勝敗は出さない。
+       落ちた子は `prev` から着順を引く。**前より古い回戦で落ちた子は出さない**
+       ——その回戦の中継でもう言っているので、毎回むし返すことになる */
+    function bridgeUp(info) {
+      if (!info.prev) return '';                 // 一回戦。前の回戦が無い
+      const st = store.get();
+      const ours = [0].concat(st.team || []);
+      const nameOf = new Map();
+      prepared.field.forEach((c) => { if (!nameOf.has(c.id)) nameOf.set(c.id, c.name); });
+      const aliveIds = new Set(info.alive.map((c) => c.id));
+
+      const inNow = ours.filter((id) => aliveIds.has(id) && nameOf.has(id));
+      const place = new Map();
+      info.prev.results.forEach((r) => r.result.forEach((x) => place.set(x.chara.id, x.place)));
+      /* **一人ぶんを `nowrap` の箱に入れる。**素の文字列を並べると
+         「湊 いお／り（一回戦・3位）」と**名前の途中で折れる** */
+      const out = ours.filter((id) => !aliveIds.has(id) && place.has(id))
+        .map((id) => '<span class="tkBridgeOne">' + esc(nameOf.get(id) || '')
+          + '（' + esc(info.prev.name) + '・' + place.get(id) + '位）</span>');
+
+      return `<section class="tkBridgeUp">
+        <p class="tkBridgeLine">あなたの事務所：<b>${inNow.length}人</b>が残りました</p>
+        ${inNow.length ? `<p class="tkBridgeWho">${inNow.map((id) =>
+          `<span class="tkBridgeOne">${esc(nameOf.get(id) || '')}</span>`).join('／')}</p>` : ''}
+        ${out.length ? `<p class="tkBridgeOut">${out.join('')}</p>` : ''}
+        <p class="tkBridgeRest">残り ${info.alive.length}名</p>
+      </section>`;
+    }
+
+    function renderBridge(info) {
+      clearEntrance();
+      root.dataset.tier = prepared.tierId;
+      /* **自分が先頭、あとは `table` の順**（§4③）。`makeTables` は席を
+         シャッフルするので、そのまま並べると自分がどこに出るか毎回変わる */
+      const seats = info.table.filter((c) => c.id === 0)
+        .concat(info.table.filter((c) => c.id !== 0));
+      const cards = seats.map((c) => cardHTML(c, { mine: c.id === 0 })).join('');
+      root.innerHTML = `
+        <div class="tkHead tkFieldHead"><h1 class="tkTitle">${esc(info.name)}</h1>
+          <div class="tkStatus"><span class="tkStat">${esc(prepared.tier.name)}</span></div></div>
+        ${bridgeUp(info)}
+        <section class="tkFieldSec">
+          <h2 class="tkSecT">次の卓</h2>
+          <div class="tkCards">${cards}</div>
+        </section>
+        <button type="button" class="tkGo" data-act="round-go">${esc(info.name)}を打つ</button>`;
+    }
+
+    /* 卓に入るまでのつなぎ。**中継を渡すときにも必ずこれを出す**——
+       対局中は `body.inMatch` で `#view` ごと隠れているだけで、`root` の中身は
+       前の中継のまま残っている。畳んでおかないと、対局が終わって `inMatch` が
+       外れた瞬間に**前の回戦の中継が一瞬だけ戻る**（次の中継が組まれるまでの隙間）。
+       押せる釦まで一緒に戻ってくる */
+    function showLoading() {
+      root.innerHTML = `<p class="tkQuiet tkLoading">卓が立ちました…</p>`;
+    }
+
+    /* `onRoundStart` の中身。**押されるまで返さない** */
+    function bridgeFor(info) {
+      if (!info.table) return Promise.resolve();       // §3。黙って返す
+      screen = 'bridge';
+      return new Promise((done) => {
+        roundGo = null;                                // 前の回戦のぶんを必ず捨てる（§7）
+        renderBridge(info);
+        roundGo = done;
+      });
     }
 
     /* ---------- 進行 ---------- */
@@ -956,20 +1037,22 @@ const Taikai = (() => {
     /* 「卓に着く」を押してから対局に入る。
        自分の卓は実対局、他の卓は数値処理（taikai の runTournament が振り分ける） */
     async function playRounds() {
-      root.innerHTML = `<p class="tkQuiet tkLoading">卓が立ちました…</p>`;
+      showLoading();
       /* **卓割りと結果が出るたびに控える**（§4 の 1〜4）。
          `store.set` は localStorage への同期の書き込みなので、
          次の対局に入る前に必ず残っている。
          `offerId` は控えに載せるだけ——`onDone` が事務所へ返すときに要る */
       const offerId = resume ? resume.offerId : (opts.offerId != null ? opts.offerId : null);
+      const bridging = !store.get().autoMatch && typeof store.playRealMatch === 'function';
       run = await runTournament(prepared, {
         playRealMatch: store.playRealMatch,
         progress: resume || null,
         offerId,
         onProgress: (p) => { store.set({ pendingTaikai: p }); },
-        /* 回戦のあいだの中継（`round-spec.md` §3）。**段1 は口を開けるだけ。**
-           画面は段2 で足す */
-        onRoundStart: async () => {},
+        /* 回戦のあいだの中継（`round-spec.md` §2.1）。**「自動で処理する」の
+           見分けはここ**——`autoMatch` のとき `playRealMatch` は在るが何も返さないので、
+           `runTournament` からは区別できない。渡さなければ何も起きない */
+        onRoundStart: bridging ? bridgeFor : undefined,
       });
       resume = null;               // ここから先は「続き」ではない
       screen = 'rounds';
@@ -1086,6 +1169,17 @@ const Taikai = (() => {
       if (tier && !tier.disabled) { start(tier.dataset.tier); return; }
       const act = e.target.closest('[data-act]');
       if (!act) return;
+      /* 回戦のあいだの中継（`round-spec.md` §7）。**専用の `data-act`。**
+         `start` / `result` / `back` / `resume` / `abandon` はすべて別の処理に
+         繋がっている。**押したら控えを捨ててから呼ぶ**ので、二度押しても進まない */
+      if (act.dataset.act === 'round-go') {
+        const go2 = roundGo;
+        roundGo = null;
+        if (!go2) return;
+        showLoading();                 // 畳んでから渡す（上の `showLoading` の注記）
+        go2();
+        return;
+      }
       if (act.dataset.act === 'start') {
         /* 音の初期化はユーザー操作の中で（spec.md §2.2）。「卓に着く」がその口。
            Sound は index.html にしか無いので、あれば使う */

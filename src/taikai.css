@@ -240,6 +240,35 @@
 .tkName{font-size:11.5px;color:var(--muted);padding:2px 6px;border-radius:2px;background:rgba(0,0,0,.22)}
 .tkName.own{color:var(--ink);background:var(--gold);font-weight:600}
 
+/* ---------- 回戦のあいだ（docs/design/taikai/round-spec.md §4） ----------
+   出走表の部品（`.tkFieldHead` / `.tkFieldSec` / `.tkCards` / `.tkCard`）を
+   そのまま使い回す。ここで足すのは**②勝ち上がり**の帯だけ */
+.tkBridgeUp{
+  border:1px solid var(--tk-accent-dim);border-radius:6px;
+  background:linear-gradient(var(--urushi-2),rgba(19,36,32,.45));
+  padding:9px 12px;margin:0 0 14px;
+}
+.tkBridgeUp p{margin:0}
+.tkBridgeLine{font-size:12.5px;color:var(--ivory-2);line-height:1.7}
+.tkBridgeLine b{
+  font-family:var(--maru);font-weight:800;font-size:15px;color:var(--ivory);margin:0 2px;
+}
+.tkBridgeWho{
+  font-family:var(--maru);font-weight:800;font-size:13px;color:var(--gold);
+  line-height:1.7;margin-top:2px;letter-spacing:.02em;
+}
+/* 落ちた子。**残った子と同じ大きさで書かない**——読む順が入れ替わる */
+.tkBridgeOut{font-size:11.5px;color:var(--muted);line-height:1.7;margin-top:3px}
+/* 一人ぶんの箱。**名前の途中で折らない**（「湊 いお／り（一回戦・3位）」になった）。
+   `inline-block` にして、折れるのは人と人のあいだだけにする */
+.tkBridgeOne{display:inline-block;white-space:nowrap}
+.tkBridgeWho .tkBridgeOne{margin:0 4px}
+.tkBridgeOut .tkBridgeOne{margin-right:10px}
+.tkBridgeRest{
+  font-size:11.5px;color:var(--muted);margin-top:5px;
+  border-top:1px solid rgba(201,162,74,.15);padding-top:5px;
+}
+
 /* ---------- 進行 ---------- */
 .tkRound{margin-bottom:16px}
 .tkRoundT{
