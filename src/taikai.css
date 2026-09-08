@@ -8,6 +8,20 @@
   font-family:var(--sans);color:var(--text);
 }
 
+/* ---------- 大会ごとの色（docs/design/taikai/field-spec.md §4） ----------
+   **色は変数だけで差し替える。**要素ごとに色を書くと、変えるときに散る。
+   使うのは三つだけ——**見出し帯の罫・カードの縁・梯子の線**。
+   **賞金は大会によらず金のまま**（`--gold`）——金は「お金の色」として
+   `.tkPrize` / `.tkPrizeYen` / `.tkChampion` で既に働いているので、
+   大会ごとに変えるとその意味が壊れる。
+   `data-tier` は出走表・進行・結果の三画面に付く（一枚だけ色が違うと間違いに見える） */
+.tkRoot{--tk-accent:var(--gold);--tk-accent-dim:var(--gold-dim)}
+.tkRoot[data-tier="rookie"]{--tk-accent:#7fb08a;--tk-accent-dim:rgba(127,176,138,.38)}
+.tkRoot[data-tier="local"] {--tk-accent:#6d8fb8;--tk-accent-dim:rgba(109,143,184,.38)}
+.tkRoot[data-tier="open"]  {--tk-accent:#b9c2c6;--tk-accent-dim:rgba(185,194,198,.38)}
+.tkRoot[data-tier="title"] {--tk-accent:var(--gold);--tk-accent-dim:var(--gold-dim)}
+.tkRoot[data-tier="eight"] {--tk-accent:#c0392b;--tk-accent-dim:rgba(192,57,43,.42)}
+
 /* ---------- 見出し ---------- */
 .tkHead{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;margin:4px 2px 12px}
 .tkTitle{
@@ -71,6 +85,150 @@
 .tkGo:focus-visible{outline:2px solid var(--ivory);outline-offset:2px}
 
 /* ---------- 出走表 ---------- */
+/* ①見出し帯。罫だけ大会の色にする（§4）。**`.tkHead` そのものは触らない**
+   ——大会選択・進行・結果が同じものを使っているので、ここだけの別名を足す */
+.tkFieldHead{
+  border-bottom:2px solid var(--tk-accent);
+  padding-bottom:7px;margin-bottom:12px;
+}
+
+/* ②賞金と梯子。**何のために打つのか**と**何回打てば終わるのか**の二行 */
+.tkStakes{
+  border:1px solid var(--tk-accent-dim);border-radius:6px;
+  background:linear-gradient(var(--urushi-2),rgba(19,36,32,.45));
+  padding:10px 12px;margin:0 0 14px;
+}
+.tkPrizeBig{display:flex;align-items:baseline;gap:8px}
+.tkPrizeBigL{font-size:11.5px;color:var(--muted);letter-spacing:.08em}
+.tkPrizeBig b{
+  font-family:var(--maru);font-weight:800;font-size:22px;color:var(--gold);
+  letter-spacing:.03em;line-height:1.2;
+}
+/* 梯子。横一列、あいだに細い矢印。**最後の「決勝卓」だけ光らせる** */
+.tkLadder{
+  display:flex;align-items:center;flex-wrap:wrap;gap:6px 19px;
+  list-style:none;margin:8px 0 0;padding:0;
+}
+.tkLadder li{
+  position:relative;font-size:11.5px;color:var(--muted);
+  border:1px solid var(--tk-accent-dim);border-radius:3px;padding:2px 8px;
+  background:rgba(0,0,0,.22);white-space:nowrap;
+}
+/* 矢印は**枠の外**に置く（`position:absolute`）。`display:inline-block` で
+   組むと枠の内側に入り、「— 4卓」と書いてあるように読める（実際に読めた） */
+.tkLadder li+li::before{
+  content:"";position:absolute;left:-16px;top:50%;
+  width:9px;height:1px;background:var(--tk-accent);opacity:.75;
+}
+.tkLadder li+li::after{
+  content:"";position:absolute;left:-8px;top:50%;transform:translateY(-3px);
+  border-left:4px solid var(--tk-accent);
+  border-top:3px solid transparent;border-bottom:3px solid transparent;
+  opacity:.75;
+}
+.tkLadder li.last{
+  color:var(--ivory);border-color:var(--tk-accent);
+  font-family:var(--maru);font-weight:800;letter-spacing:.04em;
+}
+
+/* ③④ 顔つきカード。**顔は七枚まで**（§7）——四人＋三人。
+   ⑤の全員一覧には顔を出さない（768×1024 の webp を64枚読むと数MBになる） */
+.tkFieldSec{margin:0 0 14px}
+.tkFieldSec .tkSecT{margin-top:0}
+.tkCards{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
+.tkCardsSpot{grid-template-columns:repeat(3,1fr)}
+.tkCard{
+  display:flex;flex-direction:column;gap:3px;
+  border:1px solid var(--tk-accent-dim);border-radius:5px;
+  background:linear-gradient(var(--urushi-2),rgba(19,36,32,.5));
+  padding:5px 5px 6px;min-width:0;
+}
+/* **自分のカードだけ縁を金に。**下の一覧の金色はそのまま残す（§2③）
+   ——上のカードは「誰が出るか」、下の金色は「どれが自分たちか」で目的が違う */
+.tkCard.mine{border-color:var(--gold);background:rgba(201,162,74,.08)}
+.tkFace{
+  position:relative;display:block;width:100%;aspect-ratio:3/4;
+  border-radius:3px;overflow:hidden;
+  background:
+    radial-gradient(90% 60% at 50% 20%,rgba(255,255,255,.06),transparent 60%),
+    linear-gradient(165deg,var(--back),var(--back-2));
+}
+/* 画像が無い id は `onerror` で消え、この影絵が下から出る（§7） */
+.tkFace::after{
+  content:"";position:absolute;inset:0;
+  background:var(--sil-img) center 62%/78% no-repeat;opacity:.9;
+}
+.tkFace img{
+  position:relative;z-index:1;
+  width:100%;height:100%;object-fit:cover;object-position:50% 8%;display:block;
+}
+/* ④ の見出し語。**カードの頭に一行。**三人ぶんで文言が違うので、
+   区画にまとめて一度言うのではなく、一人ずつ持たせる */
+.tkWhy{
+  font-size:9.5px;line-height:1.35;color:var(--tk-accent);
+  letter-spacing:.02em;margin-bottom:1px;min-height:2.7em;
+}
+.tkCardName{
+  font-family:var(--maru);font-weight:800;font-size:12px;color:var(--ivory);
+  line-height:1.3;letter-spacing:.01em;margin-top:2px;
+  overflow-wrap:anywhere;
+}
+.tkCardSub{display:flex;flex-wrap:wrap;gap:2px 5px;align-items:baseline;font-size:10px;color:var(--muted)}
+.tkCardSub b{font-family:var(--maru);font-weight:800;font-size:11px;color:var(--ivory-2)}
+/* 打ち筋は**必ず改行して**段位の下へ。折り返しに任せると、短い名前
+   （「逆境型」）だけ段位と同じ行に乗り、四枚の完成度バーの高さが揃わない */
+.tkCardStyle{display:block;width:100%;font-size:9.5px;color:var(--muted);overflow-wrap:anywhere}
+/* バーと調子は**カードの底に揃える。**名前や打ち筋の行数が一枚ずつ違うので、
+   上から積むと同じものが四枚とも違う高さに出る */
+.tkCard .tkTrack{margin-top:auto;padding-top:3px;background-clip:content-box}
+/* 調子（§6.3）。事務所の所属一覧（`.ofCond`）と同じ色分けにする
+   ——同じことを言っているので、画面が変わって色が変わると覚え直しになる */
+/* **必ず二行**（値の行と言葉の行）。88px のカードでは一行に入らず、
+   折り返しに任せると語の途中で折れる（「調 子 +1 悪くな い」） */
+.tkCond{
+  display:block;text-align:center;line-height:1.35;
+  font-size:9.5px;color:var(--muted);
+  border:1px solid var(--gold-dim);border-radius:2px;padding:1px 3px;margin-top:2px;
+}
+.tkCond i,.tkCond b{display:block;font-style:normal;font-weight:400;white-space:nowrap}
+.tkCond i{font-size:10px;color:var(--ivory-2)}
+.tkCond.cm2{border-color:#b0503c;color:#f08a70}
+.tkCond.cm1{border-color:#8a5a44;color:#d09a80}
+.tkCond.cp0,.tkCond.cm0{border-color:var(--gold-dim)}
+.tkCond.cp1{border-color:#5a7a9a;color:#9cc0e0}
+.tkCond.cp2{border-color:#4a8ab0;color:#8fd0f0}
+
+/* ---------- 入場の演出（field-spec.md §6） ----------
+   出るのは**タイトル戦と雀エイト選抜戦だけ**（`playEntrance` が判定する）。
+   1.2秒。**CSSだけで段を組む**——JSのタイマーで組まない。
+
+   **キーフレームが持つのは「どこから来るか」だけ。**`to` 側に何も書かない。
+   触られたら `.tkSkip` で `animation:none` にするので、**そのとき要素が
+   戻る先＝素の見た目が終端**でなければ、演出を飛ばした人だけが
+   壊れた画面を見ることになる。
+
+   **音は鳴らさない**（§6.2）。iOS はマナーモードで黙るので、
+   音を前提にした演出は端末によって別物になる */
+@keyframes tkDrop{from{opacity:0;transform:translateY(-14px)}}
+@keyframes tkRise{from{opacity:0;transform:translateY(10px)}}
+@keyframes tkStand{from{opacity:0;transform:translateY(12px) scale(.96)}}
+.tkEnter .tkFieldHead{animation:tkDrop .42s cubic-bezier(.2,.9,.25,1) both}
+.tkEnter .tkStakes{animation:tkRise .40s ease-out .25s both}
+/* 自事務所の四人が**左から順に**立つ。0.45s から 0.09s ずつ */
+.tkEnter .tkCards .tkCard{animation:tkStand .38s cubic-bezier(.2,.9,.25,1) both}
+.tkEnter .tkCards .tkCard:nth-child(1){animation-delay:.45s}
+.tkEnter .tkCards .tkCard:nth-child(2){animation-delay:.54s}
+.tkEnter .tkCards .tkCard:nth-child(3){animation-delay:.63s}
+.tkEnter .tkCards .tkCard:nth-child(4){animation-delay:.72s}
+/* 触ったら即座に終端へ。**`!important` が要る**——上の四行が
+   `animation-delay` を後から書いているので、詳細度で勝てない */
+.tkSkip .tkFieldHead,.tkSkip .tkStakes,.tkSkip .tkCards .tkCard{animation:none!important}
+/* 端末の設定が優先。**`.tkEnter` は JS 側でも見ているが、両方で閉じる**
+   ——片方だけだと、設定を途中で変えた人に効かない */
+@media(prefers-reduced-motion:reduce){
+  .tkEnter .tkFieldHead,.tkEnter .tkStakes,.tkEnter .tkCards .tkCard{animation:none!important}
+}
+
 .tkGroup{margin-bottom:12px}
 .tkGroupT{
   font-family:var(--maru);font-weight:800;font-size:13px;color:var(--ivory);

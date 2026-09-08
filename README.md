@@ -149,7 +149,7 @@ src/
 
 fonts/              maru-ui.woff2（本文・568KB）／ maru-title.woff2（題字・4KB）
 tiles/              牌の絵39枚（SVG・770KB）。出典は tiles/LICENSE.txt
-img/                001.webp 〜 073.webp（雀ドル73人）
+img/                001.webp 〜 200.webp（雀ドル200人）
                     p01.webp 〜 p12.webp（プレイヤーの顔・十二人から選ぶ）
 docs/HANDOVER.md    設計の経緯、決めごと、ハマった罠
 docs/ROADMAP.md     これからの構想と順番を一枚に（なぜこの順か・再測をいつやるか）
@@ -157,7 +157,10 @@ docs/design/jansou/ 直営雀荘の設計一式（spec.md ＝リニューアル�
                     placement.md ＝卓の自由配置と隣接コンボ、
                     monthly.md ＝月末決算と月報）
 docs/design/office/ 事務所ハブと日進行の統一（spec.md ＝全5段階）
+docs/design/taikai/ 大会の設計（field-spec.md ＝出走表、resume-spec.md ＝進行の控え）
 tools/test-office.js 事務所の純関数テスト（node tools/test-office.js）
+tools/test-taikai-field.js  出走表の純関数テスト（node tools/test-taikai-field.js）
+tools/drive-taikai-field.js 出走表をブラウザで見る（--shots DIR で五つの大会を撮る）
 tools/test-scout.js  遠征先の店の純関数テスト（node tools/test-scout.js）
 tools/measure-jansou.js 直営店の経済を測る（HANDOVER §4 の表を作り直す）
 tools/measure-office.js 遠征と日進行の釣り合いを測る（spec.md §11 の A3）
@@ -389,6 +392,12 @@ Android Chromeでしか効かず、iOS Safariは非対応。PLiCyはiframeで動
 
 出走表を見せてから打ち始めるため、`taikai.js` は組み合わせ作り（`prepare`）と
 勝ち上がり（`runTournament`）を分けてある。**一緒にすると実対局が出走表より先に始まる。**
+
+出走表そのものは**表示だけの画面**で、卓割りも抽選もそこより前で終わっている
+（`docs/design/taikai/field-spec.md`）。賞金・勝ち上がりの梯子・大会ごとの色・
+自事務所の四人・注目の三人・入場の演出が乗っているが、
+**`prepare()` / `buildField()` / `runTournament()` には一行も触っていない。**
+確かめかたは `node tools/drive-taikai-field.js`（`--shots DIR` で五つの大会を撮る）。
 
 ## 打ち筋がCPUに効く仕組み
 

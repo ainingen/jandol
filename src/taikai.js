@@ -46,6 +46,73 @@ const Taikai = (() => {
   const pad3 = (id) => String(id).padStart(3, '0');
   const yen = (n) => n.toLocaleString('ja-JP') + '円';
 
+  /* 顔の落とし方（`field-spec.md` §7）。**二本立てを崩さないこと**——
+     自分は `p01`〜、雀ドルは3桁。`match.js` の `faceOf` と同じ式で、
+     片方だけ直すと自分の顔だけ出なくなる。
+     画像が無い id（`PORTRAIT_MAX_ID` の先）は `onerror` で消して、
+     CSS の影絵（`ensureSilVar` が入れる `--sil-img`）が下から出る */
+  const faceOf = (c) => (c && c.id === 0
+    ? `img/${c.face || 'p01'}.webp`
+    : `img/${pad3(c.id)}.webp`);
+
+  /* 注目の三人（`field-spec.md` §3）。**因縁 → 強さ の順に三人まで。**
+
+     1. **因縁枠**——`st.recent` に入っていて、`st.beaten` に**入っていない**相手
+        （＝前に当たったが、まだ勝てていない相手）。`recent` は新しい順なので先頭から
+     2. **強さ枠**——残りを `strengthOf` の降順で埋める
+     3. 自事務所（`[0].concat(st.team)`）は入れない
+     4. 同じ子を二度入れない
+
+     `st.beaten` は一度勝てば積み上がったまま消えないので、因縁枠は
+     **「取りこぼしたまま」の相手だけ**になり、倒すと自然に卒業していく。
+     初回は `recent` が空なので三人とも強さ枠になる。それも正しい姿。
+
+     **強さが同じなら id で固定する**——雀エイト表と同じ理由で、
+     開くたびに並びが揺れると表として読めなくなる。
+
+     返すのは `[{ chara, why }]`。`why` は 'grudge'（因縁）か 'strong'（強さ）で、
+     **見出し語の文面は画面側が持つ**（ここは選ぶだけ） */
+  function pickSpotlight(field, st, n) {
+    st = st || {};
+    n = n == null ? 3 : n;
+    const own = new Set([0].concat(st.team || []));
+    const beaten = new Set(st.beaten || []);
+    /* `buildField` は人数が足りないとプールを使い回す（`dup`）ので、
+       **id で畳んでから**選ぶ。畳まないと同じ子が二枠を食う */
+    const byId = new Map();
+    (field || []).forEach((c) => {
+      if (c && !own.has(c.id) && !byId.has(c.id)) byId.set(c.id, c);
+    });
+
+    const out = [];
+    const taken = new Set();
+    const add = (c, why) => {
+      if (!c || taken.has(c.id) || out.length >= n) return;
+      taken.add(c.id);
+      out.push({ chara: c, why });
+    };
+    (st.recent || []).forEach((id) => { if (!beaten.has(id)) add(byId.get(id), 'grudge'); });
+    Array.from(byId.values())
+      .filter((c) => !taken.has(c.id))
+      .sort((a, b) => (strengthOf(b, STYLES) - strengthOf(a, STYLES)) || (a.id - b.id))
+      .forEach((c) => add(c, 'strong'));
+    return out;
+  }
+
+  /* 勝ち上がりの梯子（`field-spec.md` §5）。**人数から作る。**
+     卓数を書き写すと、大会の `size` を変えたときに必ずずれる。
+     16人 → ['16名','4卓','決勝卓'] / 64人 → ['64名','16卓','4卓','決勝卓']
+
+     `roundName()` は使わない——あれは「残り人数 → 回戦名」で、
+     ここが欲しいのは卓数 */
+  function ladderOf(size) {
+    const out = [size + '名'];
+    let n = size;
+    while (n > 4) { out.push((n / 4) + '卓'); n = n / 4; }
+    out.push('決勝卓');
+    return out;
+  }
+
   /* プレイヤーの段位ごとの実力の目安。人間なので係数は動かせない（引き継ぎ書 §3）。
      自動処理される卓での扱いにだけ使う */
   const PLAYER_STRENGTH = { D: 46, C: 54, B: 62, A: 70, S: 78 };
@@ -391,6 +458,9 @@ const Taikai = (() => {
 
     /* ---------- 大会を選ぶ ---------- */
     function renderSelect() {
+      /* 大会の色は大会の中だけ（§4）。選ぶ画面では外す */
+      delete root.dataset.tier;
+      root.classList.remove('tkEnter', 'tkSkip');
       const st = store.get();
       const rank = st.playerRank || 'D';
       const team = teamCards();
@@ -487,6 +557,53 @@ const Taikai = (() => {
     }
 
     /* ---------- 出走表 ---------- */
+    /* 調子（`field-spec.md` §6.3）。**`Office` があるときだけ。**
+       単体ページ（`taikai.html`）では office.js が読まれていないので何も出ない。
+       **`st.cond` にその子の目が入っているときだけ出す**——`Office.condOf` は
+       知らない id に 0 を返すので、有無を見ずに出すと**まだ引いていない朝でも
+       全員が「ふつう」と言う。**既定値をここに書かない（二か所に持つと片方が古びる） */
+    function condHTML(c) {
+      if (typeof Office === 'undefined' || !Office.condOf || !Office.condLabel) return '';
+      const st = store.get();
+      if (!st.cond || typeof st.cond[c.id] !== 'number') return '';
+      const v = Office.condOf(st, c.id);
+      /* **二行に割って書く**（値の行と言葉の行）。88px のカードでは
+         一行に入らず、任せると「調 子 +1 悪くな い」と**語の途中で折れる** */
+      return `<span class="tkCond c${v >= 0 ? 'p' : 'm'}${Math.abs(v)}"
+        ><i>調子 ${v > 0 ? '+' : ''}${v}</i><b>${esc(Office.condLabel(v))}</b></span>`;
+    }
+
+    /* 入場の演出（`field-spec.md` §6）。**三つとも満たしたときだけ。**
+
+       - `tier.stage` が 'title' か 'final'（タイトル戦・雀エイト選抜戦）
+       - `resume` が無い（続きを待っている人に演出は見せない）
+       - `prefers-reduced-motion` が reduce でない
+
+       大会は依頼から何度も入る画面なので、日常の大会で毎回止まると
+       三回目には邪魔になる。**音は鳴らさない**——出走表で `Sound.init()` を
+       呼ぶと、「卓に着く」で初期化するいまの一本道が二本になる。
+
+       **段はCSSだけで組む**（JSのタイマーで組まない）。
+       触ったら `.tkSkip` を足して `animation:none` にするだけ——
+       **地の状態＝終端の状態**にしてあるので、それで終端へ飛ぶ */
+    let skipEnter = null;
+    function playEntrance() {
+      if (skipEnter) { root.removeEventListener('pointerdown', skipEnter); skipEnter = null; }
+      root.classList.remove('tkEnter', 'tkSkip');
+      if (resume) return;
+      const stage = prepared.tier.stage;
+      if (stage !== 'title' && stage !== 'final') return;
+      if (typeof matchMedia === 'function'
+        && matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+      root.classList.add('tkEnter');
+      skipEnter = () => {
+        root.classList.add('tkSkip');
+        root.removeEventListener('pointerdown', skipEnter);
+        skipEnter = null;
+      };
+      root.addEventListener('pointerdown', skipEnter);
+    }
+
     function renderField() {
       const st = store.get();
       const teamIds = new Set([0].concat(st.team || []));
@@ -531,17 +648,90 @@ const Taikai = (() => {
         </div>`;
       }
 
+      /* ③ カード一枚（§2）。③と④で同じものを使う——載せるものは同じで、
+         違うのは見出し語（`why`）と縁の色だけ。
+         **顔は七枚まで**（§7）——四人＋三人。⑤の全員一覧には出さない */
+      const cardHTML = (c, o) => {
+        o = o || {};
+        const isMe = c.id === 0;
+        /* 段位は**自分は `st.playerRank`、仲間は完成度から**（§2③）。
+           完成度は `prepared.field` の値をそのまま使う——`teamCards()` を
+           引き直すと、疲労と調子のぶんだけ下の一覧と食い違う */
+        const comp = c.comp != null ? c.comp : compFromRank(c.rank);
+        const grade = isMe ? (st.playerRank || 'D') : gradeOf(comp);
+        const style = (!isMe && STYLES[c.style]) ? STYLES[c.style].name : '';
+        return `<div class="tkCard${o.mine ? ' mine' : ''}">
+          ${o.why ? `<span class="tkWhy">${esc(o.why)}</span>` : ''}
+          <span class="tkFace"><img src="${esc(faceOf(c))}" alt=""
+            decoding="async" onerror="this.remove()"></span>
+          <span class="tkCardName">${esc(c.name)}</span>
+          <span class="tkCardSub"><b>${esc(grade)}級</b>${
+            style ? `<span class="tkCardStyle">${esc(style)}</span>` : ''}</span>
+          ${isMe ? '' : `<span class="tkTrack"><span class="tkFill"
+            style="width:${Math.round(Math.max(0, Math.min(100, comp)))}%"></span></span>`}
+          ${condHTML(c)}
+        </div>`;
+      };
+
+      /* ③ あなたの事務所（§2）。順序は**自分が先頭**、あとは `st.team` の順。
+         中身は `prepared.field` から引く——上のカードと下の一覧が
+         同じ数字を見るため（§2③） */
+      const inField = new Map();
+      prepared.field.forEach((c) => { if (!inField.has(c.id)) inField.set(c.id, c); });
+      const ours = teamCards().map((c) => inField.get(c.id) || c);
+      const oursHTML = `<section class="tkFieldSec">
+        <h2 class="tkSecT">あなたの事務所</h2>
+        <div class="tkCards">${ours.map((c) =>
+          cardHTML(c, { mine: c.id === 0 })).join('')}</div>
+      </section>`;
+
+      /* ④ 注目の雀ドル（§2・§3）。**「この中の誰かと当たります」とは書かない**
+         ——卓割りはまだ決まっていない。一回戦で当たらないことも、
+         決勝まで一度も当たらないこともある。
+
+         **注目に出した子を⑤の全員一覧から消さないこと**（§1）。
+         上で見た名前を下で探して見つからないと、壊れて見える。二か所に出てよい */
+      const WHY = { grudge: '前に当たって、勝てなかった相手', strong: '優勝候補' };
+      const spot = pickSpotlight(prepared.field, st);
+      const spotHTML = spot.length ? `<section class="tkFieldSec">
+        <h2 class="tkSecT">注目の雀ドル</h2>
+        <div class="tkCards tkCardsSpot">${spot.map((x) =>
+          cardHTML(x.chara, { why: WHY[x.why] })).join('')}</div>
+      </section>` : '';
+
+      /* ② 賞金と梯子（§2・§5）。**賞金は大会によらず金**（`--gold`）——
+         金は「お金の色」として既に働いているので、大会ごとに変えると意味が壊れる。
+         梯子は `prepared.field.length` から作る。①の「N名」と同じ数から出すので、
+         二つが食い違いようがない */
+      const ladder = ladderOf(prepared.field.length).map((s2, i, a) =>
+        `<li${i === a.length - 1 ? ' class="last"' : ''}>${esc(s2)}</li>`).join('');
+      const stakes = `<div class="tkStakes">
+        <div class="tkPrizeBig"><span class="tkPrizeBigL">優勝</span>
+          <b>${yen(prepared.tier.prize)}</b></div>
+        <ol class="tkLadder">${ladder}</ol>
+      </div>`;
+
+      /* **大会の格を色で言う**（§4）。`renderSelect` に戻るときに外す。
+         **`root` に付くので、click の拾い口は `button[data-tier]` に狭めてある**
+         ——`[data-tier]` のままだと、出走表のどこを押しても `closest` が
+         `root` に当たって `start()` が走り、顔ぶれが引き直される（§4.1） */
+      root.dataset.tier = prepared.tierId;
       root.innerHTML = `
-        <div class="tkHead"><h1 class="tkTitle">${esc(prepared.tier.name)}　出走表</h1>
+        <div class="tkHead tkFieldHead"><h1 class="tkTitle">${esc(prepared.tier.name)}　出走表</h1>
           <div class="tkStatus"><span class="tkStat">${prepared.field.length}名</span></div></div>
         ${notice}
+        ${stakes}
+        ${oursHTML}
+        ${spotHTML}
         <p class="tkHint">金色があなたの事務所の四人です。</p>
         ${groups}
         ${resume ? '' : '<button type="button" class="tkGo" data-act="start">卓に着く</button>'}`;
+      playEntrance();
     }
 
     /* ---------- 進行 ---------- */
     function renderRounds() {
+      root.classList.remove('tkEnter', 'tkSkip');
       const st = store.get();
       const teamIds = new Set([0].concat(st.team || []));
 
@@ -570,6 +760,7 @@ const Taikai = (() => {
         </section>`;
       }).join('');
 
+      root.dataset.tier = run.tierId;
       root.innerHTML = `
         <div class="tkHead"><h1 class="tkTitle">${esc(run.tier.name)}</h1></div>
         ${blocks}
@@ -578,6 +769,7 @@ const Taikai = (() => {
 
     /* ---------- 結果 ---------- */
     function renderResult() {
+      root.classList.remove('tkEnter', 'tkSkip');
       const rows = prize.rows.map((r) => `
         <div class="tkPrizeRow">
           <span class="tkPrizeName">${esc(r.chara.name)}</span>
@@ -600,6 +792,7 @@ const Taikai = (() => {
       const promo = lastPromotion
         ? `<div class="tkPromote">あなたの段位が ${lastPromotion}級に上がりました。出られる大会が増えます。</div>`
         : '';
+      root.dataset.tier = run.tierId;
       root.innerHTML = `
         <div class="tkHead"><h1 class="tkTitle">${esc(run.tier.name)}　結果</h1></div>
         <div class="tkChampion">優勝　${esc(run.finalResult[0].chara.name)}</div>
@@ -828,7 +1021,10 @@ const Taikai = (() => {
         renderSelect();
         return;
       }
-      const tier = e.target.closest('[data-tier]');
+      /* **`button` に狭めること**（`field-spec.md` §4.1）。`root` 自身が
+         `data-tier` を持つので、`[data-tier]` のままだと出走表のどこを押しても
+         ここに落ち、`start()` が走って顔ぶれが引き直される */
+      const tier = e.target.closest('button[data-tier]');
       if (tier && !tier.disabled) { start(tier.dataset.tier); return; }
       const act = e.target.closest('[data-act]');
       if (!act) return;
@@ -879,7 +1075,8 @@ const Taikai = (() => {
     document.documentElement.style.setProperty('--sil-img', `url("data:image/svg+xml,${svg}")`);
   }
 
-  return { mount, prepare, runTournament, prizeFor, canEnter, PAYOUT, PLAYER_STRENGTH };
+  return { mount, prepare, runTournament, prizeFor, canEnter, ladderOf, pickSpotlight,
+           PAYOUT, PLAYER_STRENGTH };
 })();
 
 if (typeof module !== 'undefined') module.exports = Taikai;
