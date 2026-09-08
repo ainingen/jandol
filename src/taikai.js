@@ -460,6 +460,7 @@ const Taikai = (() => {
     function renderSelect() {
       /* 大会の色は大会の中だけ（§4）。選ぶ画面では外す */
       delete root.dataset.tier;
+      root.classList.remove('tkEnter', 'tkSkip');
       const st = store.get();
       const rank = st.playerRank || 'D';
       const team = teamCards();
@@ -566,8 +567,41 @@ const Taikai = (() => {
       const st = store.get();
       if (!st.cond || typeof st.cond[c.id] !== 'number') return '';
       const v = Office.condOf(st, c.id);
-      return `<span class="tkCond c${v >= 0 ? 'p' : 'm'}${Math.abs(v)}">調子
-        <i>${v > 0 ? '+' : ''}${v}</i>${esc(Office.condLabel(v))}</span>`;
+      /* **二行に割って書く**（値の行と言葉の行）。88px のカードでは
+         一行に入らず、任せると「調 子 +1 悪くな い」と**語の途中で折れる** */
+      return `<span class="tkCond c${v >= 0 ? 'p' : 'm'}${Math.abs(v)}"
+        ><i>調子 ${v > 0 ? '+' : ''}${v}</i><b>${esc(Office.condLabel(v))}</b></span>`;
+    }
+
+    /* 入場の演出（`field-spec.md` §6）。**三つとも満たしたときだけ。**
+
+       - `tier.stage` が 'title' か 'final'（タイトル戦・雀エイト選抜戦）
+       - `resume` が無い（続きを待っている人に演出は見せない）
+       - `prefers-reduced-motion` が reduce でない
+
+       大会は依頼から何度も入る画面なので、日常の大会で毎回止まると
+       三回目には邪魔になる。**音は鳴らさない**——出走表で `Sound.init()` を
+       呼ぶと、「卓に着く」で初期化するいまの一本道が二本になる。
+
+       **段はCSSだけで組む**（JSのタイマーで組まない）。
+       触ったら `.tkSkip` を足して `animation:none` にするだけ——
+       **地の状態＝終端の状態**にしてあるので、それで終端へ飛ぶ */
+    let skipEnter = null;
+    function playEntrance() {
+      if (skipEnter) { root.removeEventListener('pointerdown', skipEnter); skipEnter = null; }
+      root.classList.remove('tkEnter', 'tkSkip');
+      if (resume) return;
+      const stage = prepared.tier.stage;
+      if (stage !== 'title' && stage !== 'final') return;
+      if (typeof matchMedia === 'function'
+        && matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+      root.classList.add('tkEnter');
+      skipEnter = () => {
+        root.classList.add('tkSkip');
+        root.removeEventListener('pointerdown', skipEnter);
+        skipEnter = null;
+      };
+      root.addEventListener('pointerdown', skipEnter);
     }
 
     function renderField() {
@@ -692,10 +726,12 @@ const Taikai = (() => {
         <p class="tkHint">金色があなたの事務所の四人です。</p>
         ${groups}
         ${resume ? '' : '<button type="button" class="tkGo" data-act="start">卓に着く</button>'}`;
+      playEntrance();
     }
 
     /* ---------- 進行 ---------- */
     function renderRounds() {
+      root.classList.remove('tkEnter', 'tkSkip');
       const st = store.get();
       const teamIds = new Set([0].concat(st.team || []));
 
@@ -733,6 +769,7 @@ const Taikai = (() => {
 
     /* ---------- 結果 ---------- */
     function renderResult() {
+      root.classList.remove('tkEnter', 'tkSkip');
       const rows = prize.rows.map((r) => `
         <div class="tkPrizeRow">
           <span class="tkPrizeName">${esc(r.chara.name)}</span>

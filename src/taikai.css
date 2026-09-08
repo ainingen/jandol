@@ -183,16 +183,51 @@
 .tkCard .tkTrack{margin-top:auto;padding-top:3px;background-clip:content-box}
 /* 調子（§6.3）。事務所の所属一覧（`.ofCond`）と同じ色分けにする
    ——同じことを言っているので、画面が変わって色が変わると覚え直しになる */
+/* **必ず二行**（値の行と言葉の行）。88px のカードでは一行に入らず、
+   折り返しに任せると語の途中で折れる（「調 子 +1 悪くな い」） */
 .tkCond{
-  display:flex;align-items:baseline;gap:3px;font-size:9.5px;color:var(--muted);
-  border:1px solid var(--gold-dim);border-radius:2px;padding:1px 4px;margin-top:1px;
+  display:block;text-align:center;line-height:1.35;
+  font-size:9.5px;color:var(--muted);
+  border:1px solid var(--gold-dim);border-radius:2px;padding:1px 3px;margin-top:2px;
 }
-.tkCond i{font-style:normal;font-size:10px;color:var(--ivory-2)}
+.tkCond i,.tkCond b{display:block;font-style:normal;font-weight:400;white-space:nowrap}
+.tkCond i{font-size:10px;color:var(--ivory-2)}
 .tkCond.cm2{border-color:#b0503c;color:#f08a70}
 .tkCond.cm1{border-color:#8a5a44;color:#d09a80}
 .tkCond.cp0,.tkCond.cm0{border-color:var(--gold-dim)}
 .tkCond.cp1{border-color:#5a7a9a;color:#9cc0e0}
 .tkCond.cp2{border-color:#4a8ab0;color:#8fd0f0}
+
+/* ---------- 入場の演出（field-spec.md §6） ----------
+   出るのは**タイトル戦と雀エイト選抜戦だけ**（`playEntrance` が判定する）。
+   1.2秒。**CSSだけで段を組む**——JSのタイマーで組まない。
+
+   **キーフレームが持つのは「どこから来るか」だけ。**`to` 側に何も書かない。
+   触られたら `.tkSkip` で `animation:none` にするので、**そのとき要素が
+   戻る先＝素の見た目が終端**でなければ、演出を飛ばした人だけが
+   壊れた画面を見ることになる。
+
+   **音は鳴らさない**（§6.2）。iOS はマナーモードで黙るので、
+   音を前提にした演出は端末によって別物になる */
+@keyframes tkDrop{from{opacity:0;transform:translateY(-14px)}}
+@keyframes tkRise{from{opacity:0;transform:translateY(10px)}}
+@keyframes tkStand{from{opacity:0;transform:translateY(12px) scale(.96)}}
+.tkEnter .tkFieldHead{animation:tkDrop .42s cubic-bezier(.2,.9,.25,1) both}
+.tkEnter .tkStakes{animation:tkRise .40s ease-out .25s both}
+/* 自事務所の四人が**左から順に**立つ。0.45s から 0.09s ずつ */
+.tkEnter .tkCards .tkCard{animation:tkStand .38s cubic-bezier(.2,.9,.25,1) both}
+.tkEnter .tkCards .tkCard:nth-child(1){animation-delay:.45s}
+.tkEnter .tkCards .tkCard:nth-child(2){animation-delay:.54s}
+.tkEnter .tkCards .tkCard:nth-child(3){animation-delay:.63s}
+.tkEnter .tkCards .tkCard:nth-child(4){animation-delay:.72s}
+/* 触ったら即座に終端へ。**`!important` が要る**——上の四行が
+   `animation-delay` を後から書いているので、詳細度で勝てない */
+.tkSkip .tkFieldHead,.tkSkip .tkStakes,.tkSkip .tkCards .tkCard{animation:none!important}
+/* 端末の設定が優先。**`.tkEnter` は JS 側でも見ているが、両方で閉じる**
+   ——片方だけだと、設定を途中で変えた人に効かない */
+@media(prefers-reduced-motion:reduce){
+  .tkEnter .tkFieldHead,.tkEnter .tkStakes,.tkEnter .tkCards .tkCard{animation:none!important}
+}
 
 .tkGroup{margin-bottom:12px}
 .tkGroupT{
