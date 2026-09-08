@@ -460,7 +460,7 @@ const Taikai = (() => {
     function renderSelect() {
       /* 大会の色は大会の中だけ（§4）。選ぶ画面では外す */
       delete root.dataset.tier;
-      root.classList.remove('tkEnter', 'tkSkip');
+      clearEntrance();
       const st = store.get();
       const rank = st.playerRank || 'D';
       const team = teamCards();
@@ -587,9 +587,16 @@ const Taikai = (() => {
        触ったら `.tkSkip` を足して `animation:none` にするだけ——
        **地の状態＝終端の状態**にしてあるので、それで終端へ飛ぶ */
     let skipEnter = null;
-    function playEntrance() {
+    /* **演出の後片づけは一箇所に**。札（`.tkEnter` / `.tkSkip`）を落とすだけでなく、
+       **`pointerdown` の見張りも必ず外すこと**——外し忘れると出走表を出たあとも
+       root に残り、大会選択へ戻ってから最初のタップで `.tkSkip` が付く。
+       害は無いが、読んでいて「なぜここで演出の札が付くのか」と迷う */
+    function clearEntrance() {
       if (skipEnter) { root.removeEventListener('pointerdown', skipEnter); skipEnter = null; }
       root.classList.remove('tkEnter', 'tkSkip');
+    }
+    function playEntrance() {
+      clearEntrance();
       if (resume) return;
       const stage = prepared.tier.stage;
       if (stage !== 'title' && stage !== 'final') return;
@@ -731,7 +738,7 @@ const Taikai = (() => {
 
     /* ---------- 進行 ---------- */
     function renderRounds() {
-      root.classList.remove('tkEnter', 'tkSkip');
+      clearEntrance();
       const st = store.get();
       const teamIds = new Set([0].concat(st.team || []));
 
@@ -769,7 +776,7 @@ const Taikai = (() => {
 
     /* ---------- 結果 ---------- */
     function renderResult() {
-      root.classList.remove('tkEnter', 'tkSkip');
+      clearEntrance();
       const rows = prize.rows.map((r) => `
         <div class="tkPrizeRow">
           <span class="tkPrizeName">${esc(r.chara.name)}</span>

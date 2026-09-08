@@ -174,6 +174,27 @@ ok((BODY.match(/root\.dataset\.tier = run\.tierId/g) || []).length === 2,
 ok(/delete root\.dataset\.tier/.test(BODY), '大会選択に戻るときは data-tier を外す');
 
 /* ------------------------------------------------------------
+   §6 入場の演出 — 後片づけは一箇所（`clearEntrance`）
+------------------------------------------------------------ */
+/* **札を落とすだけの行を残さないこと。**`pointerdown` の見張りも一緒に
+   外さないと、大会選択へ戻ってから最初のタップで `.tkSkip` が付く */
+ok(/function clearEntrance\(\)/.test(BODY), '演出の後片づけは clearEntrance 一つ');
+ok(/removeEventListener\('pointerdown', skipEnter\)/.test(
+  (BODY.match(/function clearEntrance\(\)\s*\{[\s\S]*?\n    \}/) || [''])[0]),
+  'clearEntrance が見張りも外す');
+{
+  /* 出走表を出る三つの画面が、全部 `clearEntrance()` を通っていること */
+  ['renderSelect', 'renderRounds', 'renderResult'].forEach((fn) => {
+    const body = (BODY.match(new RegExp('function ' + fn
+      + '\\(\\)\\s*\\{[\\s\\S]*?\\n      const ')) || [''])[0];
+    ok(/clearEntrance\(\)/.test(body), fn + ' が clearEntrance を通る');
+  });
+  /* 生の `classList.remove` が残っていないこと（外し忘れの再発を止める） */
+  const bare = (BODY.match(/root\.classList\.remove\('tkEnter'/g) || []).length;
+  ok(bare === 1, "classList.remove('tkEnter') は clearEntrance の中だけ", String(bare));
+}
+
+/* ------------------------------------------------------------
    §4 大会ごとの色 — 五つとも変数がある／賞金は金のまま
 ------------------------------------------------------------ */
 Object.keys(global.TOURNAMENTS).forEach((id) => {

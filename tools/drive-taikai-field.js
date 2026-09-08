@@ -202,6 +202,10 @@ const viewOf = (p) => p.evaluate(() => ({
       '出走表を押しても顔ぶれが引き直されない（§4.1）');
     await p.close();
   }
+  /* **見張りの外し忘れはブラウザから見えない。**`pointerdown` は root へ
+     上がってくるので、出走表を出るときに押した釦のクリックが見張りを
+     使い切ってしまう——落ちない検査は錠になっていないので置かない。
+     残っているかどうかは `tools/test-taikai-field.js` が本文で見ている */
   {
     const p = await open({}, { reducedMotion: 'reduce' });
     await p.click('button.tkTier[data-tier="title"]');
