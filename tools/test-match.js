@@ -469,6 +469,66 @@ const winData = (winnerSeat, loserSeat, total, payments, sticks) => ({
   });
 }
 
+/* ============================================================
+   7. おまかせは切り替え（`giveUp` ↔ `takeOver`）
+
+   **入るのに出られない一方通行にしないこと。**おまかせは長い大会を
+   流すための機能なのに、押した瞬間にその半荘を手放すことになると
+   怖くて押せない。**入るときは確認あり、出るときは確認なし**
+   ——出るのは取り上げられた操作を返すだけなので、間違って押しても害が無い
+   ============================================================ */
+{
+  const fs = require('fs'), path = require('path');
+  const uj = fs.readFileSync(path.join(__dirname, '../src/ui.js'), 'utf8');
+  const mj = fs.readFileSync(path.join(__dirname, '../src/match.js'), 'utf8');
+  const strip = (t) => t.replace(/\/\*[\s\S]*?\*\//g, '');
+  const ub = strip(uj), mb = strip(mj);
+
+  /* 逆向きがあること */
+  ok(/takeOver\(\)\s*\{/.test(ub), 'ui.js に takeOver がある（おまかせの逆向き）');
+  const to = (ub.match(/takeOver\(\)\s*\{[\s\S]*?\n  \},/) || [''])[0];
+  ok(/this\.auto = false/.test(to), 'takeOver は auto を倒す');
+  ok(/g\.players\[0\]\.isAI = false/.test(to), 'takeOver は players[0].isAI を倒す');
+  ok(/if \(!g \|\| !this\.auto\) return/.test(to),
+    'おまかせに入っていなければ何もしない', to.replace(/\s+/g, ' ').slice(0, 80));
+
+  /* **速さを戻すこと。**0（早送り）のままだと endAutoMs が 400 を返して
+     締めの帯が勝手に流れる（手打ちに戻したのに読む間が無い） */
+  const gu = (ub.match(/giveUp\(speed\)\s*\{[\s\S]*?\n  \},/) || [''])[0];
+  ok(/this\._preAutoSpeed = this\.speed/.test(gu), 'giveUp は前の速さを控える');
+  ok(/this\._preAutoSpeed/.test(to) && /this\.speed = this\._preAutoSpeed/.test(to),
+    'takeOver は控えた速さを復す');
+  ok(/this\._preAutoSpeed = null/.test(to), 'takeOver は控えを空にする');
+  ok(/UI\._preAutoSpeed = null/.test(mb),
+    'match.js は対局ごとに控えを空にする（前の半荘の速さを復さない）');
+
+  /* **タイマーを追いかけないこと。**掴んで消す仕掛けを足すと、
+     送りの経路が二本になる（M-3） */
+  ok(!/clearTimeout/.test(to), 'takeOver は waitEnd のタイマーを掴まない');
+
+  /* 釦は切り替え。消さない */
+  ok(!/giveBtn\.remove\(\)/.test(mb), 'おまかせの釦を消していない（切り替えにする）');
+  ok(/UI\.auto \? '手打ちに戻る' : 'おまかせ'/.test(mb), '釦の文言が auto で切り替わる');
+  ok(/if \(UI\.auto\) \{ UI\.takeOver\(\); syncGive\(\); return; \}/.test(mb),
+    '押したら takeOver。**確認のモーダルを挟まない**');
+  /* 入るときの確認は残す */
+  ok(/おまかせにしますか/.test(mj), '入るときの確認は残っている');
+  ok(!/途中でやめることはできません/.test(mj),
+    '「途中でやめることはできません」が残っていない（戻せるようになった）');
+
+  /* **`auto` は半荘をまたいで残らない**（match.js が毎回倒す） */
+  ok(/UI\.auto = false/.test(mb), 'Match.play の頭で UI.auto を倒す（半荘をまたがない）');
+
+  /* **幽霊クリックの守りがこの経路にも効くこと**（M-2）。
+     `eatGhostClick` は capture で document に付いて `stopPropagation` するので、
+     `#overlay` の外にある釦には**向きに関係なく**届かない */
+  const eat = (ub.match(/eatGhostClick\(ms\)\s*\{[\s\S]*?\n  \},/) || [''])[0];
+  ok(/addEventListener\('click', eat, true\)/.test(eat), '幽霊は capture で受ける');
+  ok(/e\.stopPropagation\(\)/.test(eat), '幽霊は釦へ届く前に止める');
+  ok(/closest\('#overlay'\)/.test(eat) && !/giveup/.test(eat),
+    '通すのは #overlay だけ（釦は素通ししない）');
+}
+
 /* ---------------- 結果 ---------------- */
 console.log('対局まわりの純関数テスト');
 console.log('通過 ' + pass + ' 件' + (fails.length ? ' / 失敗 ' + fails.length + ' 件' : ''));

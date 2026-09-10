@@ -657,12 +657,21 @@ const UI = {
      game.js はどの判断も p.isAI を見て分岐しているので、
      自分の席を isAI にすれば以降は全部CPUが打つ。
      いま入力待ちで止まっている一手だけは、ここで解いてやる必要がある。
-     解かずに isAI にしても、待っている Promise は誰も解決しない  */
+     解かずに isAI にしても、待っている Promise は誰も解決しない.
+
+     **一方通行にしないこと**（下の `takeOver`）。おまかせは長い大会を
+     流すための機能なのに、押した瞬間にその半荘を手放すことになると、
+     怖くて押せない。**入るときは確認あり、出るときは確認なし**
+     ——取り上げられた操作を返すだけなので、間違って押しても害が無い */
   giveUp(speed) {
     const g = this.game;
     if (!g || this.auto) return;
     this.auto = true;
     g.players[0].isAI = true;
+    /* **戻すために速さを控える。**`takeOver` で復さないと
+       0（早送り）のままになり、`endAutoMs` が 400 を返して
+       締めの帯が勝手に流れ続ける（手打ちに戻したのに読む間が無い） */
+    this._preAutoSpeed = this.speed;
     if (speed !== undefined) this.speed = speed;
     const pend = this.pending;
     if (!pend) return;
@@ -683,6 +692,26 @@ const UI = {
       else this.resolve({ type: 'discard', tile: pend.drawnId !== null && pend.drawnId !== undefined
         ? pend.drawnId : me.hand[me.hand.length - 1] });
     }
+  },
+
+  /* ---- 手打ちに戻る（おまかせの逆向き） ----
+     **倒すだけでよい。**`game.js` はどの判断も `p.isAI` を見るので、
+     次の手番で `askTurn` に入る。**いま動いている思考は追いかけない**
+     ——止める仕掛けを足すと、手番を渡す経路が二本になる。
+
+     **締めの帯の最中に戻したときは、その一回だけ自動で送られる。**
+     `waitEnd` のタイマーはもう仕掛かっているので、そのままにする
+     （掴んで消す仕掛けを足すと、送りの経路が二本になる）。
+     次の帯からは `endAutoMs` が 0 を返して「タップで次へ」が出る */
+  takeOver() {
+    const g = this.game;
+    if (!g || !this.auto) return;
+    this.auto = false;
+    g.players[0].isAI = false;
+    if (this._preAutoSpeed !== null && this._preAutoSpeed !== undefined) {
+      this.speed = this._preAutoSpeed;
+    }
+    this._preAutoSpeed = null;
   },
 
   buttons(list) {

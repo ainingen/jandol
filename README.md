@@ -108,6 +108,7 @@ tools/make-sfx.py   控えの discard.wav だけを合成して書く（鳴る12
 tools/prep-sfx.py   生成した音源（audio_raw/）を切り出して整形し audio/ に書く（鳴る12本）
 tools/test-match.js  対局まわりの純関数テスト（副露の横倒し・締めの四分岐・ルールの既定）
 tools/check-hand.js  打牌の操作をブラウザで確かめる（押している間に選び直せること）
+tools/check-auto.js  おまかせ ↔ 手打ちに戻るをブラウザで押す（往復できること・手番が返ること）
 tools/check-sound.js 打牌の鳴らし分けをブラウザで確かめる（音源を差し替えたら回す）
 tools/drive-match.js 対局画面をブラウザで回す。配牌・鳴き・河3段・終局を撮り、--video で録画
 

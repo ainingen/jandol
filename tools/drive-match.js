@@ -159,10 +159,14 @@ const log = (...a) => { process.stdout.write(a.join(' ') + '\n'); };
   }
   await page.goto(url);
   await page.waitForSelector('#table', { timeout: 10000 });
-  /* 通った局と、おまかせが呼ばれた回数を数える（下の錠で使う） */
+  /* 通った局と、おまかせ／手打ちに戻すが呼ばれた回数を数える（下の錠で使う）。
+     **`takeOver` も数える**——釦が切り替えになったので、帯を叩いた指の
+     幽霊クリックが「手打ちに戻る」を押しうる（`ui.js` の `eatGhostClick`）。
+     入る側だけ見張っていると、出る側の幽霊を見落とす */
   await page.evaluate(() => {
     window.__kyoku = [];
     window.__giveup = 0;
+    window.__takeover = 0;
     const res = UI.result.bind(UI);
     UI.result = function (d) {
       const k = UI.game ? UI.game.kyoku : 0;
@@ -171,6 +175,8 @@ const log = (...a) => { process.stdout.write(a.join(' ') + '\n'); };
     };
     const gu = UI.giveUp.bind(UI);
     UI.giveUp = function (sp) { window.__giveup++; return gu(sp); };
+    const to = UI.takeOver.bind(UI);
+    UI.takeOver = function () { window.__takeover++; return to(); };
   });
   if (ROTATE) {
     await page.waitForSelector('#rotateBtn', { timeout: 5000 });
@@ -204,6 +210,7 @@ const log = (...a) => { process.stdout.write(a.join(' ') + '\n'); };
       four: document.body.classList.contains('four'),
       kyoku_seen: window.__kyoku ? window.__kyoku.slice() : [],
       giveup: window.__giveup || 0,
+      takeover: window.__takeover || 0,
       bust: g.players.some((p) => p.score < 0),
       nodes: UI._nodes ? UI._nodes.size : -1,
       jikaze: g.players.map((p) => p.jikaze - 27),
@@ -299,18 +306,26 @@ const log = (...a) => { process.stdout.write(a.join(' ') + '\n'); };
 
   /* 局数の錠。**「完走したか」だけでは、一局で終わっても完走に見える** */
   const tally = await page.evaluate(() => ({
-    kyoku: window.__kyoku || [], giveup: window.__giveup || 0, ghost: window.__ghost || 0,
-  })).catch(() => ({ kyoku: [], giveup: 0, ghost: 0 }));
+    kyoku: window.__kyoku || [], giveup: window.__giveup || 0,
+    takeover: window.__takeover || 0, ghost: window.__ghost || 0,
+  })).catch(() => ({ kyoku: [], giveup: 0, takeover: 0, ghost: 0 }));
   const want = LENGTH === 'ikkyoku' ? 1 : (LENGTH === 'hanchan' ? 8 : 4);
   const got = Math.max(0, ...tally.kyoku);
   log('通った局 ' + JSON.stringify(tally.kyoku) + '（' + LENGTH + ' なので ' + want + '局まで要る）'
-      + ' body.four=' + sawFour + ' giveUp=' + tally.giveup + ' 幽霊クリック=' + tally.ghost);
+      + ' body.four=' + sawFour + ' giveUp=' + tally.giveup
+      + ' takeOver=' + tally.takeover + ' 幽霊クリック=' + tally.ghost);
   if (PLAY && !sawFour && WIDTH > HEIGHT) {
     log('！四人卓（body.four）を通っていない。この錠は横持ちで掛けること');
     process.exitCode = 2;
   }
   if (got < want && !bust) {
     log('！東' + got + '局で終わっている。' + want + '局まで進んでいない');
+    process.exitCode = 2;
+  }
+  /* **切り替えの逆向きも見る。**`auto` に入っていないので `takeOver` は
+     一度も呼ばれないはず。呼ばれていたら、幽霊クリックが釦に届いている */
+  if (PLAY && tally.takeover > 0) {
+    log('！おまかせに入っていないのに takeOver が呼ばれた（幽霊クリックが釦に当たっている）');
     process.exitCode = 2;
   }
   if (PLAY && tally.giveup > 0) {
