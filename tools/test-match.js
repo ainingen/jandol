@@ -529,6 +529,116 @@ const winData = (winnerSeat, loserSeat, total, payments, sticks) => ({
     '通すのは #overlay だけ（釦は素通ししない）');
 }
 
+/* ============================================================
+   8. 卓の寸法は「要るときだけ」測る（`docs/design/match/crash-spec.md` §8）
+
+   **`setInterval` で測り直さないこと。**四人卓のあいだ `--side` /
+   `--side-w` / `--felt-y` を毎秒144回書き換えていて、iOS が WebContent を
+   落としてページを読み直していた（2026年9月10日・実機で確定）。
+   ここは**その見張りが戻ってこないための錠。**
+   ============================================================ */
+{
+  const fs = require('fs'), path = require('path');
+  const rd = (f) => fs.readFileSync(path.join(__dirname, '..', f), 'utf8');
+  const strip = (t) => t.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/[^\n]*/g, '$1');
+  const mj = rd('src/match.js'), uj = rd('src/ui.js');
+  const mb = strip(mj), ub = strip(uj);
+
+  /* **見張りが無いこと。**`match.js` に `setInterval` を書かない */
+  ok(!/setInterval/.test(mb), 'match.js に setInterval が無い（見張りを張らない）');
+  ok(!/clearInterval/.test(mb), 'match.js に clearInterval が無い（飲む相手が無い）');
+
+  /* **測り直しは `scheduleFit` を通し、rAF で一フレームへ畳む** */
+  ok(/function scheduleFit\(/.test(mb), 'scheduleFit がある');
+  const sf = (mb.match(/function scheduleFit\([\s\S]*?\n  \}/) || [''])[0];
+  ok(/requestAnimationFrame/.test(sf), 'scheduleFit は requestAnimationFrame を通す');
+  ok(/fitRAF !== null\) return/.test(sf), '同じフレームに二本来ても測るのは一度');
+  ok(/function cancelFit\(/.test(mb) && /cancelFit\(\)/.test(mb),
+    '対局を出るときに畳みかけを捨てる（cancelFit）');
+
+  /* **直に `fitTable()` を呼ぶ所を増やさない。**定義そのものと `scheduleFit`
+     の中の一回だけ。ここが増えたら、また連打の形に戻りうる */
+  const direct = (mb.match(/(?<!function )\bfitTable\(\)/g) || []).length;
+  ok(direct === 1, 'fitTable() を直に呼ぶのは scheduleFit の中だけ（' + direct + '箇所）');
+
+  /* **`ui.js` は `render()` の末尾で `onLayout` を一度だけ呼ぶ。**
+     何を測るかは知らない（`match.js` の持ち物） */
+  const calls = (ub.match(/this\.onLayout\(/g) || []).length;
+  ok(calls === 1, 'ui.js が onLayout を呼ぶのは一箇所（' + calls + '箇所）');
+  ok(/this\.onLayout\(\{ changed, kyokuChanged: !sameKyoku, platesChanged \}\)/.test(ub),
+    'onLayout に渡すのは changed / kyokuChanged / platesChanged');
+  ok(/const sameKyoku =/.test(ub) && /const changed =/.test(ub),
+    'changed と sameKyoku は render がもう数えている値（新しく数えない）');
+  const render = (ub.match(/\n  render\(\) \{[\s\S]*?\n  \},\n/) || [''])[0];
+  ok(/this\.onLayout\(/.test(render), 'onLayout は render() の中にある');
+  ok(render.indexOf('this.onLayout(') > render.indexOf('this.pruneNodes('),
+    'onLayout は reconcile と pruneNodes のあと（末尾）');
+  ok(!/fitTable|scheduleFit|--side/.test(ub), 'ui.js は寸法を知らないまま（何を測るかは match.js）');
+
+  /* **`UI.onLayout` は `handStart` と同じ作法**——頭で入れて終わりで戻す */
+  ok(/UI\.onLayout = function/.test(mb), 'match.js が play の頭で UI.onLayout を入れる');
+  ok(/UI\.onLayout = null/.test(mb), 'match.js が終わりで UI.onLayout を戻す');
+  const hook = (mb.match(/UI\.onLayout = function[\s\S]*?\n    \};/) || [''])[0];
+  ok(/kyokuChanged/.test(hook) && /scheduleFit\(\)/.test(hook), '局の変わり目で測り直す');
+  ok(/contains\('four'\)[\s\S]*?return;\n      \}\n      if \(info\.changed\) scheduleFit\(\);/.test(hook),
+    '並びの変化で測るのは列レイアウトだけ（四人卓の fitFour は河に依存しない）');
+
+  /* ---- 五つ目の機会：席プレートの幅（段B・2026年9月10日） ----
+
+     `fitFour` は左右の席プレートの位置で卓面の幅を縛る。**プレートの幅を
+     変えうるものが増えたら、ここで数え漏らしが言われること**——
+     `ResizeObserver` のような機構は採らなかったので（「数え上げた機会」と
+     「観測されたら」の二本立てになる／`fitFour` が `--side` を書いて
+     また観測される形になる）、**数え漏らしを言うのはテストの仕事** */
+  ok(/platesChanged/.test(ub), 'ui.js が platesChanged を出す');
+  ok(/platesChanged/.test(mb), 'match.js が platesChanged を受ける');
+  const sig = (ub.match(/const plateSigs = \[\];[\s\S]*?\n    \}\);/) || [''])[0];
+  ok(sig.length > 60, '席プレートの控えが読めた', String(sig.length));
+  /* **幅を変えうる印は、控えの元（`plateHTML` の出す HTML）に入っていること。**
+     ここに一つ足したら、この行に足すこと */
+  const plate = (ub.match(/const plateHTML = \(p\) => `[\s\S]*?`;/) || [''])[0];
+  ['rc', 'susp', 'tp', 'pt', 'nm'].forEach((k) => {
+    ok(new RegExp('class="' + k).test(plate),
+      '幅を変えうる ' + k + ' が席プレートの中にある（控えに入る）');
+  });
+  const push = (sig.match(/plateSigs\.push\([^\n]*\);/) || [''])[0];
+  ok(/plateSigs\.push\(html/.test(push), '控えは plateHTML の出力そのもの（印を数え直さない）');
+  ok(/dealer/.test(push), '親の印も控えに入る');
+  /* **毎巡・毎セリフで変わるものは入れないこと。**入れると打牌のたびに
+     卓を測り直すことになり、消した見張りと同じ形に戻る */
+  ['turn', 'talking', 'star'].forEach((k) => {
+    ok(!new RegExp(k).test(push), k + ' は控えに入れない（幅を動かさず、毎巡変わる）');
+  });
+  const hook2 = (mb.match(/UI\.onLayout = function[\s\S]*?\n    \};/) || [''])[0];
+  ok(/platesChanged/.test(hook2) && /contains\('four'\)/.test(hook2),
+    'プレートの変化で測るのは四人卓だけ');
+
+  /* ---- 装飾の transform を寸法として読まないこと（段B） ----
+
+     `.seat.talking` は `transform:scale(1.07)` の跳ね。`getBoundingClientRect` で
+     測ると 1.07 倍に膨らんだ見かけを拾い、セリフのたびに卓が縮んで戻る */
+  const four = (mb.match(/function fitFour\([\s\S]*?\n  \}/) || [''])[0];
+  const roomFn = (four.match(/const room = \(\)[\s\S]*?\n    \}\);/) || [''])[0];
+  ok(roomFn.length > 20, 'room() が読めた', String(roomFn.length));
+  ok(/offsetLeft/.test(roomFn) && /offsetWidth/.test(roomFn),
+    'room() は席プレートをレイアウト箱で測る（offsetLeft / offsetWidth）');
+  ok(!/getBoundingClientRect/.test(roomFn),
+    'room() は getBoundingClientRect を使わない（装飾の跳ねを拾う）');
+  ok(/function layoutSpan\(/.test(mb) && /layoutSpan\(felt, t\)/.test(mb),
+    '卓面のほうは実測のまま（layoutSpan。3D で offsetWidth では測れない）');
+  ok(/rotated/.test((mb.match(/function layoutSpan\([\s\S]*?\n  \}/) || [''])[0]),
+    'layoutSpan は回転表示で軸を読み替える');
+
+  /* **向き・寸法の経路は残っていること**（見張りを消すだけにしない） */
+  ok(/addEventListener\('resize', onOrientationChange\)/.test(mb), 'resize は購読したまま');
+  ok(/visualViewport\.addEventListener\('resize', onOrientationChange\)/.test(mb),
+    'visualViewport の resize も購読したまま');
+  const orient = (mb.match(/function onOrientationChange\([\s\S]*?\n  \}/) || [''])[0];
+  ok(/scheduleFit\(\{ toTop: true \}\)/.test(orient), 'onOrientationChange も scheduleFit を通す');
+  ok((orient.match(/scheduleFit/g) || []).length === 3,
+    '+120ms / +400ms の追い掛けも残っている（そこでしか正しい寸法が返らない端末がある）');
+}
+
 /* ---------------- 結果 ---------------- */
 console.log('対局まわりの純関数テスト');
 console.log('通過 ' + pass + ' 件' + (fails.length ? ' / 失敗 ' + fails.length + ' 件' : ''));

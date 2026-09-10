@@ -17,6 +17,12 @@
   #matchRoot:empty{display:none}
   body.inMatch .dbg{display:none}
   .dbg{max-width:760px;margin:0 auto;padding:12px 8px 30px;display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+  /* **`display:flex` は `[hidden]` の既定（`display:none`）を負かす。**
+     復帰の一言を出すとき `dbg.hidden = true` にしているのに従来の釦が残り、
+     記録（`.dbgBB`）まで出ていると**釦が画面の下へ押し出されて押せない**
+     （実機で踏んだ・2026年9月10日）。**クラスで display を書いたら、
+     `[hidden]` を打ち消していないか見ること** */
+  body:not(.inMatch) .dbg[hidden]{display:none}
   .dbg button{
     font-size:12px;padding:6px 12px;border-radius:3px;cursor:pointer;
     border:1px solid var(--gold-dim);background:var(--felt);color:var(--ivory);
@@ -82,9 +88,12 @@
   .dbgBB{max-width:760px;margin:0 auto;padding:0 8px 24px}
   body.inMatch .dbgBB{display:none}
   .dbgBB h3{margin:0 0 4px;font-size:12px;color:var(--ivory)}
+  /* **60行の輪をそのまま流さない。**画面の高さを食い切って、下の釦
+     （「消す」と対局の釦）が画面の外へ出る。中だけ流す */
   .dbgBB pre{
     margin:0 0 8px;font:10px/1.5 ui-monospace,monospace;color:var(--muted);
     white-space:pre-wrap;word-break:break-all;
+    max-height:38vh;overflow:auto;
   }
   .dbgBB button{
     font-size:11px;padding:4px 10px;border-radius:3px;cursor:pointer;
@@ -118,17 +127,19 @@
        ?flat=1|2|3    **診断用。**四人卓の3Dを段階的に外す（1=牌の厚み／
                       2=牌の3D／3=卓の傾きと遠近まで）。右下に flat=N の印が出る。
                       絵は崩れる。**本番には入らない**（このページのインラインだけ）
-       ?nofit=1       **診断用。**卓の寸法を測り直す 500ms の見張りを止める。
-                      **寸法は初回の一回だけで固定され、以後は追随しない**
-                      （画面の向きを変えても直らない）。右下に nofit の印が出る。
-                      **二戦目以降も効く**（段2.5 で直した。それまでは一戦目だけ）
+       ?nofit=1       **役目を終えた（2026年9月10日）。**500ms の見張りは
+                      `src/match.js` から消えたので、**この旗はもう何も飲まない。**
+                      印だけは出るので、`?bb=1` の `sp` を比べる走行には使える
+                      （飲む相手が無いので、付けても付けなくても同じ結果になる）。
+                      **見張りを戻すと、この旗がまた飲み始める**
+                      ——`tools/check-bb.js` の [5] がそこで気づく
        ?bb=1          **診断用。**ブラックボックス（`docs/design/match/crash-spec.md` §3）。
                       対局のあいだ毎秒一行を `localStorage['jandol.bb']` に控え、
                       右下の印にその一行を出す。読み直したとき、閉じていない走行が
                       あれば直近5行を画面に出す（**この表示は旗が無くても出る**）
        ?fourjs=0      **診断用。**`.four` は付けたまま、JS 側の分岐だけを消す（§4）。
-                      500ms の見張り（`?nofit=1` を含む）と `onOrientationChange` の
-                      登録を落とし、`UI.localDelta` を素通しにする。
+                      `onOrientationChange` の登録を落とし、`UI.localDelta` を
+                      素通しにする（500ms の見張りはもう無いので、そのぶんは効かない）。
                       **寸法は初回の一回だけで固定され、FLIP の向きは狂う。**
                       落ちれば CSS、落ちなければ JS。右下に fourjs=0 の印が出る -->
 <!-- 局の頭からの復帰の一言（docs/design/match/resume-spec.md §6）。
@@ -148,22 +159,22 @@
   <button id="dbgAuto">おまかせで流す</button>
 </div>
 
-<!-- 診断用：?nofit=1 で「卓の寸法を測り直す 500ms の見張り」を止める。
-     **`src/` の読み込みより前に仕込む。**`match.js:437` の
-       const watch = setInterval(function(){ fitTable(); clampTableScroll(false); }, 500);
-     は `Match.play()` の中で登録されるので、`window.setInterval` を差し替えて
-     **間隔 500 の登録だけ握り潰す**のがいちばん浅い介入
-     （`Match` は `fitFour` を外に出していないので、直に止められない）。
-     `clearInterval(0)` は何もしないので、後片づけ側も壊れない。
+<!-- 診断用：間隔 500 の `setInterval` を握り潰す包み。
 
-     **旗が立っているあいだは `ms === 500` を全部飲む。一本飲んで元に戻さない**
-     （段2.5・2026年9月10日）。**`Match.play` は対局ごとに登録し直す**ので、
-     戻す形だと**二戦目から見張りが復活する**——実機の3本目で、読み直さずに
-     二戦目を始めたら `?bb=1` の `sp` が 0 から 144 に戻った。
-     **「一戦目だけ効いている道具」は、効いていない道具より悪い**
-     ——落ちた／落ちないの表がそのぶん嘘になる。
-     ほかに 500ms の `setInterval` を張る所は `src/` に無いので、
-     全部飲んでも巻き添えは出ない（増えたらここも見直すこと）。
+     **見張りは 2026年9月10日に `src/match.js` から消えた。この包みはもう
+     何も飲まない。**それでも消さずに残してある——**見張りが戻ったことを
+     検出する錠**として、そのまま働くため。`?nofit=1` を立てて回して
+     `?bb=1` の `sp` に差が出たら、`src/` のどこかに 500ms の見張りが
+     生えている（`tools/check-bb.js` の [5] がそれを見る）。
+
+     ここまでの経緯（消さないこと。同じ道を二度測らないため）。
+     `?nofit=1` は**一戦目にしか効いていなかった**——`Match.play` は対局ごとに
+     登録し直すので、一本飲んで元に戻す形だと二戦目から見張りが復活する。
+     実機の3本目で、読み直さずに二戦目を始めたら `sp` が 0 から 144 に戻った。
+     段2.5 で「旗のあいだは全部飲む」に直し、**そこで初めて
+     『見張りを止めれば落ちない』が測れた**（`crash-spec.md` §6）。
+     BACKLOG に長らくあった「`?nofit=1` でも落ちた」は、
+     **一戦目しか効いていない道具で測った結果**だった。
 
      **`?fourjs=0` はこれを含む**（`crash-spec.md` §4）。仕込みは**この一箇所だけ**
      ——旗を二つ立てたときに二重に包むと、包みが包みを呼ぶ形になる。

@@ -284,11 +284,25 @@ const UI = {
       ${end && end.tenpai
         ? `<span class="tp${end.tenpai[p.seat] ? '' : ' no'}">${end.tenpai[p.seat] ? 'テンパイ' : 'ノーテン'}</span>`
         : ''}`;
+    /* 席プレートの**幅を変えうるもの**だけを控える（`docs/design/match/crash-spec.md` §8）。
+       四人卓の `fitFour` は左右のプレートの位置で卓面の幅を縛るので、
+       立（`.rc`）・疑（`.susp`）・テンパイ札（`.tp`）・点数・名前が変わったら
+       測り直しが要る。**リーチの札は局の終わりまで残る**ので、拾わないと
+       その局のあいだずっと卓面が名前に食い込む（段Bで実測）。
+
+       **`.turn` / `.talking` / `.star` は入れない。**影と跳ねだけで幅を動かさず、
+       毎巡・毎セリフで変わるので、入れると打牌のたびに卓を測り直すことになる
+       ——それは消した見張りと同じ形になる。
+       **ここで測らないこと**（`fitTable` も `scheduleFit` も `ui.js` の持ち物ではない）。
+       出すのは「変わった」の一言だけで、何を測るかは `match.js` が決める */
+    const plateSigs = [];
     [['#plate-bottom', 0], ['#plate-right', 1], ['#plate-top', 2], ['#plate-left', 3]].forEach(([sel, seat]) => {
       const el = $(sel);
       if (!el) return;
       const p = bySeat(seat);
-      el.innerHTML = plateHTML(p);
+      const html = plateHTML(p);
+      plateSigs.push(html + (seat === g.dealer ? '|D' : ''));
+      el.innerHTML = html;
       el.classList.toggle('dealer', seat === g.dealer);
       el.classList.toggle('riichi', !!p.riichi);
       el.classList.toggle('turn', seat === turn);
@@ -379,6 +393,14 @@ const UI = {
     }
     this.renderCutin();
     this.renderHintText();
+    /* 卓の寸法を測り直す合図（`docs/design/match/crash-spec.md` §8）。
+       **`ui.js` は何を測るかを知らない。**受けるのは `match.js` で、
+       そちらが `requestAnimationFrame` で一フレームへ畳む。
+       `changed` と `sameKyoku` は上でもう出している値で、新しくは数えない */
+    const plateSig = plateSigs.join('#');
+    const platesChanged = plateSig !== this._plateSig;
+    this._plateSig = plateSig;
+    if (this.onLayout) this.onLayout({ changed, kyokuChanged: !sameKyoku, platesChanged });
   },
 
   hintBar(id) {
