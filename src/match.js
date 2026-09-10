@@ -528,9 +528,15 @@ const Match = (() => {
       </div>`;
     }).join('');
     const where = opts.title ? `<span class="mzWhere">${esc(opts.title)}</span>` : '';
+    /* 釦の文言は**外から渡す**（`taikai/round-spec.md` §6）。既定は `'結果へ'`。
+       大会の通常の回戦では行く先が次の半荘なので、「結果へ」だと嘘になる。
+       **ここで大会かどうかを数えないこと**——`match.js` は自分がどこから
+       呼ばれたかを知らないままにしておく。見分けるのは呼び出し元
+       （`shell.html` の `playRealMatch`）の仕事で、練習対局や雀荘は
+       何も渡さないので既定のままになる */
     await UI.modal(
       `<h2 class="mzHead">対局終了</h2>${where}<div class="mzList">${rows}</div>`,
-      [{ v: 'x', label: '結果へ', primary: true }]
+      [{ v: 'x', label: opts.doneLabel || '結果へ', primary: true }]
     );
   }
 

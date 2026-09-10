@@ -157,7 +157,7 @@ body.inMatch #matchRoot{flex:1;min-height:0}
 <script src="src/sound.js?v=2230964f"></script>
 <script src="src/ui.js?v=4c39b9e7"></script>
 <script src="src/resume.js?v=6fb7a013"></script>
-<script src="src/match.js?v=13827e9b"></script>
+<script src="src/match.js?v=5dc3b65c"></script>
 <script src="src/characters.js?v=8bf8a640"></script>
 <script src="src/geo.js?v=633f2f25"></script>
 <script src="src/tournament.js?v=531d3cb1"></script>
@@ -397,6 +397,18 @@ body.inMatch #matchRoot{flex:1;min-height:0}
         /* 遠征先の常連との一局は 'ikkyoku'（scout/spec.md §10.3）。
            渡さなければ既定の東風のまま */
         length: ctx.length || undefined,
+        /* 対局終了の釦の文言（taikai/round-spec.md §6）。
+           **通常の回戦の行く先は次の半荘**なので「結果へ」では嘘になる。
+           決勝卓はそこで大会が終わるので「結果へ」でよい。
+
+           **大会から来たかどうかは ctx.round で見分ける**
+           ——round を入れているのは runTournament だけで、
+           雀荘（直営店）も遠征も練習対局も入れない。isFinal だけでは
+           「通常の回戦」と「雀荘」がどちらも undefined で見分けられない。
+           **新しく数えないこと**——どちらも ctx にもう入っている値。
+           渡さない経路は match.js の既定（'結果へ'）のまま動く */
+        doneLabel: ctx.round == null ? undefined
+          : (ctx.isFinal ? '結果へ' : '次の回戦へ'),
       }, ctx.resume)).then(function (rank) {
         document.body.classList.remove('inMatch');
         return rank;

@@ -346,6 +346,41 @@ async function withResume(rec, fn) {
     /* **A の `tkBare` を決勝で打ち消していること**（顔に重なるので縦中央にしない） */
     ok(/\.tkBridge\.final \.tkCard\.tkBare \.tkCardSub\{[^}]*margin-bottom:0/.test(CSS),
       '決勝では tkBare の縦中央を効かせない');
+    /* **顔を広げる側は `tkBare` に触らせない**（G）。実機で「自分のカードだけ
+       通常の組み方に見える」と報告が出た。原因は再現していないが、
+       **顔を全面にする二本（`.tkCard` の `aspect-ratio` と `.tkFace` の
+       `position:absolute`）が `tkBare` を挟まない形であること**は錠にしておく
+       ——ここに `tkBare` が入ると、自分のカードだけ本当に外れる */
+    const faceRules = (CSS.match(/\.tkBridge\.final [^{]*\.tkFace[^{]*\{[^}]*\}/g) || [])
+      .concat(CSS.match(/\.tkBridge\.final \.tkCard\{[^}]*\}/g) || []);
+    ok(faceRules.length >= 2, '顔を全面にする規則が読めた', String(faceRules.length));
+    ok(!faceRules.some((r) => /tkBare|\.mine/.test(r)),
+      '顔を全面にする規則は tkBare と mine を見ない（自分のカードも同じ組み方）');
+  }
+
+  /* ============================================================
+     9. 対局終了の釦の文言（§6）
+
+     既定は `'結果へ'` のまま。大会から来たときだけ `shell.html` が渡す。
+     **練習対局・雀荘・遠征は触らない**
+     ============================================================ */
+  {
+    const M = rd('src/match.js');
+    ok(/label: opts\.doneLabel \|\| '結果へ'/.test(M),
+      'showResult は文言を外から受け、既定は 結果へ');
+    ok(!/\bisFinal\b/.test(M), 'match.js は大会かどうかを自分で数えない（isFinal を見ない）');
+
+    const SH = rd('shell.html');
+    ok(/doneLabel:/.test(SH), 'shell.html が doneLabel を渡す');
+    ok(/ctx\.round == null \? undefined/.test(SH),
+      '大会から来たときだけ渡す（round が無い経路＝雀荘・遠征・練習は既定のまま）');
+    ok(/ctx\.isFinal \? '結果へ'\s*:\s*'次の回戦へ'/.test(SH),
+      '決勝卓は 結果へ、通常の回戦は 次の回戦へ');
+    /* **雀荘・遠征の呼び出しに `round` を足さないこと。**足すと
+       「次の回戦へ」が雀荘の卓にも出る */
+    ok(!/round:/.test(rd('src/jansou.js').split('playRealMatch(table,')[1] || '').valueOf()
+      && !/round:/.test((rd('src/office.js').match(/playRealMatch\(table, Object\.assign\([^;]*/) || [''])[0]),
+      '雀荘と遠征は ctx に round を入れない');
   }
 
   /* ------------------------------------------------------------ */

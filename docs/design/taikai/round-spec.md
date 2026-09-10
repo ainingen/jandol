@@ -305,6 +305,21 @@ opts.onRoundStart?  … async (info) => void。待つ。無ければ何もしな
 沈んでいたら顔の下に出す形へ戻す。
 
 **段4 — 釦の文言（§6）。**通常の回戦で「次の回戦へ」、決勝卓で「結果へ」。
+**入った（2026年9月10日）。**`match.js` の `showResult` は `opts.doneLabel` を
+受けるだけにして（既定は `'結果へ'`）、見分けは `shell.html` の
+`playRealMatch` に置いた。
+
+**見分けは `ctx.round` で取る。**§6 は「`ctx` にもう `isFinal` が入っている」と
+書いたが、**`isFinal` だけでは足りなかった**——通常の回戦の `ctx` には
+`isFinal` が入らず（`runTournament` は決勝卓にだけ付ける）、
+雀荘と遠征の `ctx` にも入らないので、**その二つが `undefined` で並んで
+見分けられない。**`round` を入れているのは `runTournament` だけなので、
+`ctx.round == null` なら大会の外、と読める。**どちらも `ctx` にもう
+入っている値で、新しくは数えていない。**
+
+`tools/test-taikai-round.js` が四つとも錠にしている
+（既定が `'結果へ'`／`match.js` が `isFinal` を見ない／
+大会から来たときだけ渡す／雀荘と遠征の `ctx` に `round` を足さない）。
 
 **実機で見るもの**（段2のあと）：
 
