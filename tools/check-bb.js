@@ -15,8 +15,10 @@
     2. **旗が無ければ何も仕込まない**こと。`jandol.bb` が書かれず、
        右下の印（`#flatBadge`）も出ない
     3. 読み直したとき、閉じていない走行があれば `.dbgBB` に直近5行が出ること
-
-  段2（`?fourjs=0`）を入れたら、そのぶんの走行もここに足す。
+    4. **段2（`?fourjs=0`）が効いている**こと。初回の `fitFour` のあと
+       `sp` が一度も増えない——寸法を測り直す経路が二本とも
+       （500ms の見張りも、イベント駆動も）止まっている。
+       **`page.setViewportSize` で揺すっても増えない**のがイベント駆動の側の証
 */
 'use strict';
 const path=require('path'),http=require('http'),fs=require('fs');
@@ -112,6 +114,32 @@ await p3.click('#dbgBBClear');
 ok(await p3.$('.dbgBB')===null,'「消す」で消える');
 ok(await p3.evaluate(()=>localStorage.getItem('jandol.bb')===null),'控えも消えている');
 await p3.close();
+
+console.log('\n[4] ?fourjs=0 が効いている（段2）');
+const p4=await (await newCtx()).newPage();
+p4.on('pageerror',(e)=>{fails.push('PAGEERROR(4) '+e.message);console.log('  NG  PAGEERROR '+e.message);});
+await p4.goto(base+'?bb=1&fourjs=0&auto=1&speed=520&length=tonpuu&seed=1&sfx=0&start=1');
+await p4.waitForFunction(()=>document.body.classList.contains('inMatch'),null,{timeout:20000});
+ok(await p4.$('body.four')!==null,'`.four` は付いたまま（消しているのは JS 側だけ）');
+eq(await p4.evaluate(()=>(document.getElementById('flatBadge')||{}).dataset.base),'fourjs=0 bb','印に fourjs=0 が出ている');
+/* 素通しにした `UI.localDelta` は差分をそのまま返す（FLIP の向きは狂ってよい） */
+eq(await p4.evaluate(()=>UI.localDelta(null,7,11)),[7,11],'UI.localDelta が素通しになっている');
+await p4.waitForTimeout(2600);
+/* **寸法を揺すってもイベント駆動の `fitFour` が走らないこと。**
+   `onOrientationChange` の登録を弾いているので、`--side` 系は書き換わらない */
+await p4.setViewportSize({width:812,height:334});
+await p4.waitForTimeout(1600);
+await p4.setViewportSize({width:844,height:334});
+await p4.waitForTimeout(1600);
+if(SHOTS){await p4.screenshot({path:path.join(SHOTS,'bb-fourjs.png')});}
+const r4=await read(p4);
+const e4=(r4&&r4.entries)||[];
+ok(e4.length>=4,'entries が4行以上（'+e4.length+'行）');
+const late=e4.filter((e)=>e.t>=2);
+ok(late.length>=1,'`t >= 2` の行がある（'+late.length+'行）');
+eq(late.filter((e)=>e.sp>0).map((e)=>e.t+':'+e.sp),[],'**`t >= 2` の行の sp が全部0**（初回の fitFour のあと一度も走っていない）');
+ok(e4.some((e)=>e.ev[0]>0),'resize は来ている（弾いているのは登録であってイベントではない）');
+await p4.close();
 
 console.log('\n通過 '+pass+' 件'+(fails.length?' / 失敗 '+fails.length+' 件':''));
 if(fails.length){fails.forEach((f)=>console.log('  ✗ '+f));process.exitCode=1;}

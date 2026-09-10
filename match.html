@@ -124,7 +124,12 @@
        ?bb=1          **診断用。**ブラックボックス（`docs/design/match/crash-spec.md` §3）。
                       対局のあいだ毎秒一行を `localStorage['jandol.bb']` に控え、
                       右下の印にその一行を出す。読み直したとき、閉じていない走行が
-                      あれば直近5行を画面に出す（**この表示は旗が無くても出る**） -->
+                      あれば直近5行を画面に出す（**この表示は旗が無くても出る**）
+       ?fourjs=0      **診断用。**`.four` は付けたまま、JS 側の分岐だけを消す（§4）。
+                      500ms の見張り（`?nofit=1` を含む）と `onOrientationChange` の
+                      登録を落とし、`UI.localDelta` を素通しにする。
+                      **寸法は初回の一回だけで固定され、FLIP の向きは狂う。**
+                      落ちれば CSS、落ちなければ JS。右下に fourjs=0 の印が出る -->
 <!-- 局の頭からの復帰の一言（docs/design/match/resume-spec.md §6）。
      控えがあるときだけ中身が入る。**「通信」とは書かない**（§1）
      ——原因は端末側で回線ではないので、Wi-Fi を疑わせると時間を無駄にさせる -->
@@ -150,16 +155,53 @@
      （`Match` は `fitFour` を外に出していないので、直に止められない）。
      登録は一度きりなので、**一本飲んだらすぐ元に戻す**。
      `clearInterval(0)` は何もしないので、後片づけ側も壊れない。
+
+     **`?fourjs=0` はこれを含む**（`crash-spec.md` §4）。飲むのは**この一箇所だけ**
+     ——旗を二つ立てたときに二本飲むと、`Match.play` の中の別の
+     `setInterval` まで巻き添えになる。
      **本番には入らない。**このページのインラインだけ -->
 <script>
 (function () {
   'use strict';
-  if (new URLSearchParams(location.search).get('nofit') !== '1') return;
+  const q = new URLSearchParams(location.search);
+  const nofit = q.get('nofit') === '1';
+  const fourjs = q.get('fourjs') === '0';
+  if (!nofit && !fourjs) return;
   const orig = window.setInterval;
   window.setInterval = function (fn, ms) {
     if (ms === 500) { window.setInterval = orig; return 0; }   // 一本だけ飲んで戻す
     return orig.apply(window, arguments);
   };
+})();
+</script>
+
+<!-- 診断用：?fourjs=0 で **`.four` のクラスは付けたまま、JS 側の分岐だけを消す**
+     （`crash-spec.md` §4）。落ちれば CSS、落ちなければ JS。
+
+     `match.js` は `function onOrientationChange` と**名前付き**で定義していて、
+     それを `resize` / `orientationchange` / `visualViewport` の `resize`・`scroll` の
+     四つに登録している。**`src/` に触らないなら、名前で弾くのがいちばん浅い。**
+     名前で拾うのは脆いが、**印が出ているのに `?bb=1` の `sp` が0でなければ
+     効いていない**——そこで気づける（名前が変わったらここも直すこと）。
+
+     ここで弾かないもの：段1（`?bb=1`）の自前の listener。**無名で登録している**ので、
+     `name` は空文字になって素通しになる。
+     **本番には入らない。**このページのインラインだけ -->
+<script>
+(function () {
+  'use strict';
+  if (new URLSearchParams(location.search).get('fourjs') !== '0') return;
+  function guard(target) {
+    if (!target || !target.addEventListener) return;
+    const orig = target.addEventListener;
+    target.addEventListener = function (type, fn) {
+      if (fn && fn.name === 'onOrientationChange') return;   // 登録しない
+      return orig.apply(this, arguments);
+    };
+  }
+  guard(window);
+  guard(window.screen && window.screen.orientation);
+  guard(window.visualViewport);
 })();
 </script>
 <!-- 診断用：?bb=1 のブラックボックス（`docs/design/match/crash-spec.md` §3.1）。
@@ -406,6 +448,23 @@
   });
 })();
 </script>
+
+<!-- 診断用：?fourjs=0 の `src/` のあとのぶん（`crash-spec.md` §4）。
+     **段1（`?bb=1`）の包みより後に置くこと。**`localDelta` は §3.1 の
+     包みの対象ではないので順番だけの話だが、包まれた側を差し替えると
+     `w` の印がその関数のぶんだけ消える。
+
+     `UI.localDelta` は FLIP の差分を 36度と席の角度で回す算術で、
+     **四人卓だけ通る。**素通しにすると左右の家の打牌が変な方向へ飛ぶ。
+     **絵は崩れてよい。**打てて落ちないかだけを見る。
+     **本番には入らない。**このページのインラインだけ -->
+<script>
+(function () {
+  'use strict';
+  if (new URLSearchParams(location.search).get('fourjs') !== '0') return;
+  UI.localDelta = function (el, dx, dy) { return [dx, dy]; };
+})();
+</script>
 <script>
 (function () {
   'use strict';
@@ -416,16 +475,18 @@
      **本番には入らない。**クエリが無ければ何もしない——印も出ない */
   const flat = Math.max(0, Math.min(3, Math.floor(num('flat', 0)) || 0));
   for (let i = 1; i <= flat; i++) document.body.classList.add('flat' + i);
-  /* ?nofit=1 と ?bb=1 は上の（`src/` より前の）script が仕込んでいる。ここは印だけ。
+  /* ?nofit=1 / ?fourjs=0 / ?bb=1 は上の（`src/` より前の）script が仕込んでいる。ここは印だけ。
      **`bb` は毎秒この印を書き換える**（`crash-spec.md` §3.3）ので、
      旗の並び（`flat=N` / `nofit` / `bb`）は `dataset.base` に控えておく
      ——書き換える側がそれを頭に残す */
   const nofit = q.get('nofit') === '1';
+  const fourjs = q.get('fourjs') === '0';
   const bb = q.get('bb') === '1';
-  if (flat || nofit || bb) {
+  if (flat || nofit || fourjs || bb) {
     const badge = document.createElement('div');
     badge.id = 'flatBadge';
-    badge.dataset.base = [flat ? 'flat=' + flat : '', nofit ? 'nofit' : '', bb ? 'bb' : '']
+    badge.dataset.base = [flat ? 'flat=' + flat : '', nofit ? 'nofit' : '',
+      fourjs ? 'fourjs=0' : '', bb ? 'bb' : '']
       .filter(Boolean).join(' ');
     badge.textContent = badge.dataset.base;
     document.body.appendChild(badge);
