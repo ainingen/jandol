@@ -76,6 +76,21 @@
   body.flat3.inMatch.four .meld,
   body.flat3.inMatch.four .meldSide{transform-style:flat !important}
 
+  /* 読み直したときのブラックボックス（docs/design/match/crash-spec.md §3.3）。
+     **`?bb=1` が無くても出す**——落ちて読み直された URL には旗が残るが、
+     手で開き直したときも読めるように。**`#dbgResume` の下**に置く */
+  .dbgBB{max-width:760px;margin:0 auto;padding:0 8px 24px}
+  body.inMatch .dbgBB{display:none}
+  .dbgBB h3{margin:0 0 4px;font-size:12px;color:var(--ivory)}
+  .dbgBB pre{
+    margin:0 0 8px;font:10px/1.5 ui-monospace,monospace;color:var(--muted);
+    white-space:pre-wrap;word-break:break-all;
+  }
+  .dbgBB button{
+    font-size:11px;padding:4px 10px;border-radius:3px;cursor:pointer;
+    border:1px solid var(--muted);background:transparent;color:var(--muted);
+  }
+
   /* 効いていることの印。**これが無いと「効かなかった」と「効いたけど落ちた」が
      区別できない**（実機では開発者ツールが使えない）。帯（z-index 8）より上に置く */
   #flatBadge{
@@ -105,7 +120,11 @@
                       絵は崩れる。**本番には入らない**（このページのインラインだけ）
        ?nofit=1       **診断用。**卓の寸法を測り直す 500ms の見張りを止める。
                       **寸法は初回の一回だけで固定され、以後は追随しない**
-                      （画面の向きを変えても直らない）。右下に nofit の印が出る -->
+                      （画面の向きを変えても直らない）。右下に nofit の印が出る
+       ?bb=1          **診断用。**ブラックボックス（`docs/design/match/crash-spec.md` §3）。
+                      対局のあいだ毎秒一行を `localStorage['jandol.bb']` に控え、
+                      右下の印にその一行を出す。読み直したとき、閉じていない走行が
+                      あれば直近5行を画面に出す（**この表示は旗が無くても出る**） -->
 <!-- 局の頭からの復帰の一言（docs/design/match/resume-spec.md §6）。
      控えがあるときだけ中身が入る。**「通信」とは書かない**（§1）
      ——原因は端末側で回線ではないので、Wi-Fi を疑わせると時間を無駄にさせる -->
@@ -143,6 +162,48 @@
   };
 })();
 </script>
+<!-- 診断用：?bb=1 のブラックボックス（`docs/design/match/crash-spec.md` §3.1）。
+     **数える包みは `src/` を読む前に仕込む。**`getBoundingClientRect` は対局中に
+     毎秒何百回も呼ばれるので、あとから包むと数え落とす。
+     **旗が無ければ一切仕込まない**——包みが乗っているだけで測定そのものが誤差になる。
+     `Math.random` には触らない（`?seed=` と干渉させない）。
+     **本番には入らない。**このページのインラインだけ -->
+<script>
+(function () {
+  'use strict';
+  if (new URLSearchParams(location.search).get('bb') !== '1') return;
+
+  /* カウンタは一つにまとめる（§3.1 の指示）。`w` / `wAt` は `src/` のあとの
+     script が UI を包んで書き込む */
+  const bb = window.__bb = { g: 0, sp: 0, ev: [0, 0, 0, 0], r: 0, w: '', wAt: 0 };
+
+  /* `fitFour()` の代理指標。値は素通しで、数えるだけ */
+  const rect = Element.prototype.getBoundingClientRect;
+  Element.prototype.getBoundingClientRect = function () {
+    bb.g++;
+    return rect.apply(this, arguments);
+  };
+
+  /* `--side` `--side-w` `--felt-y` は全ツリーが参照する変数なので、
+     書くたびにスタイルの再計算になる。**見張りを止めていても、
+     イベント駆動で `fitFour` が走ったかどうかがここに出る** */
+  const setProp = CSSStyleDeclaration.prototype.setProperty;
+  CSSStyleDeclaration.prototype.setProperty = function (k) {
+    if (k === '--side' || k === '--side-w' || k === '--felt-y') bb.sp++;
+    return setProp.apply(this, arguments);
+  };
+
+  /* イベントは自前で数える（`match.js` の listener は包まない）。
+     **無名の関数で登録すること**——`?fourjs=0` が
+     `name === 'onOrientationChange'` の登録だけ弾くので、名前を付けると巻き添えになる */
+  window.addEventListener('resize', function () { bb.ev[0]++; });
+  window.addEventListener('orientationchange', function () { bb.ev[1]++; });
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener('resize', function () { bb.ev[2]++; });
+    window.visualViewport.addEventListener('scroll', function () { bb.ev[3]++; });
+  }
+})();
+</script>
 <script src="src/engine.js"></script>
 <script src="src/ai.js"></script>
 <script src="src/game.js"></script>
@@ -157,6 +218,194 @@
 <script src="src/characters.js"></script>
 <script src="src/tournament.js"></script>
 <script src="src/serifu.js"></script>
+
+<!-- 診断用：?bb=1 のブラックボックス（`docs/design/match/crash-spec.md` §3）。
+     **`src/` のあと・下の本体より前**に置く。理由は二つ。
+
+       1. `UI` と `Match` がここで初めて揃う（包む相手が要る）
+       2. **`?start=1` は下の本体の中で `start()` を直に呼ぶ**ので、
+          `window.startMatch` を外から包んでも間に合わない。
+          走行を開け閉めする相手は `Match.play` そのものにしてある
+          ——§3.2 の「`Match.play` が返ったとき閉じる」を素直に書いた形で、
+          5本ある入口のどれから来ても同じところを通る
+
+     **読み直したときの表示だけは旗が無くても動く**（§3.3）。
+     落ちて読み直された URL には旗が残るが、手で開き直したときも読めるように。
+     **本番には入らない。**このページのインラインだけ -->
+<script>
+(function () {
+  'use strict';
+  const KEY = 'jandol.bb';                 // Resume の鍵とは別（§7）
+  const MAX = 60;                          // 直近60行の輪。要るのは落ちる直前の1分だけ
+
+  /* ============================================================
+     読み直したときの表示（§3.3）。**旗が無くても出す**
+     ============================================================ */
+  (function showLast() {
+    let run = null;
+    try { run = JSON.parse(localStorage.getItem(KEY) || 'null'); } catch (e) { run = null; }
+    const rows = run && Array.isArray(run.entries) ? run.entries : null;
+    if (!rows || !rows.length) return;
+    /* 閉じている走行（最後が `w:'end'`）は出さない。落ちていないので読む値が無い */
+    if (rows[rows.length - 1].w === 'end') return;
+
+    const box = document.createElement('div');
+    box.className = 'dbgBB';
+    box.id = 'dbgBB';
+    const pre = document.createElement('pre');
+    /* **整形はしない**（§3.3）。控えた行をそのまま出す */
+    pre.textContent = rows.slice(-5).map((e) => JSON.stringify(e)).join('\n');
+    const h = document.createElement('h3');
+    h.textContent = '前の走行の記録（直近5行）';
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.id = 'dbgBBClear';
+    btn.textContent = '消す';
+    btn.addEventListener('click', function () {
+      try { localStorage.removeItem(KEY); } catch (e) { /* 投げても何もしない */ }
+      box.remove();
+    });
+    box.appendChild(h); box.appendChild(pre); box.appendChild(btn);
+    const anchor = document.getElementById('dbgResume');
+    anchor.parentNode.insertBefore(box, anchor.nextSibling);
+  })();
+
+  if (new URLSearchParams(location.search).get('bb') !== '1') return;
+
+  const bb = window.__bb;
+  if (!bb) return;                          // 前の script が仕込めていない（旗の取り違え）
+
+  /* ============================================================
+     `w`（何の最中か）。**入口で名前と時刻を控えるだけ。戻りは控えない**（§3.1）
+     ——落ちるのは同期処理の途中か、その直後の描画なので「最後に入ったもの」で足りる。
+     **`UI.update` には乗せない**（局中に何十回も呼ばれる。§3.4）
+     ============================================================ */
+  ['render', 'flip', 'flyIn', 'showEnd', 'flyScores', 'result', 'event', 'say', 'modal']
+    .forEach(function (k) {
+      const orig = UI[k];
+      if (typeof orig !== 'function') return;
+      UI[k] = function () {
+        bb.w = k; bb.wAt = performance.now();
+        if (k === 'render') bb.r++;
+        return orig.apply(this, arguments);   // 戻り値も this もそのまま（Promise は Promise のまま）
+      };
+    });
+
+  /* ============================================================
+     走行の開け閉め（§3.2）
+     ============================================================ */
+  let run = null, timer = 0, t0 = 0, prev = 0;
+
+  function write() {
+    if (!run) return;
+    try { localStorage.setItem(KEY, JSON.stringify(run)); } catch (e) { /* 投げても対局を止めない */ }
+  }
+
+  /* 一行ぶん。**全部ただの数と短い識別子**（§3.4）。名前や配列を増やさないこと */
+  function row(w, lag) {
+    const g = UI.game;
+    const app = document.getElementById('app');
+    const cls = (el, want) => (el ? Array.prototype.filter.call(el.classList, want).join(' ') : '');
+    const mem = (window.performance && performance.memory) ? performance.memory.usedJSHeapSize : 0;
+    const vv = window.visualViewport ? window.visualViewport.height : window.innerHeight;
+    const e = {
+      t: Math.round((performance.now() - t0) / 1000),
+      k: g ? g.kyoku + ':' + g.honba : '',
+      d: UI.discardCount ? UI.discardCount() : 0,
+      n: document.getElementsByTagName('*').length,
+      img: document.getElementsByTagName('img').length,
+      tn: UI._nodes ? UI._nodes.size : 0,
+      g: bb.g, sp: bb.sp, r: bb.r,
+      ev: bb.ev.slice(),
+      lag: lag,
+      w: w,
+      ph: [
+        cls(app, (c) => c === 'ending' || c.indexOf('end-') === 0 || c.indexOf('bust-') === 0),
+        cls(document.body, (c) => c === 'four' || c === 'rotated' || c.indexOf('flat') === 0),
+      ].filter(Boolean).join('|'),
+      vv: Math.round(vv || 0),
+      mem: Math.round(mem / 1048576),        // MB。Safari には performance.memory が無いので 0
+    };
+    bb.g = 0; bb.sp = 0; bb.r = 0; bb.ev = [0, 0, 0, 0];
+    return e;
+  }
+
+  function push(w, lag) {
+    if (!run) return;
+    const e = row(w, lag);
+    run.entries.push(e);
+    while (run.entries.length > MAX) run.entries.shift();   // 輪。古いものから落とす
+    write();
+    return e;
+  }
+
+  /* 右下の印（§3.3）。**毎秒中身を一行で更新する**——実機で目に見えるので、
+     落ちる瞬間に何が跳ねていたかをその場で読める。
+     既存の `flat=N` / `nofit` の印は前に残す（`dataset.base`） */
+  function badge(e) {
+    const el = document.getElementById('flatBadge');
+    if (!el || !e) return;
+    /* 局名は `Resume.kyokuName` から取る（**式を書き写さない**）。
+       印は一行なので `0本場` の側は落とす */
+    let k = e.k;
+    if (k && typeof Resume !== 'undefined') {
+      const p = k.split(':');
+      k = Resume.kyokuName(Number(p[0]), Number(p[1])).split(' ')[0];
+    }
+    el.textContent = [
+      el.dataset.base || 'bb',
+      e.t + 's', k, 'd' + e.d, 'n' + e.n, 'g' + e.g, 'lag' + e.lag,
+      'w:' + String(e.w).split('+')[0],
+    ].filter(Boolean).join(' ');
+  }
+
+  function tick() {
+    const now = performance.now();
+    const lag = Math.max(0, Math.round(now - prev - 1000));   // 予定より遅れた ms
+    prev = now;
+    const w = bb.w ? bb.w + '+' + Math.round(now - bb.wAt) : '';
+    badge(push(w, lag));
+  }
+
+  function open() {
+    if (run) return;
+    t0 = prev = performance.now();
+    run = {
+      id: Date.now(),
+      ua: navigator.userAgent,
+      flags: location.search,
+      entries: [],
+    };
+    timer = setInterval(tick, 1000);        // **1000。**`match.js` の 500 とは別（`?nofit=1` に食われない）
+    tick();                                  // t=0 の一行。**開いた直後に落ちても空にしない**
+  }
+
+  function close() {
+    if (!run) return;
+    clearInterval(timer); timer = 0;
+    push('end', 0);                          // **最後の行が `end`＝閉じた走行**（§3.3 の読み手はここを見る）
+    run = null;
+  }
+
+  /* `Match.play` を包む。開くのは呼ぶ直前、閉じるのは返った直後（§3.2） */
+  const play = Match.play;
+  Match.play = function () {
+    open();
+    let p;
+    try { p = play.apply(this, arguments); } catch (e) { close(); throw e; }
+    Promise.resolve(p).then(close, close);
+    return p;
+  };
+
+  /* **落ちたときはこれが来ない**（§3.2）。来ていれば、落ちたのではなく
+     バックグラウンドに回っただけ——いままで「落ちた」と数えていたものの中に
+     これが混ざっていないかも、ここで分かる */
+  window.addEventListener('pagehide', function () { push('pagehide', 0); });
+  document.addEventListener('visibilitychange', function () {
+    if (document.visibilityState === 'hidden') push('hidden', 0);
+  });
+})();
+</script>
 <script>
 (function () {
   'use strict';
@@ -167,12 +416,18 @@
      **本番には入らない。**クエリが無ければ何もしない——印も出ない */
   const flat = Math.max(0, Math.min(3, Math.floor(num('flat', 0)) || 0));
   for (let i = 1; i <= flat; i++) document.body.classList.add('flat' + i);
-  /* ?nofit=1 は上の（`src/` より前の）script が仕込んでいる。ここは印だけ */
+  /* ?nofit=1 と ?bb=1 は上の（`src/` より前の）script が仕込んでいる。ここは印だけ。
+     **`bb` は毎秒この印を書き換える**（`crash-spec.md` §3.3）ので、
+     旗の並び（`flat=N` / `nofit` / `bb`）は `dataset.base` に控えておく
+     ——書き換える側がそれを頭に残す */
   const nofit = q.get('nofit') === '1';
-  if (flat || nofit) {
+  const bb = q.get('bb') === '1';
+  if (flat || nofit || bb) {
     const badge = document.createElement('div');
     badge.id = 'flatBadge';
-    badge.textContent = [flat ? 'flat=' + flat : '', nofit ? 'nofit' : ''].filter(Boolean).join(' ');
+    badge.dataset.base = [flat ? 'flat=' + flat : '', nofit ? 'nofit' : '', bb ? 'bb' : '']
+      .filter(Boolean).join(' ');
+    badge.textContent = badge.dataset.base;
     document.body.appendChild(badge);
   }
 

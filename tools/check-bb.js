@@ -1,0 +1,119 @@
+#!/usr/bin/env node
+/*
+  ブラックボックス（`match.html` の `?bb=1`。docs/design/match/crash-spec.md §3）
+
+    node tools/check-bb.js
+
+  **ブラウザで実際に回す。**書けているか・欄が揃っているか・閉じているかは、
+  `localStorage` を読まないと分からない（`check-auto.js` と同じ理由）。
+
+  見るのは三つ。
+
+    1. `?bb=1` で対局を回すと `jandol.bb` に走行が一つでき、
+       欄が全部あり、**最後の行が `w:'end'`**（＝閉じた走行）になること。
+       `g` と `sp` が0でない行があること——四人卓で `fitFour` が動いた証
+    2. **旗が無ければ何も仕込まない**こと。`jandol.bb` が書かれず、
+       右下の印（`#flatBadge`）も出ない
+    3. 読み直したとき、閉じていない走行があれば `.dbgBB` に直近5行が出ること
+
+  段2（`?fourjs=0`）を入れたら、そのぶんの走行もここに足す。
+*/
+'use strict';
+const path=require('path'),http=require('http'),fs=require('fs');
+const ROOT='/home/user/jandol';
+function lp(){const t=['playwright','playwright-core'];try{const g=require('child_process').execSync('npm root -g',{stdio:['ignore','pipe','ignore']}).toString().trim();if(g)t.push(path.join(g,'playwright'));}catch(e){}
+for(const x of t){try{return require(x);}catch(e){}}process.exit(1);}
+const {chromium}=lp();
+const MIME={'.html':'text/html','.js':'text/javascript','.css':'text/css','.webp':'image/webp','.svg':'image/svg+xml','.png':'image/png','.woff2':'font/woff2','.wav':'audio/wav'};
+function serve(){return new Promise((res)=>{const srv=http.createServer((rq,rs)=>{const f=path.join(ROOT,decodeURIComponent(rq.url.split('?')[0]));
+fs.readFile(f,(e,b)=>{if(e){rs.writeHead(404);rs.end('');return;}rs.writeHead(200,{'Content-Type':MIME[path.extname(f)]||'application/octet-stream'});rs.end(b);});});
+srv.listen(0,'127.0.0.1',()=>res({srv,port:srv.address().port}));});}
+let pass=0; const fails=[];
+const ok=(c,n,d)=>{if(c){pass++;console.log('  ok  '+n);}else{fails.push(n);console.log('  NG  '+n+(d?' … '+d:''));}};
+const eq=(a,b,n)=>ok(JSON.stringify(a)===JSON.stringify(b),n,'got '+JSON.stringify(a)+' / want '+JSON.stringify(b));
+
+/* §3.1 の欄。**一つでも欠けたら読めない記録になる** */
+const COLS=['t','k','d','n','img','tn','g','sp','r','ev','lag','w','ph','vv','mem'];
+const read=(p)=>p.evaluate(()=>{
+  try{return JSON.parse(localStorage.getItem('jandol.bb')||'null');}catch(e){return null;}
+});
+const SHOTS=(()=>{const i=process.argv.indexOf('--shots');return i>0?process.argv[i+1]:null;})();
+
+(async()=>{const {srv,port}=await serve();const br=await chromium.launch();
+const base='http://127.0.0.1:'+port+'/match.html';
+/* **走行ごとに新しい context。**`localStorage` は origin ごとなので、
+   使い回すと前の走行の `jandol.bb` が次の確認に混ざる（[2] がその場で嘘になる） */
+const newCtx=()=>br.newContext({viewport:{width:844,height:334}});   // 四人卓の寸法
+const p=await (await newCtx()).newPage();
+p.on('pageerror',(e)=>{fails.push('PAGEERROR '+e.message);console.log('  NG  PAGEERROR '+e.message);});
+
+console.log('\n[1] ?bb=1 で一戦まわす');
+await p.goto(base+'?bb=1&auto=1&speed=0&length=ikkyoku&seed=1&sfx=0&start=1');
+await p.waitForFunction(()=>document.body.classList.contains('inMatch'),null,{timeout:20000});
+ok(await p.$('#flatBadge')!==null,'右下の印が出ている');
+ok(await p.$('body.four')!==null,'四人卓（844×334）');
+await p.waitForTimeout(2500);
+const mid=await read(p);
+ok(!!mid&&Array.isArray(mid.entries)&&mid.entries.length>0,'対局中にもう書かれている');
+if(SHOTS){fs.mkdirSync(SHOTS,{recursive:true});await p.screenshot({path:path.join(SHOTS,'bb-badge.png')});}
+const badge=await p.evaluate(()=>{const el=document.getElementById('flatBadge');return el?el.textContent:null;});
+console.log('      印: '+badge);
+ok(/^bb \d+s/.test(badge||''),'印が毎秒の一行になっている（bb <秒>s …）');
+ok(/w:/.test(badge||''),'印に w が出ている');
+
+/* 対局終了の画面（`match.js` の `showResult`）は `UI.modal` で待つ。
+   押さないと `Match.play` が返らない＝走行が閉じない */
+await p.waitForSelector('#overlay.show [data-v]',{timeout:120000});
+await p.click('#overlay.show [data-v]');
+await p.waitForFunction(()=>!document.body.classList.contains('inMatch'),null,{timeout:20000});
+await p.waitForTimeout(200);
+const run=await read(p);
+ok(!!run,'走行が書かれている');
+ok(typeof run.id==='number'&&typeof run.ua==='string'&&typeof run.flags==='string','走行の頭（id / ua / flags）');
+const es=run.entries||[];
+ok(es.length>=1,'entries が1行以上（'+es.length+'行）');
+ok(es.length<=60,'entries は60行の輪を超えない');
+const missing=[];
+es.forEach((e,i)=>{COLS.forEach((c)=>{if(!(c in e))missing.push(i+':'+c);});});
+eq(missing,[],'各行に §3.1 の欄が全部ある');
+ok(es.every((e)=>Array.isArray(e.ev)&&e.ev.length===4),'ev は四つ並ぶ');
+eq(es[es.length-1].w,'end','**最後の行が end**（閉じた走行）');
+ok(es.some((e)=>e.g>0),'g が0でない行がある（getBoundingClientRect を数えている）');
+ok(es.some((e)=>e.sp>0),'sp が0でない行がある（**四人卓で fitFour が動いた証**）');
+ok(es.some((e)=>e.n>0&&e.tn>=0&&e.vv>0),'n / tn / vv が入っている');
+ok(es.some((e)=>/four/.test(e.ph)),'ph に four が出ている');
+ok(es.some((e)=>typeof e.w==='string'&&/^[a-zA-Z]+\+\d+$/.test(e.w)),'w が「関数名+経過ms」の形');
+console.log('      最後の行: '+JSON.stringify(es[es.length-1]));
+
+console.log('\n[2] 旗が無ければ何も仕込まない');
+const p2=await (await newCtx()).newPage();
+p2.on('pageerror',(e)=>{fails.push('PAGEERROR(2) '+e.message);console.log('  NG  PAGEERROR '+e.message);});
+await p2.goto(base+'?auto=1&speed=0&length=ikkyoku&seed=1&sfx=0&start=1');
+await p2.waitForFunction(()=>document.body.classList.contains('inMatch'),null,{timeout:20000});
+await p2.waitForTimeout(2500);
+ok(await p2.$('#flatBadge')===null,'#flatBadge が無い');
+ok(await p2.evaluate(()=>localStorage.getItem('jandol.bb')===null),'jandol.bb が書かれていない');
+ok(await p2.evaluate(()=>window.__bb===undefined),'__bb を仕込んでいない');
+await p2.close();
+
+console.log('\n[3] 読み直したとき、閉じていない走行が出る');
+const p3=await (await newCtx()).newPage();
+p3.on('pageerror',(e)=>{fails.push('PAGEERROR(3) '+e.message);console.log('  NG  PAGEERROR '+e.message);});
+await p3.goto(base+'?bb=1&auto=1&speed=0&length=tonpuu&seed=1&sfx=0&start=1');
+await p3.waitForFunction(()=>document.body.classList.contains('inMatch'),null,{timeout:20000});
+await p3.waitForTimeout(3200);
+await p3.reload();                       // **落ちたのと同じ形**（走行が閉じないまま読み直される）
+await p3.waitForSelector('.dbgBB',{timeout:10000}).then(()=>ok(true,'.dbgBB が出る'),()=>ok(false,'.dbgBB が出ない'));
+const lines=await p3.evaluate(()=>{const el=document.querySelector('.dbgBB pre');return el?el.textContent.split('\n'):[];});
+ok(lines.length>=1&&lines.length<=5,'直近5行まで（'+lines.length+'行）');
+ok(lines.every((l)=>{try{JSON.parse(l);return true;}catch(e){return false;}}),'一行ずつ読める');
+if(SHOTS){await p3.screenshot({path:path.join(SHOTS,'bb-reload.png')});}
+await p3.click('#dbgBBClear');
+ok(await p3.$('.dbgBB')===null,'「消す」で消える');
+ok(await p3.evaluate(()=>localStorage.getItem('jandol.bb')===null),'控えも消えている');
+await p3.close();
+
+console.log('\n通過 '+pass+' 件'+(fails.length?' / 失敗 '+fails.length+' 件':''));
+if(fails.length){fails.forEach((f)=>console.log('  ✗ '+f));process.exitCode=1;}
+else console.log('すべて通過');
+await br.close();srv.close();})();
