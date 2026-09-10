@@ -70,8 +70,9 @@ const Taikai = (() => {
      **強さが同じなら id で固定する**——雀エイト表と同じ理由で、
      開くたびに並びが揺れると表として読めなくなる。
 
-     返すのは `[{ chara, why }]`。`why` は 'grudge'（因縁）か 'strong'（強さ）で、
-     **見出し語の文面は画面側が持つ**（ここは選ぶだけ） */
+     返すのは `[{ chara, why }]`。`why` は 'grudge'（因縁）・'top'（大本命）・
+     'strong'（優勝候補）の三つで、**見出し語の文面は画面側が持つ**
+     ——ここが決めるのはどの札を貼るかまで */
   function pickSpotlight(field, st, n) {
     st = st || {};
     n = n == null ? 3 : n;
@@ -96,6 +97,11 @@ const Taikai = (() => {
       .filter((c) => !taken.has(c.id))
       .sort((a, b) => (strengthOf(b, STYLES) - strengthOf(a, STYLES)) || (a.id - b.id))
       .forEach((c) => add(c, 'strong'));
+    /* **因縁が一人もいないときだけ、強さ順の一人目を「大本命」にする**（§3）。
+       「優勝候補」が三つ並ぶと平らに見えて、目が止まる場所が無い（実機で見た）。
+       因縁が一人でもいれば、そちらが先頭で立っているので付けない
+       ——一枚の中で「いちばん強い言葉」が二つあると、どちらも効かなくなる */
+    if (out.length && out.every((x) => x.why === 'strong')) out[0].why = 'top';
     return out;
   }
 
@@ -758,7 +764,8 @@ const Taikai = (() => {
 
          **注目に出した子を⑤の全員一覧から消さないこと**（§1）。
          上で見た名前を下で探して見つからないと、壊れて見える。二か所に出てよい */
-      const WHY = { grudge: '前に当たって、勝てなかった相手', strong: '優勝候補' };
+      const WHY = { grudge: '前に当たって、勝てなかった相手',
+                    top: '大本命', strong: '優勝候補' };
       const spot = pickSpotlight(prepared.field, st);
       const spotHTML = spot.length ? `<section class="tkFieldSec">
         <h2 class="tkSecT">注目の雀ドル</h2>

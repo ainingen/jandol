@@ -88,16 +88,35 @@ Object.keys(global.TOURNAMENTS).forEach((id) => {
     const st = { team, recent: [7], beaten: [] };
     const r = Taikai.pickSpotlight(field, st);
     ok(r[0].chara.id === 7 && r[0].why === 'grudge', '因縁が一人 … 先頭は因縁枠', J(ids(r)));
-    same(whys(r), ['grudge', 'strong', 'strong'], '因縁が一人 … 残りは強さ枠');
+    same(whys(r), ['grudge', 'strong', 'strong'],
+      '因縁が一人 … 残りは強さ枠（大本命は付かない）');
     const rest = byStrength(pick(others).filter((c) => c.id !== 7)).slice(0, 2).map((c) => c.id);
     same(ids(r).slice(1), rest, '因縁が一人 … 残りは強さの降順');
   }
   /* --- 因縁が一人もいないとき（初回） --- */
   {
     const r = Taikai.pickSpotlight(field, { team, recent: [], beaten: [] });
-    same(whys(r), ['strong', 'strong', 'strong'], '因縁ゼロ … 三人とも強さ枠');
+    /* **一人目だけ「大本命」。**「優勝候補」が三つ並ぶと平らに見えて、
+       目が止まる場所が無い（実機で見た） */
+    same(whys(r), ['top', 'strong', 'strong'], '因縁ゼロ … 一人目だけ大本命');
     same(ids(r), byStrength(pick(others)).slice(0, 3).map((c) => c.id),
-      '因縁ゼロ … 強さの降順');
+      '因縁ゼロ … 強さの降順（並びは変わらない）');
+  }
+  /* --- 因縁が一人でもいれば「大本命」は付けない --- */
+  {
+    const r = Taikai.pickSpotlight(field, { team, recent: [7], beaten: [] });
+    ok(whys(r).indexOf('top') < 0,
+      '因縁が一人でもいれば大本命は付けない（強い言葉を二つ出さない）', J(whys(r)));
+  }
+  {
+    const r = Taikai.pickSpotlight(field, { team, recent: [5, 3, 9], beaten: [] });
+    ok(whys(r).indexOf('top') < 0, '因縁が三人なら大本命は付けない', J(whys(r)));
+  }
+  /* --- 相手が一人しかいなくても落ちない --- */
+  {
+    const one = [Object.assign({}, global.PLAYER)].concat(pick([1]));
+    same(whys(Taikai.pickSpotlight(one, { team: [] })), ['top'], '一人だけなら大本命');
+    same(Taikai.pickSpotlight([], { team: [] }), [], '誰もいなければ空のまま');
   }
   /* --- 一度勝った相手は因縁枠にしない（beaten は消えない） --- */
   {
@@ -172,6 +191,18 @@ ok(/root\.dataset\.tier = prepared\.tierId/.test(BODY), '出走表に data-tier 
 ok((BODY.match(/root\.dataset\.tier = run\.tierId/g) || []).length === 2,
   '進行と結果の二画面にも data-tier が付く（§4）');
 ok(/delete root\.dataset\.tier/.test(BODY), '大会選択に戻るときは data-tier を外す');
+
+/* `why` の三つに、画面側の文面が揃っていること。
+   **足したのに文面を足し忘れると、札が空で出る** */
+{
+  const why = (BODY.match(/const WHY = \{[\s\S]*?\};/) || [''])[0];
+  ['grudge', 'top', 'strong'].forEach((k) => {
+    ok(new RegExp(k + ':').test(why), 'WHY に ' + k + ' の文面がある', why);
+  });
+  ok(/大本命/.test(why), '大本命の札がある', why);
+  ok(!/当たります/.test(BODY),
+    '「この中の誰かと当たります」とは書かない（卓割りはまだ決まっていない）');
+}
 
 /* ------------------------------------------------------------
    §6 入場の演出 — 後片づけは一箇所（`clearEntrance`）
