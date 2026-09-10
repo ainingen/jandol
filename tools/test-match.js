@@ -639,6 +639,67 @@ const winData = (winnerSeat, loserSeat, total, payments, sticks) => ({
     '+120ms / +400ms の追い掛けも残っている（そこでしか正しい寸法が返らない端末がある）');
 }
 
+/* ============================================================
+   9. 右上に置くものは、右側のカットインと重ならないこと
+      （docs/design/match/spec.md・2026年9月10日）
+
+   「右上は空いている」は **左側のカットインしか見ていなかった。**
+   カットインは `data-side="right"` のとき同じ角に出て、立ち絵のカードは
+   `--cw`（縦が広いほど太る）で PC の広い窓では 96px まで育つ。
+   **844×334 で釦の高さの92%、1280×800 では 100% を覆っていた。**
+   `pointer-events:none` なので押せてはいるが、**そこに釦があると分からない。**
+
+   直しは二重。**釦をカットインより上の層へ**（z-index）と、
+   **カットインを釦の下端まで下げる**（top）。片方だけにしないこと
+   ——上げるだけだと釦が顔写真の上に乗り、下げるだけだと
+   `--cw` が育つ窓で吹き出しが釦へ戻ってくる。
+
+   ここで見るのは形だけ。実際の重なりは
+   `node tools/drive-match.js --play --width 844 --height 334` と実機。
+   ============================================================ */
+{
+  const fs = require('fs'), path = require('path');
+  const css = fs.readFileSync(path.join(__dirname, '../src/match.css'), 'utf8');
+
+  const zOf = (sel) => {
+    const m = css.match(new RegExp(sel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\{([^}]*)\\}'));
+    const z = m && m[1].match(/z-index:\s*(-?\d+)/);
+    return z ? +z[1] : null;
+  };
+  const cut = css.match(/body\.inMatch\.four \.cutin\{([^}]*)\}/);
+  ok(!!cut, '四人卓の .cutin の置き場所が match.css にある');
+  const zTop = zOf('body.inMatch.four #topbar');
+  const zCut = cut ? (cut[1].match(/z-index:\s*(-?\d+)/) || [])[1] : null;
+  ok(zTop !== null && zCut != null, '#topbar と .cutin のどちらにも z-index がある');
+  ok(zTop > +zCut,
+    '#topbar はカットインより上の層（topbar ' + zTop + ' > cutin ' + zCut + '）');
+  /* #toast（z-index:15）より下であること——おまかせが見出しの上に出ると読めない */
+  ok(zTop < 15, '#topbar は #toast（15）より下');
+
+  const px = (s, k) => { const m = s.match(new RegExp(k + ':\\s*(\\d+(?:\\.\\d+)?)px')); return m ? +m[1] : null; };
+  const bar = css.match(/body\.inMatch\.four #topbar\{([^}]*)\}/);
+  const barTop = bar ? px(bar[1], 'top') : null;
+  const cutTop = cut ? px(cut[1], 'top') : null;
+  /* 釦の実測は高さ25px（font-size:11.5px ＋ padding:5px 12px）。
+     カードは rotate(2.5deg) で上へ2pxはみ出す。**釦の下端＋2px より下**にいること */
+  ok(barTop !== null && cutTop !== null, '#topbar と .cutin の top が px で書いてある');
+  ok(cutTop >= barTop + 25 + 2,
+    'カットインは「おまかせ」の下端より下から始まる（topbar ' + barTop
+    + '+25 / cutin ' + cutTop + '）');
+
+  /* 下げたぶんはカードの高さで返す。左右のプレート（#table の56%）に掛からないよう、
+     --cw は画面の高さから引いた値であること。**23vh のままだと 812×320 で食い込む** */
+  ok(/--cw:\s*clamp\([^)]*vh/.test(cut ? cut[1] : ''),
+    '--cw は画面の高さから作る（clamp に vh が入っている）', cut && cut[1].trim());
+  ok(/56vh - 103px/.test(cut ? cut[1] : ''),
+    '--cw の高さの budget はプレートの上端から引いてある（56vh − 103px）');
+
+  /* 列レイアウトの .cutin は置き場所が別。四人卓の値を持ち込んでいないこと */
+  const col = css.match(/body\.inMatch:not\(\.four\) \.cutin\{([^}]*)\}/);
+  ok(!!col && !/position:absolute/.test(col[1]),
+    '列レイアウトのカットインは絶対配置にしていない（卓と手牌のあいだの流し込み）');
+}
+
 /* ---------------- 結果 ---------------- */
 console.log('対局まわりの純関数テスト');
 console.log('通過 ' + pass + ' 件' + (fails.length ? ' / 失敗 ' + fails.length + ' 件' : ''));

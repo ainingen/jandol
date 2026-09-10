@@ -439,9 +439,21 @@ body.inMatch.four #app{
    右上は卓面（y33〜）と対面の札（x〜500）の外側で、空いている。
    **実機（iPhone・Safari・横持ち）で確定（2026年9月6日）。右下へ戻さないこと**
    ——押しにくいのはむしろ正しい。一局に何度も押す釦ではなく、**誤って押すと局が飛ぶ**
-   釦なので、多少遠いほうが安全側。カットインの立ち絵とも重なっていない。 */
+   釦なので、多少遠いほうが安全側。
+
+   **ただし「空いている」は左側のカットインしか見ていなかった**（2026年9月10日に直した）。
+   カットインは `data-side="right"` のとき **同じ右上の角へ出る**（`right:14px` / `top:10px`）。
+   立ち絵のカードは `--cw:clamp(64px,23vh,96px)` で**縦が広いほど太る**ので、
+   PC の広い窓（1280×800）では 96px まで育ち、**釦を 100% 覆っていた**
+   （844×334 の実機でも高さの 92% を覆う）。カットインは `pointer-events:none` なので
+   **押せてはいる。見えていないだけ**——だから「押しても効かない」ではなく
+   「そこに釦があると分からない」形で出た。
+   直しかたは二つ重ねてある——**釦をカットイン（z-index:8）より上に出し、
+   カットインの側を釦の下端まで下げる**（下の `.cutin` の `top`）。
+   **釦を消す案は採らない**（カットインは局中に何度も出るので、
+   「見えないから押せない」を「消えているから押せない」に言い換えるだけ）。 */
 body.inMatch.four #topbar{
-  position:absolute;right:12px;top:6px;z-index:6;margin:0;
+  position:absolute;right:12px;top:6px;z-index:9;margin:0;
 }
 /* 締めのあいだは消す。立ち絵（#endbust は右にも出る）と重ならないように */
 body.inMatch #app.ending #topbar{opacity:0;pointer-events:none;transition:opacity .18s ease}
@@ -710,8 +722,27 @@ body.inMatch .cutin.hot[data-side="right"] .bubble::after{border-left-color:var(
 }
 
 /* 四人卓：上の角。卓の左右の帯に写真が収まり、吹き出しだけが卓の上隅へ少し伸びる。
-   カードの高さは画面の高さで抑え、左右のプレート（top:56%）に掛からないようにする */
-body.inMatch.four .cutin{position:absolute;top:10px;z-index:8;--cw:clamp(64px,23vh,96px)}
+   カードの高さは画面の高さで抑え、左右のプレート（top:56%）に掛からないようにする。
+
+   **top は #topbar の下端で決まる**（2026年9月10日）。右側のカットインは
+   「おまかせ」と同じ角に出るので、重ねると釦が見えなくなる（上の #topbar の注記）。
+   釦の実測は top:6px ＋ 高さ25px ＝ **下端31px**（font-size:11.5px / padding:5px 12px）。
+   カードは rotate(2.5deg) で**上へ2pxはみ出す**ので、その2pxも見込んで 36px。
+   **釦の字の大きさか padding を変えたら、ここも測り直すこと。**
+
+   **下げたぶんはカードを細くして返す。**下げる前は 844×334 で
+   カードの下端とプレートの上端の隙間が **1px** しかなかった（812×320 では 0px）
+   ——つまり `23vh` は「プレートに触れる限界」で置かれていた値で、
+   26px 下げたぶんはそのままプレートに食い込む。
+   プレートの上端は `0.56 × (画面の高さ − 手牌の帯) − プレートの半分` で、
+   手牌の帯は 64〜71px・プレートは 44px（どちらも実測）なので **56vh − 62px 以上**。
+   そこから 3px の隙間とカードの回転ぶん 4px、上の 36px を引いて 1.5 で割る。
+   **上限 96px はいままでどおり**（vh 437 以上でそちらが効く）。
+   短い窓（812×320）では 50px まで細るが、**プレートの点数を隠すよりはよい**。
+   **左右で値を分けないこと**——同時には出ないが、喋る人によってカードの
+   大きさが変わると壊れて見える。 */
+body.inMatch.four .cutin{position:absolute;top:36px;z-index:8;
+  --cw:clamp(50px,calc((56vh - 103px)/1.5),96px)}
 body.inMatch.four .cutin[data-side="left"]{left:14px}
 body.inMatch.four .cutin[data-side="right"]{right:14px}
 body.inMatch.four .s-left,body.inMatch.four .s-right{top:56%}
