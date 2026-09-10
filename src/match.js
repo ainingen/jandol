@@ -166,8 +166,10 @@ const Match = (() => {
        media query ではなく class にしてあるのはこのため——回転表示は
        縦持ちのまま .matchHost を回すので、orientation は portrait のまま */
     body.classList.toggle('four', !portrait || rotated);
-    fitTable();
-    clampTableScroll();
+    /* **直に測らない。**`updateRotate` は向きが変わるたびに呼ばれ、
+       `resize` と `visualViewport` の両方から同じフレームに来る。
+       `scheduleFit` に渡して一回へ畳む（`crash-spec.md` §8） */
+    scheduleFit();
   }
 
   /* 回転表示のあいだ getBoundingClientRect は 90 度回った箱を返す。
@@ -179,6 +181,22 @@ const Match = (() => {
       return { top: r.top - t.top, bottom: t.bottom - r.bottom, width: r.width };
     }
     return { top: t.right - r.right, bottom: r.left - t.left, width: r.height };
+  }
+
+  /* 同じ読み替えの**横方向**。`ref` の左端からの左右を返す。
+     `layoutBox` が「レイアウトの上下」を出すのと対（rotate(90deg) では
+     レイアウトの横が画面の縦になるので、`top` / `bottom` から取る）。
+
+     **卓面（`#felt`）はここで測る。**36度倒したうえに透視が掛かっていて、
+     `offsetWidth` では描かれた幅が分からない——`fitFour` が実測しているのは
+     そのため。**席プレートのほうは実測しない**（下の `room`） */
+  function layoutSpan(el, ref) {
+    const r = el.getBoundingClientRect();
+    const t = ref.getBoundingClientRect();
+    if (!document.body.classList.contains('rotated')) {
+      return { left: r.left - t.left, right: r.right - t.left };
+    }
+    return { left: r.top - t.top, right: r.bottom - t.top };
   }
 
   /* 四人卓の辺長。画面の高さから手牌ぶんを引いた残りに収まる正方形（§4.2）。
@@ -250,15 +268,25 @@ const Match = (() => {
        左右の席プレートに掛からないところまで広げる（測って決める） */
     const pl = document.getElementById('plate-left');
     const pr = document.getElementById('plate-right');
-    const room = () => {
-      const tr = t.getBoundingClientRect();
-      const l = pl ? pl.getBoundingClientRect().right + 8 : tr.left + 12;
-      const r = pr ? pr.getBoundingClientRect().left - 8 : tr.right - 12;
-      return { l, r };
-    };
+    /* **席プレートはレイアウト箱で測る**（`offsetLeft` / `offsetWidth`）。
+       `getBoundingClientRect` で測っていたころは、
+       `body.inMatch.four .seat.talking{transform:scale(1.07)}` の**跳ねを
+       寸法として読んで**いた——セリフのあいだだけ卓が縮み、終わると戻る。
+       実測で `--side-w` が30秒に10回・7つの値を行き来していた（段B・2026年9月10日）。
+       **装飾の transform を寸法として読まないこと**（`HANDOVER.md` §5）。
+
+       `offsetLeft` は `offsetParent`（四人卓では `position:relative` の `#table`）の
+       内側で数えるので、**回転表示でも軸が入れ替わらない**
+       ——レイアウト座標そのものなので、`layoutSpan` の側だけを読み替えればよい。
+       `#table` は四人卓では `padding:0` / `border:0` なので、
+       パディング箱と枠箱が一致する（`layoutSpan` の原点と揃う） */
+    const room = () => ({
+      l: pl ? pl.offsetLeft + pl.offsetWidth + 8 : 12,
+      r: pr ? pr.offsetLeft - 8 : W - 12,
+    });
     const wideFits = (w) => {
       body.style.setProperty('--side-w', Math.round(w) + 'px');
-      const f = felt.getBoundingClientRect();
+      const f = layoutSpan(felt, t);
       const g = room();
       return f.left >= g.l && f.right <= g.r;
     };
@@ -319,6 +347,49 @@ const Match = (() => {
     if (t.scrollTop > max) t.scrollTop = max;
   }
 
+  /* 測り直しは**必ずここを通す**（`docs/design/match/crash-spec.md` §8）。
+
+     **500ms の見張りは 2026年9月10日に消えた。**四人卓のあいだ
+     `--side` / `--side-w` / `--felt-y` を毎秒144回書き換えていて、
+     **iOS が WebContent を落としてページを読み直していた**（実機で確定）。
+     JS 側には兆候が出ないので、原因の機構そのものは確定していない
+     ——確かなのは「見張りが動いている走行だけが落ちた」ところまで。
+
+     **測るのは四つの機会だけ**（向き・寸法／最初の描画のあと／局の変わり目／
+     列レイアウトで並びが変わったとき）。どれも**まれにしか来ない**が、
+     同じフレームに何本も重なりうる（`onOrientationChange` は
+     `resize` と `visualViewport` の二つから同時に来る）。
+     **`requestAnimationFrame` で一フレームに一回へ畳む**
+     ——`fitFour` 一回で `getBoundingClientRect` 166回・`setProperty` 約72回なので、
+     連打させると見張りを戻したのと同じことになる。
+
+     `toTop` は**畳むときに OR を取る**。一本でも「先頭へ戻せ」と言っていれば戻す
+     ——向きが変わったのに前のスクロール位置が残ると、一番上の家が隠れる */
+  let fitRAF = null;
+  let fitToTop = false;
+  function scheduleFit(opts) {
+    if (opts && opts.toTop) fitToTop = true;
+    if (fitRAF !== null) return;
+    const raf = typeof requestAnimationFrame === 'function'
+      ? requestAnimationFrame
+      : (fn) => setTimeout(fn, 16);
+    fitRAF = raf(() => {
+      fitRAF = null;
+      const toTop = fitToTop;
+      fitToTop = false;
+      fitTable();
+      clampTableScroll(toTop);
+    });
+  }
+  /* 対局を出るときに捨てる。**残すと卓が消えたあとに一度走る** */
+  function cancelFit() {
+    if (fitRAF === null) return;
+    if (typeof cancelAnimationFrame === 'function') cancelAnimationFrame(fitRAF);
+    else clearTimeout(fitRAF);
+    fitRAF = null;
+    fitToTop = false;
+  }
+
   /* **画面の高さは `visualViewport.height` で取る。**`innerHeight` は
      iOS Safari の上下バーを含んだ値を返すことがあり、実機で 390 と答えるのに
      実際に見えているのは 334（バーが 56px 食っている）。**その 56px ぶん、
@@ -334,10 +405,13 @@ const Match = (() => {
     applyViewportHeight();
     updateRotate();
     /* 回り終わって寸法が確定してからもう一度戻す。
-       端末によっては change の時点でまだ古い寸法が返る */
-    clampTableScroll(true);
-    setTimeout(function () { fitTable(); clampTableScroll(true); }, 120);
-    setTimeout(function () { fitTable(); clampTableScroll(true); }, 400);
+       端末によっては change の時点でまだ古い寸法が返る。
+       **+120ms / +400ms の追い掛けは残す**（そこでしか正しい寸法が返らない端末がある）。
+       ただし**そちらも `scheduleFit` を通す**——四つの listener から来た
+       同じフレームのぶんが、ここで一回に畳まれる（`crash-spec.md` §8） */
+    scheduleFit({ toTop: true });
+    setTimeout(function () { scheduleFit({ toTop: true }); }, 120);
+    setTimeout(function () { scheduleFit({ toTop: true }); }, 400);
   }
 
   async function tryLockLandscape() {
@@ -468,7 +542,7 @@ const Match = (() => {
     host.querySelector('#rotateBtn').addEventListener('click', () => {
       rotated = !rotated;
       updateRotate();
-      setTimeout(fitTable, 60);
+      setTimeout(function () { scheduleFit(); }, 60);
       UI.render();
     });
     await tryLockLandscape();
@@ -481,9 +555,36 @@ const Match = (() => {
     }
     applyViewportHeight();
 
-    /* 局が変わると河が空になり、卓の中身が縮む。
-       そのときも取り残されたスクロールを詰める */
-    const watch = setInterval(function () { fitTable(); clampTableScroll(false); }, 500);
+    /* 測り直しの合図（`crash-spec.md` §8）。**`UI.handStart` と同じ作法**——
+       `ui.js` は `render()` の末尾で `onLayout` を呼ぶだけで、何を測るかは知らない。
+       **ここで重いことをしない。**`scheduleFit` に渡して一フレームへ畳む。
+
+       - **`kyokuChanged`** … 局が変わって河が空になり、卓の中身が縮んだ。
+         **最初の描画もここに入る**（`_seqKyoku` が空なので一度目は必ず真）
+         ——`updateRotate()` は `g.run()` より前に走るので、席プレートが空のまま
+         一度目を測っている。`plateTop.offsetHeight` が違う。
+         **500ms の見張りが直していたのはこれ。**落とすと初回の寸法が狂う
+       - **`changed`（列レイアウトだけ）** … 河が伸びて卓からはみ出したら
+         `--rw-fit` で縮める。**四人卓では呼ばない**——`fitFour` が測る
+         `#felt` の外接矩形は河の中身に依存しない。ここで四人卓も拾うと、
+         打牌のたびに `--side` を書き換えることになって見張りを戻したのと同じになる
+       - **`platesChanged`（四人卓だけ）** … 五つ目の機会（段B・2026年9月10日）。
+         `fitFour` は**左右の席プレートの位置で卓面の幅を縛る**ので、
+         プレートが広がったら測り直しが要る。広げるのは
+         立（`.rc`）・疑（`.susp`）・テンパイ札（`.tp`）・点数・名前で、
+         **リーチの札は局の終わりまで残る**——拾わないと、その局のあいだずっと
+         卓面が名前に食い込む（実測で最大25px）。
+         `.turn` / `.talking` / `.star` は `ui.js` の側で除いてある（幅を動かさない）。
+         **列レイアウトでは要らない**——`--rw-fit` は河の高さで決まり、
+         プレートの幅を見ていない（流局のテンパイ札は `changed` の側で拾う） */
+    UI.onLayout = function (info) {
+      if (info.kyokuChanged) { scheduleFit(); return; }
+      if (document.body.classList.contains('four')) {
+        if (info.platesChanged) scheduleFit();
+        return;
+      }
+      if (info.changed) scheduleFit();
+    };
 
     UI.game = g;
     UI._lastRank = null;
@@ -521,7 +622,8 @@ const Match = (() => {
     /* 結果を見せてから片付ける */
     await showResult(rank, seats, opts);
 
-    clearInterval(watch);
+    UI.onLayout = null;
+    cancelFit();
     document.body.style.removeProperty('--rw-fit');
     document.body.style.removeProperty('--side');
     document.body.classList.remove('tableScroll', 'four', 'rotated', 'canRotate');

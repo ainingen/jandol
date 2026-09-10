@@ -16,14 +16,18 @@
        右下の印（`#flatBadge`）も出ない
     3. 読み直したとき、閉じていない走行があれば `.dbgBB` に直近5行が出ること
     4. **段2（`?fourjs=0`）が効いている**こと。初回の `fitFour` のあと
-       `sp` が一度も増えない——寸法を測り直す経路が二本とも
-       （500ms の見張りも、イベント駆動も）止まっている。
+       **`resize` が届いた秒に `sp` が増えない**——イベント駆動の経路が
+       止まっている（500ms の見張りは 2026年9月10日に消えたので数に入らない。
+       局の変わり目や席プレートの変化で立つぶんは `onLayout` の側で、この旗とは無関係）。
        **`page.setViewportSize` で揺すっても増えない**のがイベント駆動の側の証
-    5. **二戦目でも効いている**こと（段2.5）。`Match.play` は対局ごとに
-       500ms の見張りを登録し直すので、**包みが「一本飲んだら元に戻す」だと
-       二戦目から復活する**（実機の3本目で踏んだ）。読み直さずに
-       `startMatch` を二回続けて呼び、**二戦目の `t >= 2` の行の `sp` が
-       全部0**であることを `?nofit=1` と `?fourjs=0` の両方で見る
+    5. **寸法の見張りが無い**こと（2026年9月10日に読み替えた）。もとは
+       「包みが二戦目でも効いているか」を見ていたが、**見張りそのものが
+       `src/match.js` から消えた**ので、見る向きが逆になった。
+       `?bb=1` だけ（`nofit` 無し）で読み直さず二戦回し、**`sp` が
+       「立ち続けて」いないこと**——見張りは毎秒とぎれずに立てるが、
+       イベント駆動はとびとびの秒にしか立たない（`spShape` のコメントに実測）。
+       `?nofit=1` の走行は**判定が同じになる**ことだけ見る。
+       **見張りを戻すとここが落ちる**——それがこの錠の役目
 */
 'use strict';
 const path=require('path'),http=require('http'),fs=require('fs');
@@ -38,6 +42,47 @@ srv.listen(0,'127.0.0.1',()=>res({srv,port:srv.address().port}));});}
 let pass=0; const fails=[];
 const ok=(c,n,d)=>{if(c){pass++;console.log('  ok  '+n);}else{fails.push(n);console.log('  NG  '+n+(d?' … '+d:''));}};
 const eq=(a,b,n)=>ok(JSON.stringify(a)===JSON.stringify(b),n,'got '+JSON.stringify(a)+' / want '+JSON.stringify(b));
+
+/* `sp` は `--side` / `--side-w` / `--felt-y` を書き換えた回数（毎秒ごと）。
+   **見張りが戻ったかを見分けるのは「立つかどうか」ではなく「立ち続けるかどうか」。**
+
+   500ms の見張りは**毎秒とぎれずに** `sp` を立てる（秒あたり 144＝`fitFour` 二回）。
+   イベント駆動で立つのは、局の変わり目と席プレートの幅が変わったとき
+   （リーチの札・テンパイの札・点数）だけなので、**とびとびの秒**にしか立たない。
+   実測（2026年9月10日・東風一戦）：
+
+     見張りを戻した … 立った秒が 47/60、連続 8・11・4・7・9・7 秒
+     イベント駆動   … 立った秒が 11/43、連続は最大 2 秒
+
+   **「立った秒の割合」では分けないこと。**イベント駆動でも 46% の秒で立つ
+   （局が8つ・リーチが数回あり、`requestAnimationFrame` のずれで隣の秒にも乗る）。
+   見張りの 78% との差が小さすぎて、走行ごとの揺れに埋もれる。
+
+   分けるのは**秒あたりの平均**。`fitFour` 一回が 72 なので、
+
+     見張りを戻した … 平均 113/秒（毎秒 144 が並ぶ）・最長の連続 11秒
+     イベント駆動   … 平均  33/秒（立つ秒でも 72 が一回）・最長の連続 3秒
+
+   **平均 72（＝毎秒 `fitFour` 一回）を超えたら見張り**とする。どちらからも
+   二倍前後の余裕がある。連続の長さも併せて見る（上限6秒。同じく二倍弱の余裕） */
+const MAX_MEAN = 72;        // 秒あたりの平均。fitFour 一回ぶんを超えたら見張り
+const MAX_RUN = 6;          // 立ち続けた秒数の上限
+function spShape(entries) {
+  const late = entries.filter((e) => e.t >= 2);
+  const runs = []; let cur = 0;
+  late.forEach((e) => {
+    if (e.sp > 0) cur++;
+    else { if (cur) runs.push(cur); cur = 0; }
+  });
+  if (cur) runs.push(cur);
+  const hot = late.filter((e) => e.sp > 0).length;
+  const total = late.reduce((a, e) => a + e.sp, 0);
+  return { n: late.length, hot, total, mean: late.length ? total / late.length : 0,
+    maxRun: runs.length ? Math.max.apply(null, runs) : 0, runs };
+}
+const shapeOK = (sh) => sh.mean <= MAX_MEAN && sh.maxRun <= MAX_RUN;
+const shapeStr = (sh) => '平均 ' + Math.round(sh.mean) + '/秒（上限 ' + MAX_MEAN
+  + '）・立った秒 ' + sh.hot + '/' + sh.n + '・最長の連続 ' + sh.maxRun + '秒';
 
 /* §3.1 の欄。**一つでも欠けたら読めない記録になる** */
 const COLS=['t','k','d','n','img','tn','g','sp','r','ev','lag','w','ph','vv','mem'];
@@ -132,8 +177,16 @@ eq(await p4.evaluate(()=>UI.localDelta(null,7,11)),[7,11],'UI.localDelta が素�
 await p4.waitForTimeout(2600);
 /* **寸法を揺すってもイベント駆動の `fitFour` が走らないこと。**
    `onOrientationChange` の登録を弾いているので、`--side` 系は書き換わらない */
-await p4.setViewportSize({width:812,height:334});
+/* **高さを揺すって `--vvh` を見る。**`--vvh` を書くのは `applyViewportHeight` だけで、
+   それを呼ぶのは `onOrientationChange`（と対局の頭の一回）。`?fourjs=0` はその
+   登録を弾くので、**高さを変えても `--vvh` が凍ったまま**になる。
+   `--side` では見分けられない——五つ目の機会（`UI.onLayout`）はこの旗の網に
+   かからないので、局が変わればそこで測り直されて値が動く */
+const vvhOf=(pg)=>pg.evaluate(()=>document.body.style.getPropertyValue('--vvh').trim());
+const vvhAt334=await vvhOf(p4);
+await p4.setViewportSize({width:844,height:300});
 await p4.waitForTimeout(1600);
+const vvhAt300=await vvhOf(p4);
 await p4.setViewportSize({width:844,height:334});
 await p4.waitForTimeout(1600);
 if(SHOTS){await p4.screenshot({path:path.join(SHOTS,'bb-fourjs.png')});}
@@ -142,44 +195,84 @@ const e4=(r4&&r4.entries)||[];
 ok(e4.length>=4,'entries が4行以上（'+e4.length+'行）');
 const late=e4.filter((e)=>e.t>=2);
 ok(late.length>=1,'`t >= 2` の行がある（'+late.length+'行）');
-eq(late.filter((e)=>e.sp>0).map((e)=>e.t+':'+e.sp),[],'**`t >= 2` の行の sp が全部0**（初回の fitFour のあと一度も走っていない）');
+/* **揺すっても寸法が追随しないこと。**`?fourjs=0` が落としているのは
+   `onOrientationChange` の登録なので、**幅を変えても `--side` が凍ったまま**
+   ——それがこの旗が効いている証。`sp` の数では見分けられない
+   （局の変わり目や席プレートの変化でも立つ。そちらは `onLayout` の側で、
+   この旗とは関係が無い）。値そのものを見るほうが確か */
+ok(vvhAt300===vvhAt334,
+  '**高さを 300 にしても --vvh が凍ったまま**（onOrientationChange が登録されていない）',
+  '334 で '+vvhAt334+' / 300 で '+vvhAt300);
 ok(e4.some((e)=>e.ev[0]>0),'resize は来ている（弾いているのは登録であってイベントではない）');
 await p4.close();
 
-/* ---- [5] 二戦目でも効いている（段2.5） ----
-   **`Match.play` は対局ごとに見張りを登録し直す。**包みが一本飲んで元に戻すと、
-   二戦目から `sp` が 0 → 144 に戻る（実機の3本目で踏んだ）。
-   `?start=1` は一戦しか始めないので、**`startMatch` を自分で二回呼ぶ。** */
-async function twice(flag){
-  console.log('\n[5] 二戦目でも効いている（?'+flag+'・段2.5）');
-  const pg=await (await newCtx()).newPage();
-  pg.on('pageerror',(e)=>{fails.push('PAGEERROR(5 '+flag+') '+e.message);console.log('  NG  PAGEERROR '+e.message);});
-  await pg.goto(base+'?bb=1&'+flag+'&sfx=0&seed=1');       // start=1 は付けない
-  const play=()=>pg.evaluate(()=>{window.startMatch(true,0,'ikkyoku');});
-  const late=(r)=>((r&&r.entries)||[]).filter((e)=>e.t>=2);
+/* **対照。**旗が無ければ `--vvh` は追随する。これが無いと上の錠は空証明になる
+   （そもそも `--vvh` が動かないだけかもしれない） */
+const p4b=await (await newCtx()).newPage();
+await p4b.goto(base+'?bb=1&auto=1&speed=520&length=tonpuu&seed=1&sfx=0&start=1');
+await p4b.waitForFunction(()=>document.body.classList.contains('inMatch'),null,{timeout:20000});
+await p4b.waitForTimeout(1200);
+const ctlA=await p4b.evaluate(()=>document.body.style.getPropertyValue('--vvh').trim());
+await p4b.setViewportSize({width:844,height:300});
+await p4b.waitForTimeout(1600);
+const ctlB=await p4b.evaluate(()=>document.body.style.getPropertyValue('--vvh').trim());
+ok(ctlA!==ctlB && !!ctlB,'旗が無ければ --vvh は追随する（上の錠が空証明でないこと）',
+  '334 で '+ctlA+' / 300 で '+ctlB);
+await p4b.close();
+
+/* ---- [5] 見張りが**無い**こと（2026年9月10日に読み替えた） ----
+
+   もとは「包みが二戦目でも効いているか」を見ていた（段2.5）。
+   **見張りそのものが `src/match.js` から消えたので、見る向きが逆になった**
+   ——いま確かめるのは「旗が無くても `sp` が立たない」ほう。
+   ここが落ちたら、`src/` のどこかに寸法の見張りが生えている。
+
+   **`sp` が 0 でなくてよいのは、局の変わり目だけ。**`UI.onLayout` が
+   `kyokuChanged` で `scheduleFit` を呼ぶので、局が変わった秒に一回ぶん立つ。
+   `requestAnimationFrame` で畳んでいる都合で**次の秒にずれ込むことがある**ので、
+   「局が変わった秒」と「その次の秒」の二つを許す。局の変わり目は `k`
+   （`kyoku:honba`）の変化で分かる。対局の切れ目（`k` が '' になる／戻る）も
+   同じ扱いで拾える。
+
+   **`?nofit=1` の走行は「同じ結果になる」ことだけ見る**——飲む相手が無いので、
+   付けても付けなくても同じ表になるはず。差が出たら包みがまだ何かを飲んでいる */
+
+/* 読み直さずに二戦。`?start=1` は一戦しか始めないので `startMatch` を自分で呼ぶ */
+async function twoMatches(flag) {
+  const label = flag ? '?' + flag : '?bb=1 だけ（旗なし）';
+  console.log('\n[5] 見張りが無い（' + label + '）');
+  const pg = await (await newCtx()).newPage();
+  pg.on('pageerror', (e) => { fails.push('PAGEERROR(5 ' + label + ') ' + e.message); console.log('  NG  PAGEERROR ' + e.message); });
+  await pg.goto(base + '?bb=1' + (flag ? '&' + flag : '') + '&sfx=0&seed=1');
+  const play = () => pg.evaluate(() => { window.startMatch(true, 0, 'tonpuu'); });
 
   await play();                                             // 一戦目
-  await pg.waitForFunction(()=>document.body.classList.contains('inMatch'),null,{timeout:20000});
-  await pg.waitForSelector('#overlay.show [data-v]',{timeout:120000});
-  const one=late(await read(pg));
-  ok(one.length>=1,'一戦目に `t >= 2` の行がある（'+one.length+'行）');
-  eq(one.filter((e)=>e.sp>0).map((e)=>e.t+':'+e.sp),[],'一戦目の sp が全部0');
+  await pg.waitForFunction(() => document.body.classList.contains('inMatch'), null, { timeout: 20000 });
+  await pg.waitForSelector('#overlay.show [data-v]', { timeout: 120000 });
+  const one = ((await read(pg)) || {}).entries || [];
+  const s1 = spShape(one);
+  ok(s1.n >= 1, '一戦目に `t >= 2` の行がある（' + one.length + '行）');
+  ok(shapeOK(s1), '一戦目：`sp` が立ち続けていない … ' + shapeStr(s1), JSON.stringify(s1.runs));
+  ok(s1.hot > 0, '一戦目：`sp` が立つ秒はある（測る経路は生きている）');
 
   await pg.click('#overlay.show [data-v]');                 // 打ち切って二戦目へ
-  await pg.waitForFunction(()=>!document.body.classList.contains('inMatch'),null,{timeout:20000});
+  await pg.waitForFunction(() => !document.body.classList.contains('inMatch'), null, { timeout: 20000 });
   await play();                                             // **二戦目。読み直していない**
-  await pg.waitForFunction(()=>document.body.classList.contains('inMatch'),null,{timeout:20000});
-  await pg.waitForTimeout(3400);
-  const r2=await read(pg);
-  const two=late(r2);
-  ok(((r2&&r2.entries)||[]).length>=1,'二戦目の走行に差し替わっている');
-  ok(two.length>=1,'二戦目に `t >= 2` の行がある（'+two.length+'行）');
-  eq(two.filter((e)=>e.sp>0).map((e)=>e.t+':'+e.sp),[],
-    '**二戦目の sp も全部0**（一本飲んで元に戻すと 144 が返ってくる）');
+  await pg.waitForFunction(() => document.body.classList.contains('inMatch'), null, { timeout: 20000 });
+  await pg.waitForTimeout(4200);
+  const two = ((await read(pg)) || {}).entries || [];
+  const s2 = spShape(two);
+  ok(two.length >= 1, '二戦目の走行に差し替わっている');
+  ok(s2.n >= 1, '二戦目に `t >= 2` の行がある（' + two.length + '行）');
+  ok(shapeOK(s2), '**二戦目も `sp` が立ち続けていない** … ' + shapeStr(s2), JSON.stringify(s2.runs));
   await pg.close();
+  return { one: shapeOK(s1), two: shapeOK(s2) };
 }
-await twice('nofit=1');
-await twice('fourjs=0');
+const bare = await twoMatches('');
+const withNofit = await twoMatches('nofit=1');
+/* **走行ごとに局の進みが違う**ので、立った秒の並びまでは揃わない。
+   揃うのは**判定のほう**——どちらも「立ち続けていない」になること */
+eq(withNofit, bare, '`?nofit=1` を付けても判定が変わらない（包みはもう何も飲まない）');
 
 console.log('\n通過 '+pass+' 件'+(fails.length?' / 失敗 '+fails.length+' 件':''));
 if(fails.length){fails.forEach((f)=>console.log('  ✗ '+f));process.exitCode=1;}

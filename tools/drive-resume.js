@@ -132,8 +132,28 @@ function ok(cond, name, detail) {
     if (!g) return null;
     return { kyoku: g.kyoku, honba: g.honba, sticks: g.riichiSticks,
       startDealer: g.startDealer, dealer: g.dealer, bakaze: g.bakaze,
+      /* **終わったあとの `kyoku` は「次に配る番号」であって、局ではない。**
+         東風なら最後の局は 4 で、終局すると `kyoku` は 5 になり `finished` が立つ。
+         控えは配ったときにしか書かれないので 4 のまま——**これは食い違いではない。**
+         突き合わせる側がここを見ずに比べると、終局の一瞬を捕まえたときだけ
+         `{rec:"4:0", game:"5:0"}` で落ちる（見張りを消して巡回が速くなり、
+         毎回捕まえるようになって気づいた。2026年9月10日） */
+      finished: !!g.finished, maxKyoku: g.maxKyoku,
       scores: g.players.map((p) => p.score) };
   });
+  /* **控えと Game を一度の evaluate で撮る。**別々に `await` すると、
+     その隙に局が進んで**古い控えと新しい Game**を並べてしまう
+     ——「二度続けて食い違ったら」の確認そのものが同じ穴を踏んでいた */
+  const both = () => page.evaluate((k) => {
+    let rec = null, err = null;
+    try {
+      const raw = localStorage.getItem(k);
+      rec = raw === null ? null : JSON.parse(raw);
+    } catch (e) { err = String(e); }
+    const g = (typeof UI !== 'undefined') && UI.game;
+    return { rec, err, live: g ? { kyoku: g.kyoku, honba: g.honba,
+      finished: !!g.finished, maxKyoku: g.maxKyoku } : null };
+  }, KEY);
 
   /* ============================================================
      1〜3. 打ち切るまで見張る
@@ -166,12 +186,18 @@ function ok(cond, name, detail) {
         if (seen[seen.length - 1] !== key) seen.push(key);
         /* 控えは局の頭のもの。局中に点棒は動くので、突き合わせるのは
            **局が変わっていない間の kyoku / honba / startDealer** だけ */
-        if (l && (l.kyoku !== p.rec.kyoku || l.honba !== p.rec.honba)) {
+        /* **終局後は比べない**（`live()` のコメント）。`kyoku` が最後の局を
+           越えたところで `finished` が立つ。そこから先の番号は「次に配る番号」で、
+           配っていない以上、控えが追いつくことはない */
+        const ended = (x) => !!(x && (x.finished || x.kyoku > x.maxKyoku));
+        if (l && !ended(l) && (l.kyoku !== p.rec.kyoku || l.honba !== p.rec.honba)) {
           /* 局が切り替わる一瞬は、控えが古いことがある。次の巡回で揃うので
-             「二度続けて食い違ったら」だけを拾う */
-          const again = await peek();
-          const l2 = await live();
-          if (again.rec && l2 && (l2.kyoku !== again.rec.kyoku || l2.honba !== again.rec.honba)) {
+             「二度続けて食い違ったら」だけを拾う。
+             **確認は一度の evaluate で撮る**（別々に await すると同じ穴を踏む） */
+          const again = await both();
+          const l2 = again.live;
+          if (again.rec && l2 && !ended(l2)
+              && (l2.kyoku !== again.rec.kyoku || l2.honba !== again.rec.honba)) {
             mismatches.push(JSON.stringify({ rec: again.rec.kyoku + ':' + again.rec.honba,
               game: l2.kyoku + ':' + l2.honba }));
           }
