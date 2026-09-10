@@ -284,6 +284,53 @@ ok(!/--tk-accent/.test(prizeBig), '賞金に --tk-accent を使っていない',
 }
 
 /* ------------------------------------------------------------
+   大会の入口 — タブは「いま受けている招待の一覧」（`office/spec.md` §8.2）
+
+   招待が来ていないのに五つ並んで、終わっても消えないと**出放題になる**
+   ——地方リーグは優勝50万なので経済に穴が空き、契約イベントの
+   `records[tier].best === '優勝'` も本来より早く開く。
+   画面そのものは `tools/check-taikai-entry.js` が本編で押す
+------------------------------------------------------------ */
+{
+  const inv = (BODY.match(/function invitesOf\(st\) \{[\s\S]*?\n    \}/) || [''])[0];
+  ok(inv.length > 40, 'invitesOf が読めた', String(inv.length));
+  ok(/st\.offerAccepted/.test(inv), '読むのは st.offerAccepted');
+  ok(/kind === 'tournament'/.test(inv), '大会の依頼だけを拾う');
+  ok(/typeof Offers === 'undefined'/.test(inv),
+    '**Offers は「あれば使う」**（単体ページはいままでどおり五つ並ぶ）');
+
+  const sel = (BODY.match(/function renderSelect\(\) \{[\s\S]*?\n    \}/) || [''])[0];
+  ok(/const inv = invitesOf\(st\)/.test(sel), 'renderSelect が招待を引く');
+  ok(/inv\s*\?\s*inv\.map/.test(sel),
+    '招待があるときは招待だけ並べる（TOURNAMENTS を全部並べない）');
+  ok(/Object\.keys\(TOURNAMENTS\)\.map/.test(sel),
+    '単体ページの落とし口（全部並べる）は残っている');
+  ok(/tkEmpty/.test(sel) && /今日は招待がありません/.test(sel),
+    '招待がゼロの日の一言がある');
+  /* **設定はタブの中に残す**——対局の設定なので大会の画面がいちばん近い */
+  ok(/tkSettings/.test(sel), '.tkSettings は renderSelect に残っている');
+
+  /* 押したら**依頼と同じ経路**へ。ここで start() を直に呼ぶと日が進まない */
+  ok(/store\.goTaikai\(tier\.dataset\.tier, offerId\)/.test(BODY),
+    '招待の札は store.goTaikai へ渡す（runJobDays を通す側）');
+  ok(/data-offer=/.test(SRC), '札が data-offer を持つ');
+
+  /* **出場資格を写さないこと。**正は tournament.js の canEnter */
+  ok(!/function canEnter/.test(BODY),
+    'taikai.js に canEnter の写しが無い（正は tournament.js）');
+  ok(typeof canEnter === 'function', 'tournament.js が canEnter を出している');
+  ok(canEnter('rookie', 'C') === true && canEnter('rookie', 'S') === false,
+    'strict の大会は band にある級だけ（新人戦に S級は出られない）');
+  ok(canEnter('title', 'S') === true && canEnter('title', 'D') === false,
+    'strict でない大会は band の一番下から上なら出られる');
+  /* `offers.js` も同じものを通ること（二か所に書くと必ずずれる） */
+  const OF = fs.readFileSync(path.join(__dirname, '..', 'src', 'offers.js'), 'utf8')
+    .replace(/\/\*[\s\S]*?\*\//g, '');
+  ok(!/function canEnter/.test(OF),
+    'offers.js に canEnter の写しが無い（招待の発火とタブの札が同じ判定を通る）');
+}
+
+/* ------------------------------------------------------------
    §8 触らないもの／新しいクラスは tk で始める
 ------------------------------------------------------------ */
 ['.tkGroup{', '.tkGroupT{', '.tkNames{', '.tkName{'].forEach((sel) => {

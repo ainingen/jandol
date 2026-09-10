@@ -109,6 +109,7 @@ tools/prep-sfx.py   生成した音源（audio_raw/）を切り出して整形�
 tools/test-match.js  対局まわりの純関数テスト（副露の横倒し・締めの四分岐・ルールの既定）
 tools/check-hand.js  打牌の操作をブラウザで確かめる（押している間に選び直せること）
 tools/check-auto.js  おまかせ ↔ 手打ちに戻るをブラウザで押す（往復できること・手番が返ること）
+tools/check-taikai-entry.js 大会の入口を本編で押す（招待の一覧・日が進む・招待を消費する）
 tools/check-sound.js 打牌の鳴らし分けをブラウザで確かめる（音源を差し替えたら回す）
 tools/drive-match.js 対局画面をブラウザで回す。配牌・鳴き・河3段・終局を撮り、--video で録画
 

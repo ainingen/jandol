@@ -147,15 +147,9 @@ const Taikai = (() => {
   ];
 
   /* 出場資格。大会の band に自分の段位が入っていれば出られる */
-  function canEnter(tierId, playerRank) {
-    const t = TOURNAMENTS[tierId];
-    if (!t.strict) {
-      // 格上の大会は「band の一番下」から出られる
-      const min = t.band.reduce((a, r) => Math.min(a, RANK_ORDER.indexOf(r)), 9);
-      return RANK_ORDER.indexOf(playerRank) >= min;
-    }
-    return t.band.includes(playerRank);
-  }
+  /* 出場資格の正は `tournament.js` の `canEnter`（`TOURNAMENTS` と同じ場所）。
+     **ここに写さないこと**——`offers.js`（招待の発火）も同じものを通る。
+     以前は写しがあって、簡略版の `offers.js` と食い違っていた */
 
   /* ------------------------------------------------------------
      大会を1回まわす。画面を持たない純粋な進行なのでテストできる
@@ -520,6 +514,27 @@ const Taikai = (() => {
     }
 
     /* ---------- 大会を選ぶ ---------- */
+    /* いま受けている大会の招待（`office/spec.md` §8.2）。
+
+       **タブは「招待の一覧」。**招待が来ていないのに五つ並んで、終わっても
+       消えないと**出放題になる**——地方リーグは優勝50万なので経済に穴が空き、
+       契約イベントの `records[tier].best === '優勝'` も本来より早く開く。
+
+       **`Offers` は「あれば使う」**（`jansou.js` が `Office` を使う作法と同じ）。
+       単体ページ（`taikai.html`）は `offers.js` を読まないので `null` を返し、
+       **いままでどおり五つ並ぶ**——開発用の入口はそのまま残す。
+       返すのは `{ id, tierId, def }` の配列（`prio` の降順・同点は id で固定） */
+    function invitesOf(st) {
+      if (typeof Offers === 'undefined') return null;
+      return (st.offerAccepted || []).map((id) => {
+        const def = Offers.byId(id);
+        return def && def.kind === 'tournament'
+          && TOURNAMENTS[def.payload.tierId]
+          ? { id: id, tierId: def.payload.tierId, def: def } : null;
+      }).filter(Boolean)
+        .sort((a, b) => (b.def.prio || 0) - (a.def.prio || 0) || (a.id < b.id ? -1 : 1));
+    }
+
     function renderSelect() {
       /* 大会の色は大会の中だけ（§4）。選ぶ画面では外す */
       delete root.dataset.tier;
@@ -528,12 +543,16 @@ const Taikai = (() => {
       const rank = st.playerRank || 'D';
       const team = teamCards();
       const ready = team.length === 4;
+      const inv = invitesOf(st);
 
-      const cards = Object.keys(TOURNAMENTS).map((id) => {
+      /* 一枚ぶんの札。招待から出すときは `data-offer` を添える
+         ——押したら**依頼と同じ経路**（`store.goTaikai`）へ入るため */
+      const card = (id, offerId) => {
         const t = TOURNAMENTS[id];
         const ok = canEnter(id, rank);
         const rec = (st.records || {})[id];
         return `<button type="button" class="tkTier${ok ? '' : ' locked'}" data-tier="${id}"
+            ${offerId ? `data-offer="${esc(offerId)}"` : ''}
             ${ok && ready ? '' : 'disabled'}>
           <span class="tkTierHead">
             <span class="tkTierName">${esc(t.name)}</span>
@@ -547,7 +566,17 @@ const Taikai = (() => {
           ${rec ? `<span class="tkRec">出場${rec.entries}回　最高 ${esc(rec.best)}</span>` : ''}
           ${ok ? '' : `<span class="tkLock">${t.band[0]}級から出場できます</span>`}
         </button>`;
-      }).join('');
+      };
+
+      const cards = inv
+        ? inv.map((o) => card(o.tierId, o.id)).join('')
+        : Object.keys(TOURNAMENTS).map((id) => card(id, null)).join('');
+      /* **招待がゼロの日は空でよい。**設定だけは下に残る（`.tkSettings`）
+         ——対局の設定なので、大会の画面にあるのがいちばん近い */
+      const none = inv && !inv.length
+        ? '<p class="tkEmpty">今日は招待がありません。'
+          + '<span>大会は事務所に届く招待から出ます。朝のメールを見てください。</span></p>'
+        : '';
 
       root.innerHTML = `
         <div class="tkHead">
@@ -559,6 +588,7 @@ const Taikai = (() => {
         </div>
         ${ready ? '' : `<p class="tkWarn">先にチームを組んでください。あなたを含めて四人で出場します。</p>`}
         <div class="tkRoster">${team.map((c) => `<span class="tkChip">${esc(c.name)}</span>`).join('')}</div>
+        ${none}
         <div class="tkTiers">${cards}</div>
         <section class="tkSettings">
           <h2 class="tkSecT">対局の設定</h2>
@@ -1231,7 +1261,21 @@ const Taikai = (() => {
          `data-tier` を持つので、`[data-tier]` のままだと出走表のどこを押しても
          ここに落ち、`start()` が走って顔ぶれが引き直される */
       const tier = e.target.closest('button[data-tier]');
-      if (tier && !tier.disabled) { start(tier.dataset.tier); return; }
+      if (tier && !tier.disabled) {
+        /* **招待から入るときは、依頼と同じ経路へ渡す**（`office/spec.md` §8.2）。
+           `store.goTaikai` が `onDone` を付けて開き直すので、終わったら
+           事務所の夜へ返り、`afterTournament` → `runJobDays` が
+           **日数を消化して招待を消費する**。ここで `start()` を直に呼ぶと、
+           賞金と `records` だけ入って日が1日も進まない（それが元の穴）。
+           `data-offer` が無いのは単体ページだけ——そこはいままでどおり */
+        const offerId = tier.dataset.offer || null;
+        if (offerId && typeof store.goTaikai === 'function') {
+          store.goTaikai(tier.dataset.tier, offerId);
+          return;
+        }
+        start(tier.dataset.tier);
+        return;
+      }
       const act = e.target.closest('[data-act]');
       if (!act) return;
       /* 回戦のあいだの中継（`round-spec.md` §7）。**専用の `data-act`。**

@@ -324,6 +324,24 @@ python3 -m http.server 8000
 - **`RULES.event` は「依頼を受けたか」だけを見る**（§8.2）。
   条件そのもの（好感度＋事務所ランク＋大会実績）は `offers.js` に書く。
   両方に書くと二重になり、片方を直したときに必ずずれる
+- **大会のタブは「いま受けている招待の一覧」**（§8.2・2026年9月10日）。
+  `renderSelect` は `TOURNAMENTS` を全部並べない——**`st.offerAccepted` の
+  `kind === 'tournament'` だけ**。札は `data-offer` を持ち、押すと
+  **`store.goTaikai(tierId, offerId)`＝依頼と同じ経路**へ渡す。
+  **`start()` を直に呼ぶと `runJobDays` を通らず、日が1日も進まない**
+  （賞金と `records` だけ入る。それが元の穴）
+- **招待は `afterTournament` で消費する**（`Office.dropAccepted`）。
+  **二つの入口が合流する一点なので、落とすのもそこ一箇所。**
+  落とさないと同じ招待で何度でも出られる。**落としてよいのは大会だけ**
+  ——契約イベントの `offerAccepted` は `RULES.event` が見る印で、消すと図鑑が閉じる
+- **出場資格の正は `tournament.js` の `canEnter` ただ一つ。**
+  `taikai.js`（タブの札）と `offers.js`（招待の発火）が同じものを通ること。
+  以前は両方に写しがあり、`offers.js` 側が `strict` を見ていなかったので
+  **S級に新人戦（C級以下だけ）の招待が届いていた**
+- **`.tkSettings`（対局の設定）はタブの中に残す。**対局の設定なので
+  大会の画面がいちばん近い。事務所の物にすると探す場所が増える
+- **`Offers` は「あれば使う」。**単体ページ（`taikai.html`）は `offers.js` を
+  読まないので、**いままでどおり五つ並ぶ**——開発用の入口はそのまま
 - **画面をまたぐ結果は `opts` で渡す。**大会から事務所へ戻るとき、
   `Office` は組み直されるので、**前の mount の閉包に控えた関数は宙に浮く**
   （呼んでも何も出ない）。`shell.html` の `goTaikai` を見ること
@@ -343,7 +361,7 @@ python3 -m http.server 8000
 
 ### テスト
 
-`node tools/test-office.js` … 654件。47県の `region` が `REGIONS` に
+`node tools/test-office.js` … 700件。47県の `region` が `REGIONS` に
 一致するか、遠さの段階、事務所名の既定、配置の既定と落としかた、
 遠征の日数と費用、留守番の選びかた、依頼の発火と `RULES.event`、
 店が無い日の締め、セーブの前方互換。**雀エイト表**は、八人ぶん出ること・
@@ -1016,7 +1034,7 @@ A3 でできたが、中身は `drawOne` 一回の二値のままだった。こ
 
 ### テスト
 
-`node tools/test-taikai-field.js` … 97件。`ladderOf` と `pickSpotlight` の錠。
+`node tools/test-taikai-field.js` … 113件。`ladderOf` と `pickSpotlight` の錠。
 因縁が三人／一人／ゼロ、自事務所を除くこと、`beaten` の相手を因縁枠にしないこと、
 `dup` で二枠を食わないこと、同点は id で固定すること。
 **本文の錠**——click が `button[data-tier]` で拾っていること、五つの大会ぶんの
@@ -1024,6 +1042,14 @@ A3 でできたが、中身は `drawOne` 一回の二値のままだった。こ
 組の先頭に来るクラスが全部 `tk` で始まること、
 **カードの `faceOf` が `thumb/` を読み、名鑑と表紙は `img/` のままであること**、
 `onerror` が消すだけで再取得しないこと。
+
+`node tools/check-taikai-entry.js` … 24件。**大会の入口を本編（`index.html`）で押す。**
+招待がゼロの日は札が出ず一言だけ・**設定は残ること**、並ぶのは `offerAccepted` の
+大会だけ、押すと**依頼と同じ経路**に入って**日が進む**こと（16人＝1日／64人＝2日）、
+店もその日数ぶん回っていること、**招待を消費して二度出られない**こと、
+単体ページはいままでどおり五つ並ぶこと。**`playerRank` は `C` で回す**
+（新人戦と地方リーグは `strict` なので S級では出場資格が無い）。
+**大会の入口を触ったら回すこと。**
 
 `node tools/drive-taikai-field.js` … 125件。**画面でしか確かめられない側。**
 `taikai.html` を Playwright で開いて五つの大会を順に押す。色と梯子、

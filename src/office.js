@@ -356,6 +356,23 @@ const Office = (() => {
     store.set({ offers: (st.offers || []).filter((o) => o.id !== id) });
   }
 
+  /* 受けた招待を落とす。**大会が終わったらそこで消費する**（`office/spec.md` §8.2）。
+
+     大会のタブが `offerAccepted` を「いま受けている招待の一覧」として読むので、
+     **落とさないと同じ招待で何度でも出られる**——地方リーグは優勝50万なので
+     経済に穴が空き、契約イベントの `records[tier].best === '優勝'` も
+     本来より早く開く。`once: false` なので、条件を満たせばまた朝に届く。
+
+     **落としてよいのは大会だけ。**契約イベントの `offerAccepted` は
+     `RULES.event` が「受けたか」を見る印なので、消すと図鑑が閉じる。
+     返すのは新しい `offerAccepted` の配列（純関数。書くのは呼ぶ側） */
+  function dropAccepted(st, id) {
+    const def = typeof Offers !== 'undefined' ? Offers.byId(id) : null;
+    const acc = (st.offerAccepted || []).slice();
+    if (!def || def.kind !== 'tournament') return acc;
+    return acc.filter((x) => x !== id);
+  }
+
   /* その相手の課題を落とす。契約できたら用済み（`scout/spec.md` §5.2）。
      返すのは新しい `offers` の配列（純関数） */
   function dropQuest(st, charaId) {
@@ -1565,6 +1582,9 @@ const Office = (() => {
 
     /* 大会から帰ってきたところ。日数ぶんを消化して夜へ */
     function afterTournament(def, res) {
+      /* **招待を消費する。**ここが二つの入口（事務所のメールと大会のタブ）が
+         合流する一点なので、落とすのもここ一箇所にする */
+      store.set({ offerAccepted: dropAccepted(store.get(), def.id) });
       const lines = res
         ? [`${res.tierName}：${res.best}`, `賞金 ${yen(res.prize)}`,
            res.promoted ? `${res.promoted}級に昇段した` : null].filter(Boolean)
@@ -2325,7 +2345,7 @@ const Office = (() => {
            ASSIGN_KINDS, assignFor, assignOf, parlorRoster, setAssign, fatigueOf, condOf,
            roomPeopleOf, anyAwayOf, markMailRead, tiredOf, eightSlotsOf, overtimeOf, boardCountsOf,
            planTrip, deputyOf, tripOf, tripStart, regionOfPref,
-           fireOffers, dismissOffer, acceptOffer, dropQuest, popOf, idolResult,
+           fireOffers, dismissOffer, acceptOffer, dropQuest, dropAccepted, popOf, idolResult,
            ensureShop, callOn, negotiate, favorGain, addFavor, FAVOR_GAIN,
            LOCAL_GAIN, LOCAL_MAX, localOf, addLocal,
            eightTable, eightNext, powerOf, mightOf, charaTitle, rivalOf, RIVALS,

@@ -55,6 +55,15 @@
 }
 
 /* ---------- 大会一覧 ---------- */
+/* 招待がゼロの日。**空でよい**——設定だけは下に残る（`office/spec.md` §8.2）。
+   大会は事務所に届く招待から出るので、行き先を一言だけ添える */
+.tkEmpty{
+  margin:0 0 14px;padding:14px 12px;border-radius:6px;
+  border:1px dashed var(--gold-dim);background:rgba(255,255,255,.02);
+  font-size:13px;color:var(--ivory-2);text-align:center;line-height:1.6;
+}
+.tkEmpty span{display:block;margin-top:4px;font-size:11.5px;color:var(--muted)}
+
 .tkTiers{display:grid;gap:8px}
 .tkTier{
   display:block;width:100%;text-align:left;padding:11px 12px;
