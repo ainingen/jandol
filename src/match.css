@@ -677,9 +677,17 @@ body.inMatch.four #melds-row{
 }
 body.inMatch.four #melds-row{--mw:calc(var(--tw)*.6);--mh:calc(var(--tw)*.82)}
 body.inMatch.four #melds-row .tile{width:var(--mw);height:var(--mh)}
+/* **押せるものは常に最前面**（2026年9月10日・段D）。
+   釦の列は右端を上へ伸びるので、**右上のカットイン（z-index:8）と同じ列**にいる。
+   釦が4つを超えると（チーが複数ある卓）列の頭がカットインの高さまで届き、
+   844×334 で **ポン・カンが 81〜100% 覆われていた**。
+   `pointer-events:none` なので**押せてはいる。見えないだけ**——だから
+   「押しても効かない」ではなく「鳴けることに気づかない」という形で出る。
+   **これは段Aより前からあった**（`spec.md` §6.5 の段D）。
+   `#topbar`（9）と同じ層に上げる。**`#toast`（15）は越えないこと。** */
 body.inMatch.four #actions{
   position:absolute;right:14px;bottom:calc(100% + 8px);margin:0;min-height:0;
-  flex-direction:column;align-items:flex-end;gap:8px;z-index:6;
+  flex-direction:column;align-items:flex-end;gap:8px;z-index:9;
 }
 body.inMatch.four #hintbox{
   position:absolute;left:14px;bottom:calc(100% + 8px);margin:0;min-height:0;text-align:left;

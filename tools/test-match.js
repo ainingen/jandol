@@ -676,6 +676,19 @@ const winData = (winnerSeat, loserSeat, total, payments, sticks) => ({
   /* #toast（z-index:15）より下であること——おまかせが見出しの上に出ると読めない */
   ok(zTop < 15, '#topbar は #toast（15）より下');
 
+  /* **押せるものは常にカットインより上**（段D・2026年9月10日）。
+     鳴きの釦（#actions）も同じ右端を上へ伸びるので、釦が4つを超えると
+     カットインの高さに届く。**段Aより前から丸ごと隠れていた**（`spec.md` §6.5 の段D）。
+     実際に隠れていないかは `tools/check-auto.js` が画素で見る */
+  const zAct = zOf('body.inMatch.four #actions');
+  ok(zAct !== null, '四人卓の #actions に z-index がある');
+  ok(zAct > +zCut, '#actions はカットインより上の層（actions ' + zAct + ' > cutin ' + zCut + '）');
+  ok(zAct < 15, '#actions は #toast（15）より下');
+  /* **下へ戻さないこと**——締めの帯の下は「叩いた指の click が落ちる土地」 */
+  const act = css.match(/body\.inMatch\.four #actions\{([^}]*)\}/);
+  ok(!!act && /bottom:calc\(100% \+ 8px\)/.test(act[1]),
+    '#actions は手牌の帯の上に置いたまま（締めの帯の下へ戻さない）', act && act[1].trim());
+
   const px = (s, k) => { const m = s.match(new RegExp(k + ':\\s*(\\d+(?:\\.\\d+)?)px')); return m ? +m[1] : null; };
   const bar = css.match(/body\.inMatch\.four #topbar\{([^}]*)\}/);
   const barTop = bar ? px(bar[1], 'top') : null;
