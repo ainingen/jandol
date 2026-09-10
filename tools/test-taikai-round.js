@@ -33,6 +33,14 @@ const T = require('../src/tournament.js');
 Object.assign(global, T);
 const Taikai = require('../src/taikai.js');
 
+const fs = require('fs');
+const pathm = require('path');
+const rd = (f) => fs.readFileSync(pathm.join(__dirname, '..', f), 'utf8');
+/* 錠は**コメントを外した本文**で見る（仕様の引用に釣られないため） */
+const strip = (t) => t.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1');
+const TK = strip(rd('src/taikai.js'));
+const SHELL = rd('shell.html');
+
 let pass = 0;
 const fails = [];
 function ok(cond, name, detail) {
@@ -104,7 +112,7 @@ async function withResume(rec, fn) {
 }
 
 (async () => {
-  console.log('回戦のあいだ（taikai/round-spec.md）— 段1');
+  console.log('回戦のあいだ（taikai/round-spec.md）');
 
   /* ============================================================
      1. 渡さないときに一行も挙動が変わらない（段1 の検品）
@@ -284,6 +292,36 @@ async function withResume(rec, fn) {
       } catch (e) { threw = e; }
     });
     ok(threw === BOOM, '中継が投げたらそのまま外へ出る（黙って進まない）');
+  }
+
+  /* ============================================================
+     7. 枠を出さない印（§7）— `body.tkHold`
+
+     中継のあいだは `#appReset`（セーブを消す釦）と `#nav`（下のタブ）を出さない。
+     **どちらも `shell.html` の持ち物**なので、taikai.js は印を立てるだけ。
+     nav を残すと**答えずに抜けられ、解決されない `runTournament` が控えを
+     抱えたまま残る**——遊ぶ側は「続きから」で入り直した別の走行を見ることになる
+     ============================================================ */
+  {
+    ok(/renderBridge\([\s\S]{0,120}?holdChrome\(true\)/.test(TK),
+      '中継を組むときに印を立てる');
+    ok(/showLoading\(\)\s*\{[\s\S]{0,120}?holdChrome\(false\)/.test(TK),
+      '卓に入るときに印を落とす');
+    /* **shell.html の側で隠す。**枠は向こうの持ち物 */
+    const rule = (SHELL.match(/body\.tkHold[^{]*\{[^}]*\}/g) || []).join(' ');
+    ok(/\.appReset/.test(rule), 'shell.html が tkHold で .appReset を隠す', rule);
+    ok(/#nav/.test(rule), 'shell.html が tkHold で #nav を隠す（§7・F）', rule);
+    ok(/#scroll[^{]*\{[^}]*padding-bottom:0/.test(rule),
+      'nav を消したぶんの下の余白も消す（残すと底に 64px の空白）', rule);
+    /* **最後の砦。**印を立てた画面から抜ける道が go() しかないので、
+       ここで落とさないと次の画面まで枠が消えたままになる */
+    ok(/function go\(name, opts\)[\s\S]{0,600}?classList\.remove\('tkHold'\)/.test(SHELL),
+      'shell.html の go() が印を落とす（最後の砦）');
+    /* **新しい出口を作らないこと。**中継から出られるのは「打つ」だけで、
+       中断はリロード →「続きから」→「この大会を諦める」の道が受け持つ */
+    const bridge = (TK.match(/function renderBridge\([\s\S]*?\n    \}/) || [''])[0];
+    const acts = (bridge.match(/data-act="[a-z-]+"/g) || []);
+    same(acts, ['data-act="round-go"'], '中継の押せる口は round-go 一つだけ');
   }
 
   /* ------------------------------------------------------------ */

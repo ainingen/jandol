@@ -88,11 +88,21 @@ body.onTitle{padding-bottom:0}
 
 /* 対局中は卓だけにする */
 body.inMatch #appTop,body.inMatch #nav,body.inMatch .appReset,body.inMatch #view{display:none}
-/* 「答えるまで先へ進めない画面」のあいだは、セーブを消す釦を出さない。
+/* 「答えるまで先へ進めない画面」のあいだは、枠を出さない。
    いまは大会の中継（`docs/design/taikai/round-spec.md` §7）だけが立てる。
-   **「打つ」の隣に、押すと大会が消える釦を置くには危なすぎる。**
+   **`inMatch` が nav を隠しているのと同じ扱い。**
+
+   - `.appReset` … 「打つ」の隣に、押すと大会が消える釦を置くには危なすぎる
+   - `#nav` … 下のタブで抜けられると、**解決されない `runTournament` が
+     控えを抱えたまま残る。**遊ぶ側は「続きから」で入り直した別の走行を見ることになり、
+     動きはするが二重になる。**入口を塞ぐほうが安い**
+
+   中断の出口は残っている（リロード →「続きから」→「この大会を諦める」）。
    立てるのは taikai.js、何を隠すかを決めるのはここ（枠はこちらの持ち物） */
-body.tkHold .appReset{display:none}
+body.tkHold .appReset,body.tkHold #nav{display:none}
+/* nav を消したら、そのぶんの下の余白も消す。**残すと画面の底に 64px の空白**
+   （表紙が `body.onTitle #scroll` で同じことをしている） */
+body.tkHold #scroll{padding-bottom:0}
 body.inMatch{padding-bottom:0}
 #matchRoot:empty{display:none}
 #matchRoot{display:flex;justify-content:center;width:100%}
