@@ -406,6 +406,69 @@ const winData = (winnerSeat, loserSeat, total, payments, sticks) => ({
     '飲むのは capture で受けた click（釦へ届く前に止める）');
 }
 
+/* ============================================================
+   6. 顔の置き場所（サムネイル。BACKLOG「対局画面のサムネイル化」）
+
+   **大きさで置き場所が分かれる。**24〜36px の丸に 768×1024 を読ませない
+   ——展開すると1枚 約3.1MB で、四人卓では顔が最大6枚出る。
+   **立ち絵だけは `img/` のまま**（150×196 なので DPR 3 で 450×588 が要る）。
+
+   二本立て（自分は `p01`〜、雀ドルは3桁）を書くのは `faceName` の一行だけ。
+   **ここが割れると、自分の顔だけ出なくなる**（前からの錠）
+   ============================================================ */
+{
+  const fs = require('fs'), path = require('path');
+  const mj = fs.readFileSync(path.join(__dirname, '../src/match.js'), 'utf8');
+  const uj = fs.readFileSync(path.join(__dirname, '../src/ui.js'), 'utf8');
+  /* 数えるのは**コメントを外した本文**（仕様の引用に釣られないため。
+     `test-scout.js` と同じ作法） */
+  const ujBody = uj.replace(/\/\*[\s\S]*?\*\//g, '');
+
+  /* 二本立ては一箇所だけ */
+  const name = (mj.match(/const faceName = \(c\) => \([\s\S]*?\);/) || [''])[0];
+  ok(/'p01'/.test(name) && /padStart\(3, '0'\)/.test(name),
+    'faceName に二本立て（p01〜／3桁）がある', name.replace(/\s+/g, ' '));
+  ok((mj.match(/'p01'/g) || []).length === 1,
+    "match.js に 'p01' は一度しか出てこない（写していない）");
+
+  /* 小さい版と大きい版 */
+  ok(/const faceOf = \(c\) => `img\/\$\{faceName\(c\)\}\.webp`/.test(mj),
+    'faceOf は img/（大きく出す場所）');
+  ok(/const thumbOf = \(c\) => `thumb\/\$\{faceName\(c\)\}\.webp`/.test(mj),
+    'thumbOf は thumb/（小さく出す場所）');
+
+  /* 席とカットインは小さい版、立ち絵だけ大きい版 */
+  ok(/g\.players\[i\]\.face = thumbOf\(c\);/.test(mj),
+    '席へ配るのは thumbOf（席プレート・カットインが読む）');
+  ok(/g\.players\[i\]\.faceBig = faceOf\(c\);/.test(mj),
+    '大きい版は faceBig に別で持たせる');
+  ok(/class="mzFace"><img src="\$\{esc\(thumbOf\(c\)\)\}"/.test(mj),
+    '対局終了の順位表（34px）は thumbOf');
+  ok(!/class="mzFace"><img src="\$\{esc\(faceOf\(c\)\)\}"/.test(mj),
+    '順位表に faceOf が残っていない');
+
+  /* ui.js 側 */
+  ok(/sp\.faceBig \|\| sp\.face/.test(uj),
+    '締めの立ち絵だけが faceBig を読む（無ければ face に落ちる）');
+  ok((ujBody.match(/faceBig/g) || []).length === 1,
+    'ui.js で faceBig を読むのは一箇所だけ（立ち絵）',
+    String((ujBody.match(/faceBig/g) || []).length));
+  const plate = (ujBody.match(/<span class="bust">[^`]*/) || [''])[0];
+  ok(/p\.face \?/.test(plate) && !/faceBig/.test(plate),
+    '席プレートは face（小さい版）のまま', plate.replace(/\s+/g, ' ').slice(0, 90));
+
+  /* **再取得を足さないこと。**onerror は消すだけ（--sil-img の影絵に落ちる） */
+  ['bust', 'mzFace'].forEach((k) => {
+    const src = k === 'bust' ? uj : mj;
+    const tag = (src.match(new RegExp('class="' + k + '"><img src="[^>]*>')) || [''])[0]
+      || (src.match(new RegExp('class="' + k + '">\\$\\{[^}]*\\}?[^>]*>')) || [''])[0];
+    if (tag) {
+      ok(/onerror="this\.remove\(\)"/.test(tag), k + ' の img は onerror で消すだけ', tag);
+      ok(!/this\.src/.test(tag), k + ' の onerror は src を入れ直さない（再取得しない）', tag);
+    }
+  });
+}
+
 /* ---------------- 結果 ---------------- */
 console.log('対局まわりの純関数テスト');
 console.log('通過 ' + pass + ' 件' + (fails.length ? ' / 失敗 ' + fails.length + ' 件' : ''));
