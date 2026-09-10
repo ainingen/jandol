@@ -700,6 +700,57 @@ const winData = (winnerSeat, loserSeat, total, payments, sticks) => ({
     '列レイアウトのカットインは絶対配置にしていない（卓と手牌のあいだの流し込み）');
 }
 
+/* ============================================================
+   10. 卓の外へ落とす影は、手牌に届かないこと
+       （docs/design/match/agari-spec.md §2 の追補・2026年9月10日）
+
+   `#myarea`（手牌の帯）は z-index を持たないので **#table（z-index:3）より下**に
+   描かれる。つまり `#felt::before` の外側の影は**手牌の上に塗られる。**
+   卓の底と手牌の上端の隙間は **8px（844×334）／9px（1280×800）**しかないのに、
+   影は `0 28px 44px` だったので、裾が手牌を丸ごと覆っていた
+   （手牌の帯の平均輝度が 21% / 34% 落ちる。実測）。
+
+   ここで見るのは **`落とす量 + ぼかし/2 ≤ 8px`** だけ。
+   明るさそのものは `tools/drive-match.js --shots` で撮って測る。
+   ============================================================ */
+{
+  const fs = require('fs'), path = require('path');
+  const css = fs.readFileSync(path.join(__dirname, '../src/match.css'), 'utf8');
+  const m = css.match(/body\.inMatch\.four #felt::before\{([^}]*)\}/);
+  ok(!!m, '四人卓の #felt::before が match.css にある');
+  const sh = m ? (m[1].match(/box-shadow:([^;]*);/) || [])[1] : null;
+  ok(!!sh, '#felt::before に box-shadow がある');
+  if (sh) {
+    /* 影は「,」区切り。inset の付いたものは中の縁なので外へは落ちない */
+    const outs = sh.split(',')
+      .map((t) => t.trim())
+      .filter((t) => t && !/^inset/.test(t) && /px/.test(t));
+    /* 最後の一本＝外へ落とす影。`0 0 0 3px var(--line)` は枠線（落とす量0） */
+    let worst = 0, worstT = '';
+    outs.forEach((t) => {
+      /* `0 3px 10px` の先頭のように **単位の無い 0** が混じるので、
+         `px` で拾わずに空白で割って数だけを順に取る */
+      const n = t.split(/\s+/).filter((wd) => /^-?[.\d]/.test(wd)).map(parseFloat);
+      if (n.length < 2) return;
+      const reach = n[1] + (n[2] || 0) / 2 + (n[3] || 0);  /* 落とす量 ＋ ぼかし/2 ＋ 広げ */
+      if (reach > worst) { worst = reach; worstT = t; }
+    });
+    ok(worst <= 8,
+      '外へ落とす影は手牌に届かない（落とす量＋ぼかし/2 ＝ ' + worst + 'px ≤ 8px）', worstT);
+    /* 消してしまっていないこと——卓の浮きはこの影が作っている */
+    ok(worst > 0, '外へ落とす影を消していない（卓が浮かなくなる）');
+    /* 中の縁と枠線は残っていること */
+    ok(/inset 0 0 0 7px var\(--rail\)/.test(sh), '内側の縁（rail）は触っていない');
+    ok(/inset 0 0 0 10px var\(--line\)/.test(sh), '内側の輪郭は触っていない');
+    ok(/inset 0 0 34px/.test(sh), '内側の落ち込みは触っていない');
+    ok(/[^t] 0 0 0 3px var\(--line\)/.test(sh), '枠線（0 0 0 3px var(--line)）は触っていない');
+  }
+  /* 列レイアウトの #felt は display:contents（箱を持たない）ので影も落ちない。
+     **この影の話は四人卓だけ**——ここが崩れたら縦持ちも見直すこと */
+  ok(/body\.inMatch:not\(\.four\) #felt,[\s\S]{0,120}?\{display:contents\}/.test(css),
+    '列レイアウトの #felt は display:contents（影の落ちる箱を持たない）');
+}
+
 /* ---------------- 結果 ---------------- */
 console.log('対局まわりの純関数テスト');
 console.log('通過 ' + pass + ' 件' + (fails.length ? ' / 失敗 ' + fails.length + ' 件' : ''));
