@@ -20,6 +20,19 @@
 
   幽霊クリックの側は `tools/drive-match.js --play --width 844 --height 334`
   （`takeOver` が呼ばれていないことを数えている）。
+
+  **六つめ：カットインに覆われていないこと**（2026年9月10日）。
+  右側のカットイン（`data-side="right"`）は「おまかせ」と同じ右上の角へ出る。
+  `pointer-events:none` なので**押せてはいる**——だから click だけでは捕まらない。
+  **見えているか**は箱の重なりで見るしかないので、ここでは矩形で測る。
+  `--cw` は縦が広いほど太るので、**844×334 と 1280×800 の両方**で見る
+  （1280×800 は 96px まで育ち、直す前は釦を 100% 覆っていた側）。
+
+  **七つめ：鳴きの釦（#actions）も覆われていないこと**（段D・2026年9月10日）。
+  釦の列は**同じ右端を上へ伸びる**ので、釦が4つを超えるとカットインの高さに届く。
+  こちらは矩形では測れない——**z-index を上げると重なったまま画素だけが変わる**ので、
+  カットインを消した絵と出した絵を撮って、**釦の面の画素が変わらないこと**を見る。
+  面だけを見るために角の丸み（22px）と下の影（4px）は外す。
 */
 'use strict';
 const path=require('path'),http=require('http'),fs=require('fs');
@@ -89,6 +102,103 @@ await p.click('#giveup');
 await p.waitForTimeout(150);
 s=await state(p);
 eq([s.label,s.auto,s.speed],['おまかせ',false,520],'二度目も戻れる（速さも 520 のまま）');
+
+console.log('\n[右側のカットインに覆われていないこと]');
+/* カットインは pointer-events:none なので、click では「押せる」としか分からない。
+   **見えているか**は箱の重なりでしか測れない */
+const cover=async(pg)=>pg.evaluate(()=>{
+  UI.say(1,'idle');
+  const box=document.querySelector('#cutin');
+  box.dataset.side='right'; box.classList.add('on');
+  if(!box.querySelector('.line').textContent) box.querySelector('.line').textContent='ゆっくり、ゆっくり';
+  const rc=(s)=>{const e=document.querySelector(s);const b=e.getBoundingClientRect();
+    return {x:b.x,y:b.y,r:b.right,b:b.bottom};};
+  const area=(a,b)=>Math.max(0,Math.min(a.r,b.r)-Math.max(a.x,b.x))*Math.max(0,Math.min(a.b,b.b)-Math.max(a.y,b.y));
+  const g=rc('#giveup');
+  const whole=(g.r-g.x)*(g.b-g.y);
+  return {
+    card:Math.round(area(g,rc('#cutin .card'))/whole*100),
+    bubble:Math.round(area(g,rc('#cutin .bubble'))/whole*100),
+    cw:getComputedStyle(box).getPropertyValue('--cw').trim(),
+    plate:Math.round(area(rc('#cutin .card'),rc('#plate-right'))),
+  };
+});
+for(const [w,h] of [[844,334],[1280,800]]){
+  const c2=await br.newContext({viewport:{width:w,height:h}});
+  const p2=await c2.newPage();
+  await p2.goto('http://127.0.0.1:'+port+'/match.html?start=1&speed=520&sfx=0&seed=20260910');
+  await p2.waitForSelector('#giveup',{timeout:15000});
+  await p2.waitForFunction(()=>!!UI.game,null,{timeout:20000});
+  const c=await cover(p2);
+  ok(c.card===0,w+'×'+h+'：立ち絵のカードが「おまかせ」に掛からない','覆い '+c.card+'% / --cw '+c.cw);
+  ok(c.bubble===0,w+'×'+h+'：吹き出しが「おまかせ」に掛からない','覆い '+c.bubble+'%');
+  /* 下げたぶんはカードを細くして返す。左右のプレート（点数）を隠さないこと */
+  ok(c.plate===0,w+'×'+h+'：カードが右のプレートに掛からない','重なり '+c.plate+'px²');
+  /* 覆われていないうえで、**本当に押せる**こと */
+  await p2.click('#giveup');
+  await p2.waitForSelector('#overlay.show [data-v]',{timeout:5000}).then(
+    ()=>ok(true,w+'×'+h+'：カットインが出ていても「おまかせ」が押せる'),
+    ()=>ok(false,w+'×'+h+'：カットインが出ていると「おまかせ」が押せない'));
+  await c2.close();
+}
+
+console.log('\n[鳴きの釦がカットインに隠れていないこと（段D）]');
+/* **矩形では測れない。**z-index を上げても箱は重なったままなので、
+   カットインを消した絵と出した絵を撮って**画素が変わるか**で見る。
+   角の丸み（border-radius:22px）と下に落ちる影（0 4px 0）は面ではないので外す */
+const CALLS=['ポン','チー 一萬二萬','チー 二萬四萬','チー 四萬五萬','パス'];  // 5つ＝334pxに収まる最大
+const setBtns=(pg,shown)=>pg.evaluate(({labels,shown})=>{
+  UI.say(1,'idle');
+  const box=document.querySelector('#cutin');
+  box.dataset.side='right';
+  if(!box.querySelector('.line').textContent) box.querySelector('.line').textContent='いいお天気ですこと';
+  if(shown){box.style.visibility='';box.classList.add('on');}
+  else{box.classList.remove('on');box.style.visibility='hidden';}
+  UI.buttons(labels.map((l)=>({label:l,onClick(){}})));
+  return document.querySelectorAll('#actions .act').length;
+},{labels:CALLS,shown});
+for(const [w,h] of [[844,334],[1280,800]]){
+  const c3=await br.newContext({viewport:{width:w,height:h}});
+  const p3=await c3.newPage();
+  await p3.goto('http://127.0.0.1:'+port+'/match.html?start=1&speed=520&sfx=0&seed=20260910');
+  await p3.waitForSelector('#giveup',{timeout:15000});
+  await p3.waitForFunction(()=>!!UI.game,null,{timeout:20000});
+  const n=await setBtns(p3,false);
+  ok(n===CALLS.length,w+'×'+h+'：鳴きの釦が'+CALLS.length+'つ並んだ','並んだのは '+n+'つ');
+  await p3.waitForTimeout(120);
+  const off=(await p3.screenshot()).toString('base64');
+  await setBtns(p3,true);
+  await p3.waitForTimeout(200);
+  const on=(await p3.screenshot()).toString('base64');
+  const res=await p3.evaluate(async({a,b})=>{
+    const load=async(s)=>{const i=new Image();i.src='data:image/png;base64,'+s;await i.decode();
+      const c=document.createElement('canvas');c.width=i.width;c.height=i.height;
+      const g=c.getContext('2d');g.drawImage(i,0,0);return g;};
+    const ga=await load(a), gb=await load(b);
+    return [...document.querySelectorAll('#actions .act')].map((el)=>{
+      const r=el.getBoundingClientRect();
+      /* 面だけ：左右と上は角の丸みぶん、下はさらに影ぶん詰める */
+      const x=Math.round(r.x)+8, y=Math.round(r.y)+8;
+      const w2=Math.round(r.right)-8-x, h2=Math.round(r.bottom)-12-y;
+      if(w2<=0||h2<=0||y<0) return {label:el.textContent,changed:-1};
+      const da=ga.getImageData(x,y,w2,h2).data, db=gb.getImageData(x,y,w2,h2).data;
+      let d=0;for(let i=0;i<da.length;i+=4){
+        if(Math.abs(da[i]-db[i])>6||Math.abs(da[i+1]-db[i+1])>6||Math.abs(da[i+2]-db[i+2])>6)d++;}
+      return {label:el.textContent, changed:Math.round(d/(da.length/4)*100)};
+    });
+  },{a:off,b:on});
+  const bad=res.filter((r)=>r.changed>0);
+  ok(bad.length===0, w+'×'+h+'：カットインが出ても鳴きの釦の面が変わらない',
+    bad.map((r)=>'「'+r.label+'」'+r.changed+'%').join(' / '));
+  /* 層の順も固定する。画素の錠だけだと「たまたま重なっていない」でも通る */
+  const z=await p3.evaluate(()=>({
+    act:+getComputedStyle(document.querySelector('#actions')).zIndex,
+    cut:+getComputedStyle(document.querySelector('#cutin')).zIndex,
+    toast:+getComputedStyle(document.querySelector('#toast')).zIndex}));
+  ok(z.act>z.cut, w+'×'+h+'：#actions はカットインより上の層','actions '+z.act+' / cutin '+z.cut);
+  ok(z.act<z.toast, w+'×'+h+'：#actions は #toast より下','actions '+z.act+' / toast '+z.toast);
+  await c3.close();
+}
 
 console.log('\n通過 '+pass+' 件'+(fails.length?' / 失敗 '+fails.length+' 件':''));
 if(fails.length){fails.forEach((f)=>console.log('  ✗ '+f));process.exitCode=1;}

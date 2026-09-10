@@ -639,6 +639,193 @@ const winData = (winnerSeat, loserSeat, total, payments, sticks) => ({
     '+120ms / +400ms の追い掛けも残っている（そこでしか正しい寸法が返らない端末がある）');
 }
 
+/* ============================================================
+   9. 右上に置くものは、右側のカットインと重ならないこと
+      （docs/design/match/spec.md・2026年9月10日）
+
+   「右上は空いている」は **左側のカットインしか見ていなかった。**
+   カットインは `data-side="right"` のとき同じ角に出て、立ち絵のカードは
+   `--cw`（縦が広いほど太る）で PC の広い窓では 96px まで育つ。
+   **844×334 で釦の高さの92%、1280×800 では 100% を覆っていた。**
+   `pointer-events:none` なので押せてはいるが、**そこに釦があると分からない。**
+
+   直しは二重。**釦をカットインより上の層へ**（z-index）と、
+   **カットインを釦の下端まで下げる**（top）。片方だけにしないこと
+   ——上げるだけだと釦が顔写真の上に乗り、下げるだけだと
+   `--cw` が育つ窓で吹き出しが釦へ戻ってくる。
+
+   ここで見るのは形だけ。実際の重なりは
+   `node tools/drive-match.js --play --width 844 --height 334` と実機。
+   ============================================================ */
+{
+  const fs = require('fs'), path = require('path');
+  const css = fs.readFileSync(path.join(__dirname, '../src/match.css'), 'utf8');
+
+  const zOf = (sel) => {
+    const m = css.match(new RegExp(sel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\{([^}]*)\\}'));
+    const z = m && m[1].match(/z-index:\s*(-?\d+)/);
+    return z ? +z[1] : null;
+  };
+  const cut = css.match(/body\.inMatch\.four \.cutin\{([^}]*)\}/);
+  ok(!!cut, '四人卓の .cutin の置き場所が match.css にある');
+  const zTop = zOf('body.inMatch.four #topbar');
+  const zCut = cut ? (cut[1].match(/z-index:\s*(-?\d+)/) || [])[1] : null;
+  ok(zTop !== null && zCut != null, '#topbar と .cutin のどちらにも z-index がある');
+  ok(zTop > +zCut,
+    '#topbar はカットインより上の層（topbar ' + zTop + ' > cutin ' + zCut + '）');
+  /* #toast（z-index:15）より下であること——おまかせが見出しの上に出ると読めない */
+  ok(zTop < 15, '#topbar は #toast（15）より下');
+
+  /* **押せるものは常にカットインより上**（段D・2026年9月10日）。
+     鳴きの釦（#actions）も同じ右端を上へ伸びるので、釦が4つを超えると
+     カットインの高さに届く。**段Aより前から丸ごと隠れていた**（`spec.md` §6.5 の段D）。
+     実際に隠れていないかは `tools/check-auto.js` が画素で見る */
+  const zAct = zOf('body.inMatch.four #actions');
+  ok(zAct !== null, '四人卓の #actions に z-index がある');
+  ok(zAct > +zCut, '#actions はカットインより上の層（actions ' + zAct + ' > cutin ' + zCut + '）');
+  ok(zAct < 15, '#actions は #toast（15）より下');
+  /* **下へ戻さないこと**——締めの帯の下は「叩いた指の click が落ちる土地」 */
+  const act = css.match(/body\.inMatch\.four #actions\{([^}]*)\}/);
+  ok(!!act && /bottom:calc\(100% \+ 8px\)/.test(act[1]),
+    '#actions は手牌の帯の上に置いたまま（締めの帯の下へ戻さない）', act && act[1].trim());
+
+  const px = (s, k) => { const m = s.match(new RegExp(k + ':\\s*(\\d+(?:\\.\\d+)?)px')); return m ? +m[1] : null; };
+  const bar = css.match(/body\.inMatch\.four #topbar\{([^}]*)\}/);
+  const barTop = bar ? px(bar[1], 'top') : null;
+  const cutTop = cut ? px(cut[1], 'top') : null;
+  /* 釦の実測は高さ25px（font-size:11.5px ＋ padding:5px 12px）。
+     カードは rotate(2.5deg) で上へ2pxはみ出す。**釦の下端＋2px より下**にいること */
+  ok(barTop !== null && cutTop !== null, '#topbar と .cutin の top が px で書いてある');
+  ok(cutTop >= barTop + 25 + 2,
+    'カットインは「おまかせ」の下端より下から始まる（topbar ' + barTop
+    + '+25 / cutin ' + cutTop + '）');
+
+  /* 下げたぶんはカードの高さで返す。左右のプレート（#table の56%）に掛からないよう、
+     --cw は画面の高さから引いた値であること。**23vh のままだと 812×320 で食い込む** */
+  ok(/--cw:\s*clamp\([^)]*vh/.test(cut ? cut[1] : ''),
+    '--cw は画面の高さから作る（clamp に vh が入っている）', cut && cut[1].trim());
+  ok(/56vh - 103px/.test(cut ? cut[1] : ''),
+    '--cw の高さの budget はプレートの上端から引いてある（56vh − 103px）');
+
+  /* 列レイアウトの .cutin は置き場所が別。四人卓の値を持ち込んでいないこと */
+  const col = css.match(/body\.inMatch:not\(\.four\) \.cutin\{([^}]*)\}/);
+  ok(!!col && !/position:absolute/.test(col[1]),
+    '列レイアウトのカットインは絶対配置にしていない（卓と手牌のあいだの流し込み）');
+}
+
+/* ============================================================
+   10. 卓の外へ落とす影は、手牌に届かないこと
+       （docs/design/match/agari-spec.md §2 の追補・2026年9月10日）
+
+   `#myarea`（手牌の帯）は z-index を持たないので **#table（z-index:3）より下**に
+   描かれる。つまり `#felt::before` の外側の影は**手牌の上に塗られる。**
+   卓の底と手牌の上端の隙間は **8px（844×334）／9px（1280×800）**しかないのに、
+   影は `0 28px 44px` だったので、裾が手牌を丸ごと覆っていた
+   （手牌の帯の平均輝度が 21% / 34% 落ちる。実測）。
+
+   ここで見るのは **`落とす量 + ぼかし/2 ≤ 8px`** だけ。
+   明るさそのものは `tools/drive-match.js --shots` で撮って測る。
+   ============================================================ */
+{
+  const fs = require('fs'), path = require('path');
+  const css = fs.readFileSync(path.join(__dirname, '../src/match.css'), 'utf8');
+  const m = css.match(/body\.inMatch\.four #felt::before\{([^}]*)\}/);
+  ok(!!m, '四人卓の #felt::before が match.css にある');
+  const sh = m ? (m[1].match(/box-shadow:([^;]*);/) || [])[1] : null;
+  ok(!!sh, '#felt::before に box-shadow がある');
+  if (sh) {
+    /* 影は「,」区切り。inset の付いたものは中の縁なので外へは落ちない */
+    const outs = sh.split(',')
+      .map((t) => t.trim())
+      .filter((t) => t && !/^inset/.test(t) && /px/.test(t));
+    /* 最後の一本＝外へ落とす影。`0 0 0 3px var(--line)` は枠線（落とす量0） */
+    let worst = 0, worstT = '';
+    outs.forEach((t) => {
+      /* `0 3px 10px` の先頭のように **単位の無い 0** が混じるので、
+         `px` で拾わずに空白で割って数だけを順に取る */
+      const n = t.split(/\s+/).filter((wd) => /^-?[.\d]/.test(wd)).map(parseFloat);
+      if (n.length < 2) return;
+      const reach = n[1] + (n[2] || 0) / 2 + (n[3] || 0);  /* 落とす量 ＋ ぼかし/2 ＋ 広げ */
+      if (reach > worst) { worst = reach; worstT = t; }
+    });
+    ok(worst <= 8,
+      '外へ落とす影は手牌に届かない（落とす量＋ぼかし/2 ＝ ' + worst + 'px ≤ 8px）', worstT);
+    /* 消してしまっていないこと——卓の浮きはこの影が作っている */
+    ok(worst > 0, '外へ落とす影を消していない（卓が浮かなくなる）');
+    /* 中の縁と枠線は残っていること */
+    ok(/inset 0 0 0 7px var\(--rail\)/.test(sh), '内側の縁（rail）は触っていない');
+    ok(/inset 0 0 0 10px var\(--line\)/.test(sh), '内側の輪郭は触っていない');
+    ok(/inset 0 0 34px/.test(sh), '内側の落ち込みは触っていない');
+    ok(/[^t] 0 0 0 3px var\(--line\)/.test(sh), '枠線（0 0 0 3px var(--line)）は触っていない');
+  }
+  /* 列レイアウトの #felt は display:contents（箱を持たない）ので影も落ちない。
+     **この影の話は四人卓だけ**——ここが崩れたら縦持ちも見直すこと */
+  ok(/body\.inMatch:not\(\.four\) #felt,[\s\S]{0,120}?\{display:contents\}/.test(css),
+    '列レイアウトの #felt は display:contents（影の落ちる箱を持たない）');
+}
+
+/* ============================================================
+   11. 右は数字、左は言葉（docs/design/match/agari-spec.md §2 の追補・2026年9月10日）
+
+   役名（`.ebYaku`）は `.ebRight`（四人卓で 196px）に増減・合計点と一緒に
+   積んでいて、10.5px ＋ `max-height:28px` ＋ `overflow:hidden` だったので、
+   **役が多いと黙って切れていた**（混一色ドラ4 で 14px ぶん＝六つのうち三つ）。
+   幅の余っている `.ebLeft` へ移して 15px（符の行 16px）にした。
+
+   **溢れたら畳む。**`overflow` で隠すと隠れていることが見えないので、
+   三つを超えたら `showEnd` が「ほか N」を置く。**組むのはそこ一箇所。**
+   ============================================================ */
+{
+  const fs = require('fs'), path = require('path');
+  const mj = fs.readFileSync(path.join(__dirname, '../src/match.js'), 'utf8');
+  const uj = fs.readFileSync(path.join(__dirname, '../src/ui.js'), 'utf8');
+  const css = fs.readFileSync(path.join(__dirname, '../src/match.css'), 'utf8');
+
+  /* ---- 並び（TABLE_HTML） ---- */
+  const left = (mj.match(/<div class="ebLeft">([\s\S]*?)<\/div>\s*<div class="ebRight">/) || [])[1] || '';
+  const right = (mj.match(/<div class="ebRight">([\s\S]*?)\n        <\/div>/) || [])[1] || '';
+  ok(/class="ebYaku"/.test(left), '.ebYaku は .ebLeft の中（言葉の側）');
+  ok(!/class="ebYaku"/.test(right), '.ebRight に .ebYaku を残していない');
+  ok(/class="ebDelta"/.test(right) && /class="ebScore"/.test(right),
+    '.ebRight は数字だけ（.ebDelta と .ebScore）');
+  ok(!/class="ebDelta"/.test(left) && !/class="ebScore"/.test(left),
+    '数字を .ebLeft へ持ち込んでいない');
+
+  /* ---- 畳むのは showEnd の一箇所だけ ---- */
+  ok((uj.match(/ほか /g) || []).length === 1, '「ほか N」を組むのは ui.js の一箇所だけ');
+  ok(!/ほか /.test(mj), 'match.js（TABLE_HTML）には書かない');
+  ok(!/content:[^;]*ほか/.test(css), 'match.css の content: で足していない（数が出せない）');
+  const se = (uj.match(/showEnd\(kind, data\) \{[\s\S]*?\n  \},/) || [''])[0];
+  ok(/ほか /.test(se), '「ほか N」を組んでいるのは showEnd の中');
+  ok(/YAKU_SHOWN/.test(se) && /slice\(0, YAKU_SHOWN\)/.test(se),
+    '出す数は名前の付いた定数（YAKU_SHOWN）で切っている');
+  ok(/const YAKU_SHOWN = 3;/.test(se), '出すのは三つまで');
+  /* **並べ替えないこと**——何が畳まれたかが読めなくなる */
+  ok(!/yaku\.slice\(\)\.sort|yaku\.sort/.test(uj), '役を並べ替えていない（game.js の順のまま）');
+
+  /* ---- CSS ---- */
+  const yk = (css.match(/\nbody\.inMatch \.ebYaku\{([^}]*)\}/) || [])[1] || '';
+  const fs2 = (yk.match(/font-size:\s*(\d+(?:\.\d+)?)px/) || [])[1];
+  ok(+fs2 >= 14, '役名は 14px 以上（10.5px では読めなかった）', fs2 + 'px');
+  const fu = (css.match(/body\.inMatch \.ebYaku \.fu\{([^}]*)\}/) || [])[1] || '';
+  ok(!/width:\s*100%/.test(fu),
+    '符と翻に width:100% を持たせない（一行に収めて .ebLeft の縦を空ける）');
+  /* **`--maru` にしないこと**——役名には `槓` が出るが丸ゴシックに収録が無い */
+  ok(!/font-family/.test(yk) && !/font-family/.test(fu),
+    '役名の書体を --maru にしていない（槓 が丸ゴシックに無い）');
+  /* .ebRight の中の並び（order）は .ebScore と .ebDelta だけの話 */
+  ok(!/scoreLead \.ebYaku\{[^}]*order/.test(css),
+    'scoreLead に .ebYaku の order を残していない（もう .ebRight の子ではない）');
+  ok(/scoreLead \.ebScore\{[^}]*order:1/.test(css) && /scoreLead \.ebDelta\{[^}]*order:2/.test(css),
+    'scoreLead の並び（合計点が先、増減が後）は残っている');
+  /* **言葉は縮ませない。**縮んでよいのは牌の並びだけ */
+  ok(/body\.inMatch \.ebHead,body\.inMatch \.ebLine,body\.inMatch \.ebDora,body\.inMatch \.ebYaku\{flex:none\}/.test(css),
+    '見出し・セリフ・ドラ・役名は縮まない（flex:none）');
+  /* **--ebh は変えない**（高くすると卓が縮む） */
+  ok(/--ebh:132px/.test(css) && /body\.inMatch:not\(\.four\)\{--ebh:168px\}/.test(css),
+    '--ebh は 132px / 168px のまま');
+}
+
 /* ---------------- 結果 ---------------- */
 console.log('対局まわりの純関数テスト');
 console.log('通過 ' + pass + ' 件' + (fails.length ? ' / 失敗 ' + fails.length + ' 件' : ''));

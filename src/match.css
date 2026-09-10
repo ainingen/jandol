@@ -439,9 +439,21 @@ body.inMatch.four #app{
    右上は卓面（y33〜）と対面の札（x〜500）の外側で、空いている。
    **実機（iPhone・Safari・横持ち）で確定（2026年9月6日）。右下へ戻さないこと**
    ——押しにくいのはむしろ正しい。一局に何度も押す釦ではなく、**誤って押すと局が飛ぶ**
-   釦なので、多少遠いほうが安全側。カットインの立ち絵とも重なっていない。 */
+   釦なので、多少遠いほうが安全側。
+
+   **ただし「空いている」は左側のカットインしか見ていなかった**（2026年9月10日に直した）。
+   カットインは `data-side="right"` のとき **同じ右上の角へ出る**（`right:14px` / `top:10px`）。
+   立ち絵のカードは `--cw:clamp(64px,23vh,96px)` で**縦が広いほど太る**ので、
+   PC の広い窓（1280×800）では 96px まで育ち、**釦を 100% 覆っていた**
+   （844×334 の実機でも高さの 92% を覆う）。カットインは `pointer-events:none` なので
+   **押せてはいる。見えていないだけ**——だから「押しても効かない」ではなく
+   「そこに釦があると分からない」形で出た。
+   直しかたは二つ重ねてある——**釦をカットイン（z-index:8）より上に出し、
+   カットインの側を釦の下端まで下げる**（下の `.cutin` の `top`）。
+   **釦を消す案は採らない**（カットインは局中に何度も出るので、
+   「見えないから押せない」を「消えているから押せない」に言い換えるだけ）。 */
 body.inMatch.four #topbar{
-  position:absolute;right:12px;top:6px;z-index:6;margin:0;
+  position:absolute;right:12px;top:6px;z-index:9;margin:0;
 }
 /* 締めのあいだは消す。立ち絵（#endbust は右にも出る）と重ならないように */
 body.inMatch #app.ending #topbar{opacity:0;pointer-events:none;transition:opacity .18s ease}
@@ -466,11 +478,32 @@ body.inMatch.four #felt{
   transform:translate(-50%,calc(-50% + var(--felt-y,0px))) rotateX(36deg);
   transform-style:preserve-3d;
 }
+/* **外へ落とす影は、手牌に届かない大きさまで詰めること**（2026年9月10日）。
+   `#myarea`（手牌の帯）は z-index を持たないので **#table（z-index:3）より下**に描かれる。
+   つまりこの影は**手牌の上に塗られる**。卓の底と手牌の上端の隙間は
+   **844×334 で 8px・1280×800 で 9px** しかないのに、影は
+   `0 28px 44px` ＝ **下へ 28px ずらして 44px でぼかして**いたので、
+   裾が手牌を丸ごと覆っていた。実測（手牌の帯の平均輝度）:
+
+     844×334   影あり 132.6 → 影なし 168.2（**21%暗い**）
+     1280×800  影あり 111.9 → 影なし 168.5（**34%暗い**）
+
+   PC のほうが酷いのは、隙間は 9px のままなのに卓が大きくなるぶん影が広いため。
+   **`?flat=3` で明るさが戻らないので 3D ではなく影**（実機で切り分け済み）。
+
+   **消さないこと。**卓の浮きはこの影と `0 0 0 3px var(--line)` の二本で作っている。
+   詰めかたは **`落とす量 + ぼかし/2 ≤ 隙間8px`**——`0 3px 10px` で 3+5＝8。
+   実測 167.4 / 166.1 で、影なし（168.2 / 168.5）の **99.5% / 98.6%** まで戻る。
+   落とす量が減ったぶん、濃さは .6 → .8 に上げて接地を残している。
+   （`0 14px 36px` では 150.3 / 136.9 ＝ 89% / 81% までしか戻らない。実測）
+
+   **inset の三本と `0 0 0 3px var(--line)` は触らないこと**——中の縁と枠線で、
+   外へは落ちていない。触ってよいのは最後の一本だけ。 */
 body.inMatch.four #felt::before{
   content:"";position:absolute;inset:0;border-radius:calc(var(--side)*.052);
   background:radial-gradient(72% 72% at 50% 42%,var(--felt-a) 0%,var(--felt-b) 55%,var(--felt-c) 100%);
   box-shadow:inset 0 0 0 7px var(--rail),inset 0 0 0 10px var(--line),inset 0 0 34px rgba(0,0,0,.42),
-    0 0 0 3px var(--line),0 28px 44px rgba(0,0,0,.6);
+    0 0 0 3px var(--line),0 3px 10px rgba(0,0,0,.8);
 }
 body.inMatch.four #felt::after{
   content:"";position:absolute;inset:10px;border-radius:10px;opacity:.20;pointer-events:none;
@@ -644,9 +677,17 @@ body.inMatch.four #melds-row{
 }
 body.inMatch.four #melds-row{--mw:calc(var(--tw)*.6);--mh:calc(var(--tw)*.82)}
 body.inMatch.four #melds-row .tile{width:var(--mw);height:var(--mh)}
+/* **押せるものは常に最前面**（2026年9月10日・段D）。
+   釦の列は右端を上へ伸びるので、**右上のカットイン（z-index:8）と同じ列**にいる。
+   釦が4つを超えると（チーが複数ある卓）列の頭がカットインの高さまで届き、
+   844×334 で **ポン・カンが 81〜100% 覆われていた**。
+   `pointer-events:none` なので**押せてはいる。見えないだけ**——だから
+   「押しても効かない」ではなく「鳴けることに気づかない」という形で出る。
+   **これは段Aより前からあった**（`spec.md` §6.5 の段D）。
+   `#topbar`（9）と同じ層に上げる。**`#toast`（15）は越えないこと。** */
 body.inMatch.four #actions{
   position:absolute;right:14px;bottom:calc(100% + 8px);margin:0;min-height:0;
-  flex-direction:column;align-items:flex-end;gap:8px;z-index:6;
+  flex-direction:column;align-items:flex-end;gap:8px;z-index:9;
 }
 body.inMatch.four #hintbox{
   position:absolute;left:14px;bottom:calc(100% + 8px);margin:0;min-height:0;text-align:left;
@@ -710,8 +751,27 @@ body.inMatch .cutin.hot[data-side="right"] .bubble::after{border-left-color:var(
 }
 
 /* 四人卓：上の角。卓の左右の帯に写真が収まり、吹き出しだけが卓の上隅へ少し伸びる。
-   カードの高さは画面の高さで抑え、左右のプレート（top:56%）に掛からないようにする */
-body.inMatch.four .cutin{position:absolute;top:10px;z-index:8;--cw:clamp(64px,23vh,96px)}
+   カードの高さは画面の高さで抑え、左右のプレート（top:56%）に掛からないようにする。
+
+   **top は #topbar の下端で決まる**（2026年9月10日）。右側のカットインは
+   「おまかせ」と同じ角に出るので、重ねると釦が見えなくなる（上の #topbar の注記）。
+   釦の実測は top:6px ＋ 高さ25px ＝ **下端31px**（font-size:11.5px / padding:5px 12px）。
+   カードは rotate(2.5deg) で**上へ2pxはみ出す**ので、その2pxも見込んで 36px。
+   **釦の字の大きさか padding を変えたら、ここも測り直すこと。**
+
+   **下げたぶんはカードを細くして返す。**下げる前は 844×334 で
+   カードの下端とプレートの上端の隙間が **1px** しかなかった（812×320 では 0px）
+   ——つまり `23vh` は「プレートに触れる限界」で置かれていた値で、
+   26px 下げたぶんはそのままプレートに食い込む。
+   プレートの上端は `0.56 × (画面の高さ − 手牌の帯) − プレートの半分` で、
+   手牌の帯は 64〜71px・プレートは 44px（どちらも実測）なので **56vh − 62px 以上**。
+   そこから 3px の隙間とカードの回転ぶん 4px、上の 36px を引いて 1.5 で割る。
+   **上限 96px はいままでどおり**（vh 437 以上でそちらが効く）。
+   短い窓（812×320）では 50px まで細るが、**プレートの点数を隠すよりはよい**。
+   **左右で値を分けないこと**——同時には出ないが、喋る人によってカードの
+   大きさが変わると壊れて見える。 */
+body.inMatch.four .cutin{position:absolute;top:36px;z-index:8;
+  --cw:clamp(50px,calc((56vh - 103px)/1.5),96px)}
 body.inMatch.four .cutin[data-side="left"]{left:14px}
 body.inMatch.four .cutin[data-side="right"]{right:14px}
 body.inMatch.four .s-left,body.inMatch.four .s-right{top:56%}
@@ -749,7 +809,9 @@ body.inMatch:not(.four){--ebh:168px}
 body.inMatch #endband[hidden],body.inMatch #endbust[hidden],body.inMatch .endTint[hidden]{display:none}
 body.inMatch #endband{
   position:absolute;left:0;right:0;bottom:0;height:var(--ebh);z-index:8;
-  display:flex;align-items:stretch;gap:14px;padding:8px 14px;box-sizing:border-box;
+  /* 縦は 6px。**役名を左の列へ移したぶん（20px）を、余白と行間から返している**
+     ——`--ebh` は上げられない（上げると卓が縮む。agari-spec.md §2 の追補） */
+  display:flex;align-items:stretch;gap:14px;padding:6px 14px;box-sizing:border-box;
   background:linear-gradient(180deg,#251d3d 0%,#1a1430 100%);
   border-top:3px solid var(--line);box-shadow:0 -6px 14px rgba(0,0,0,.45);
   opacity:0;transition:opacity .2s ease,translate .3s cubic-bezier(.2,.9,.3,1);
@@ -779,7 +841,13 @@ body.inMatch .ebNext[hidden]{display:none}
 @media(prefers-reduced-motion:reduce){body.inMatch .ebNext{animation:none;opacity:.8}}
 body.inMatch:not(.four) .ebNext{right:12px;bottom:4px}
 
-body.inMatch .ebLeft{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;justify-content:center;gap:4px}
+/* **言葉は縮ませない。**`.ebLeft` は縦の flex なので、入りきらないと
+   既定（flex-shrink:1）で全部が均等に潰れる——`.ebLine`（セリフ）は 16px 要るのに
+   11px まで潰れて、**字が上下から切れて読めなくなっていた**（役を左へ移して気づいた。
+   移す前から潰れていた）。**縮んでよいのは牌の並び（.ebTiles）だけ**にする */
+body.inMatch .ebLeft{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;justify-content:center;gap:2px}
+body.inMatch .ebHead,body.inMatch .ebLine,body.inMatch .ebDora,body.inMatch .ebYaku{flex:none}
+body.inMatch .ebTiles{flex:0 1 auto}
 body.inMatch .ebRight{
   flex:0 0 auto;width:196px;display:flex;flex-direction:column;
   justify-content:center;align-items:flex-end;text-align:right;gap:2px;
@@ -850,7 +918,8 @@ body.inMatch #endband.scoreLead .ebScore .v{
   font-family:var(--maru);font-weight:900;line-height:1;font-size:clamp(26px,6.4vh,36px);
   color:#cfc4e6;-webkit-text-stroke:3.5px var(--line);paint-order:stroke fill;
 }
-body.inMatch #endband.scoreLead .ebYaku{order:3}
+/* **.ebYaku はもう .ebRight にいない**ので order を持たせない（agari-spec.md §2 追補）。
+   ここの order は .ebRight の中の並び（合計点が先、増減が後）だけの話 */
 body.inMatch:not(.four) #endband.scoreLead .ebScore{flex-direction:row;align-items:baseline;gap:6px}
 body.inMatch:not(.four) #endband.scoreLead .ebScore .v{font-size:26px}
 body.inMatch .ebScore{font-size:12px;color:#cfc4e6;display:flex;gap:6px;align-items:baseline}
@@ -858,13 +927,32 @@ body.inMatch .ebScore:empty{display:none}
 body.inMatch .ebScore .who{color:#a99ec6;font-size:10.5px}
 body.inMatch .ebScore .v{font-family:var(--maru);font-weight:800}
 body.inMatch .ebRight{overflow:hidden}
+
+/* ---- 三番目：符と翻と役名（§2 の追補・2026年9月10日） ----
+   **右は数字、左は言葉。**役名は `.ebRight`（四人卓で 196px）に
+   増減・合計点と一緒に積んでいて、10.5px ＋ `max-height:28px` ＋ `overflow:hidden`
+   だったので、**役が多いと黙って切れていた**（混一色ドラ4 で 14px ぶん＝六つのうち
+   三つが消える。実測）。幅の余っている `.ebLeft` へ移して字を大きくする。
+
+   **`--maru` にしないこと。**役名には `槓` が出る（槍槓・三槓子・四槓子）が、
+   丸ゴシックには収録が無い（CLAUDE.md「既知の課題」）。`--sans` のままなら割れない。
+
+   **溢れたら畳む。**`overflow:hidden` はあくまで保険で、実際に減らすのは
+   `ui.js` の `showEnd`（三つを超えたら「ほか N」）。
+   **`--ebh` は変えない**——高くすると卓が縮む */
 body.inMatch .ebYaku{
-  display:flex;flex-wrap:wrap;justify-content:flex-end;gap:0 8px;
-  font-size:10.5px;line-height:14px;color:#a99ec6;max-height:28px;overflow:hidden;
+  display:flex;flex-wrap:wrap;align-items:baseline;justify-content:flex-start;gap:0 10px;
+  font-size:15px;line-height:19px;color:#cfc4e6;max-height:38px;overflow:hidden;
 }
 body.inMatch .ebYaku:empty{display:none}
-body.inMatch .ebYaku .fu{color:#e6dcff;width:100%}
-body.inMatch .ebYaku .y i{font-style:normal;color:#7a7096;margin-left:3px}
+/* **符と翻は改行しない**（`width:100%` を持たせない）。四人卓の左の列は 610px あり、
+   「40符 9翻 倍満 立直1翻 一発1翻 混一色2翻 ほか 3」が**一行に入る**。
+   右に積んでいたころは幅が 196px しかなかったので改行が要っただけ。
+   一行に収まると `.ebLeft` の縦が 20px 空き、**`--ebh` を上げずに字を大きくできる** */
+body.inMatch .ebYaku .fu{color:#e6dcff;font-size:16px;font-weight:800}
+body.inMatch .ebYaku .y i{font-style:normal;color:#9a90b8;margin-left:3px;font-size:12px}
+/* 畳んだぶん。**「隠した」ではなく「まだある」と言うためのもの** */
+body.inMatch .ebYaku .more{color:#a99ec6;font-size:13px}
 
 /* ---------- 立ち絵（§3） ----------
    カットインの枠は流用しない。あれは会話の演出で、こちらは局の締め。
@@ -990,15 +1078,20 @@ body.inMatch .seat .tp.no{background:#4b4463;color:#c9c0dd}
 body.inMatch:not(.four) #endband{flex-direction:column;gap:5px;padding:8px 12px 10px}
 body.inMatch:not(.four) .ebScore,body.inMatch:not(.four) .ebYaku .fu,
 body.inMatch:not(.four) .ebYaku .y{white-space:nowrap}
-body.inMatch:not(.four) .ebLeft{flex:0 0 auto;gap:3px}
+body.inMatch:not(.four) .ebLeft{flex:0 0 auto;gap:2px}
 body.inMatch:not(.four) .ebRight{
   width:auto;flex-direction:row;align-items:baseline;justify-content:flex-start;
-  gap:12px;border-left:0;border-top:2px solid rgba(255,255,255,.09);padding:5px 0 0;text-align:left;
+  gap:12px;border-left:0;border-top:2px solid rgba(255,255,255,.09);padding:3px 0 0;text-align:left;
 }
 body.inMatch:not(.four) .ebDelta{font-size:30px;flex:none}
 body.inMatch:not(.four) .ebScore{font-size:11px;gap:4px}
-body.inMatch:not(.four) .ebYaku{justify-content:flex-start;max-height:15px;flex:1 1 auto}
-body.inMatch:not(.four) .ebYaku .fu{width:auto}
+/* **縦は 13.5px まで**（四人卓は 15px）。列レイアウトの左の列は 368px しかなく、
+   「25符 6翻 跳満 立直1翻 門前清自摸和1翻 七対子2翻 ほか 1」は**必ず二行になる。**
+   `--ebh` は 168px で動かせないので（上げると卓が縮む）、二行ぶんの高さを
+   字の側で作る。10.5px からは 29% 大きい。**四人卓の 15px は下げないこと** */
+body.inMatch:not(.four) .ebYaku{justify-content:flex-start;
+  font-size:13.5px;line-height:17px;max-height:36px}
+body.inMatch:not(.four) .ebYaku .fu{font-size:14.5px}
 body.inMatch:not(.four) .ebTiles .tile{width:calc(var(--tw)*.62);height:calc(var(--tw)*.84)}
 body.inMatch:not(.four) #endbust{
   width:118px;height:min(196px,calc(100% - var(--ebh) - 6px));bottom:calc(var(--ebh) - 12px);

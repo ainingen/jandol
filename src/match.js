@@ -97,16 +97,19 @@ const Match = (() => {
       <div id="endbust" class="endbust" hidden><img alt="">
         <span class="ebWho"><span class="kz"></span><span class="nm"></span></span></div>
       <div id="endband" class="endband" hidden>
+        <!-- **左は言葉、右は数字**（agari-spec.md §2 の追補）。
+             役名（.ebYaku）は幅の余っている左に置く——右の 196px に
+             10.5px で積んでいたころは、役が多いと黙って切れていた -->
         <div class="ebLeft">
           <div class="ebHead"></div>
           <div class="ebLine"></div>
           <div class="ebTiles"></div>
           <div class="ebDora"></div>
+          <div class="ebYaku"></div>
         </div>
         <div class="ebRight">
           <div class="ebDelta"></div>
           <div class="ebScore"></div>
-          <div class="ebYaku"></div>
         </div>
         <!-- 演出が終わってから出す。**押せると分からなければ、ユーザーは待つだけになる** -->
         <div class="ebNext" hidden>タップで次へ</div>
