@@ -84,6 +84,7 @@ const viewOf = (p) => p.evaluate(() => ({
     why: !!n.querySelector('.tkWhy'),
   })),
   tier: document.querySelector('.tkRoot').dataset.tier || null,
+  hold: document.body.classList.contains('tkHold'),
   result: !!document.querySelector('.tkChampion'),
   rounds: !!document.querySelector('.tkRound'),
 }));
@@ -150,6 +151,9 @@ const install = (p, winRounds) => p.evaluate((wins) => {
     ok(r1.cards[0].mine, '自分が先頭');
     eq(r1.cards.filter((c) => c.why).length, 0, '**見出し語（why）は付けない**（§4③）');
     eq(r1.tier, 'open', '大会の色が付いたまま');
+    /* **セーブを消す釦を出さない**（§7）。`#appReset` は shell.html の枠なので
+       `taikai.html` には無い。ここで見るのは印が立っていること */
+    ok(r1.hold, '中継のあいだは body.tkHold が立つ（「最初からやり直す」を隠す）');
     await shot(p, 'round-1');
 
     await p.click('[data-act="round-go"]');
@@ -157,6 +161,7 @@ const install = (p, winRounds) => p.evaluate((wins) => {
     await p.waitForSelector('[data-act="round-go"]', { timeout: 5000 });
     const r2 = await viewOf(p);
     eq(r2.title, '準決勝', '打ち終わると次の中継（準決勝）が出る');
+    ok(r2.hold, '次の中継でも印が立っている');
     ok(r2.up, '準決勝では②勝ち上がりが出る');
     /* **人数を決め打ちしない。**自分以外の三人は別の卓にいて `simulateTable` が
        処理するので、何人残るかは走行ごとに変わる。見るのは
@@ -183,6 +188,7 @@ const install = (p, winRounds) => p.evaluate((wins) => {
     await p.click('[data-act="round-go"]');
     await p.waitForFunction(() => window.__calls.length >= 3, null, { timeout: 5000 });
     await p.waitForSelector('[data-act="result"]', { timeout: 8000 });
+    ok(!(await viewOf(p)).hold, '中継が終われば印が落ちる（進行の画面では出す）');
     const calls = await p.evaluate(() => window.__calls);
     eq(calls.map((c) => c.name), ['一回戦', '準決勝', '決勝卓'], '三回戦とも自分が打った');
     eq(calls.map((c) => c.isFinal), [false, false, true], '決勝卓だけ isFinal');
@@ -205,6 +211,7 @@ const install = (p, winRounds) => p.evaluate((wins) => {
     await p.waitForSelector('[data-act="result"]', { timeout: 8000 });
     const v = await viewOf(p);
     ok(!v.bridge, '敗退したあとの準決勝・決勝卓では中継が出ない');
+    ok(!v.hold, '敗退して抜けたあとも印が落ちている');
     ok(v.rounds, 'そのまま進行の画面へ抜ける');
     eq((await p.evaluate(() => window.__calls)).length, 1, '打ったのは一回戦だけ');
     await p.close();
@@ -222,6 +229,7 @@ const install = (p, winRounds) => p.evaluate((wins) => {
     await p.waitForSelector('[data-act="result"]', { timeout: 8000 });
     const v = await viewOf(p);
     ok(!v.bridge, 'autoMatch では中継が一度も出ない');
+    ok(!v.hold, 'autoMatch では印も立たない');
     ok(v.rounds, '進行の画面まで一気に進む');
     await p.close();
   }

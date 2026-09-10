@@ -834,8 +834,25 @@ const Taikai = (() => {
       </section>`;
     }
 
+    /* 中継のあいだは、セーブを消す釦（「最初からやり直す」）を出さない
+       （`round-spec.md` §7）。あれは `shell.html` が**全画面に出している枠**
+       （`#appReset`）で、`taikai.js` の持ち物ではない。隠しているのは
+       表紙（`body.onTitle`）と対局中（`body.inMatch`）の二つだけなので、
+       中継にも出る。**「打つ」の隣に、押すと大会が消える釦を置かない。**
+
+       **印を立てるのはここ、何を隠すかを決めるのは `shell.html`。**
+       枠の中身を `taikai.js` から知らないため。
+       落とすのは `showLoading()`（中継を出るとき）と、`shell.html` の `go()`
+       （下のタブで抜けたとき）の二つ */
+    const holdChrome = (on) => {
+      if (typeof document !== 'undefined' && document.body) {
+        document.body.classList.toggle('tkHold', !!on);
+      }
+    };
+
     function renderBridge(info) {
       clearEntrance();
+      holdChrome(true);
       root.dataset.tier = prepared.tierId;
       /* **自分が先頭、あとは `table` の順**（§4③）。`makeTables` は席を
          シャッフルするので、そのまま並べると自分がどこに出るか毎回変わる */
@@ -859,6 +876,7 @@ const Taikai = (() => {
        外れた瞬間に**前の回戦の中継が一瞬だけ戻る**（次の中継が組まれるまでの隙間）。
        押せる釦まで一緒に戻ってくる */
     function showLoading() {
+      holdChrome(false);
       root.innerHTML = `<p class="tkQuiet tkLoading">卓が立ちました…</p>`;
     }
 

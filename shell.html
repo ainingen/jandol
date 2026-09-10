@@ -76,6 +76,11 @@ body.onTitle{padding-bottom:0}
 
 /* 対局中は卓だけにする */
 body.inMatch #appTop,body.inMatch #nav,body.inMatch .appReset,body.inMatch #view{display:none}
+/* 「答えるまで先へ進めない画面」のあいだは、セーブを消す釦を出さない。
+   いまは大会の中継（`docs/design/taikai/round-spec.md` §7）だけが立てる。
+   **「打つ」の隣に、押すと大会が消える釦を置くには危なすぎる。**
+   立てるのは taikai.js、何を隠すかを決めるのはここ（枠はこちらの持ち物） */
+body.tkHold .appReset{display:none}
 body.inMatch{padding-bottom:0}
 #matchRoot:empty{display:none}
 #matchRoot{display:flex;justify-content:center;width:100%}
@@ -385,6 +390,9 @@ body.inMatch #matchRoot{flex:1;min-height:0}
       document.querySelectorAll('.popup,.mkOverlay,.scReveal'),
       function (el) { el.remove(); }
     );
+    /* 「答えるまで先へ進めない」印は、画面を出たら必ず落とす。
+       立てた画面から下のタブで抜けられるので、**ここが最後の砦** */
+    document.body.classList.remove('tkHold');
     current = name;
     view.innerHTML = '';
     var root = document.createElement('div');
