@@ -51,6 +51,11 @@ function ok(cond, name, detail) {
 function eq(a, b, name) {
   ok(a === b, name, 'got ' + JSON.stringify(a) + ' / want ' + JSON.stringify(b));
 }
+/* 配列や物を丸ごと見るとき（`eq` は === なので通らない） */
+function sameJ(a, b, name) {
+  ok(JSON.stringify(a) === JSON.stringify(b), name,
+    'got ' + JSON.stringify(a) + ' / want ' + JSON.stringify(b));
+}
 
 /* ============================================================
    Geo — 県と地方（spec.md §4）
@@ -1645,6 +1650,64 @@ function eq(a, b, name) {
   ok(Array.isArray(JansouFloor.STAFF_BODY) && typeof JansouFloor.staffColor === 'function', 'スタッフの体が出ている');
   eq(JansouFloor.PAL.wall, '#301634', 'PAL.wall はそのまま');
   eq(JansouFloor.PAL.signOff, '#4a2a44', 'PAL.signOff（事務所の壁）はそのまま');
+}
+
+/* ============================================================
+   招待の消費（`office/spec.md` §8.2）
+
+   大会のタブが `offerAccepted` を「いま受けている招待の一覧」として読むので、
+   **終わったら落とさないと同じ招待で何度でも出られる**。
+   落としてよいのは**大会だけ**——契約イベントの `offerAccepted` は
+   `RULES.event` が「受けたか」を見る印なので、消すと図鑑が閉じる
+   ============================================================ */
+{
+  const st = { offerAccepted: ['taikai-rookie', 'taikai-open', 'event-001', 'idol-photo'] };
+
+  sameJ(Office.dropAccepted(st, 'taikai-rookie'),
+    ['taikai-open', 'event-001', 'idol-photo'], '大会の招待は落とす');
+  sameJ(Office.dropAccepted(st, 'event-001'),
+    ['taikai-rookie', 'taikai-open', 'event-001', 'idol-photo'],
+    '**契約イベントは落とさない**（RULES.event が見る印）');
+  sameJ(Office.dropAccepted(st, 'idol-photo'),
+    ['taikai-rookie', 'taikai-open', 'event-001', 'idol-photo'],
+    'アイドル案件も落とさない（誰も読まないので触らない）');
+  sameJ(Office.dropAccepted(st, 'no-such-id'),
+    ['taikai-rookie', 'taikai-open', 'event-001', 'idol-photo'],
+    '知らない id では何も落とさない');
+  sameJ(Office.dropAccepted({}, 'taikai-rookie'), [], 'offerAccepted が無くても落ちない');
+  /* **元の配列を書き換えないこと**（純関数。書くのは呼ぶ側） */
+  sameJ(st.offerAccepted, ['taikai-rookie', 'taikai-open', 'event-001', 'idol-photo'],
+    'st を書き換えない');
+
+  /* 落とすのは `afterTournament` の一箇所だけ
+     ——二つの入口（事務所のメールと大会のタブ）が合流する一点 */
+  const OJ = require('fs').readFileSync(
+    require('path').join(__dirname, '..', 'src', 'office.js'), 'utf8')
+    .replace(/\/\*[\s\S]*?\*\//g, '');
+  sameJ((OJ.match(/dropAccepted\(/g) || []).length, 2,
+    'dropAccepted は定義と呼び出しの二つだけ（写しが無い）');
+  ok(/function afterTournament\(def, res\) \{\s*store\.set\(\{ offerAccepted: dropAccepted\(store\.get\(\), def\.id\) \}\);/
+    .test(OJ), '落とすのは afterTournament の頭（二つの入口が合流する一点）');
+}
+
+/* ============================================================
+   出場資格は `tournament.js` の canEnter が正（写しを持たない）
+   ============================================================ */
+{
+  ok(typeof canEnter === 'function', 'tournament.js が canEnter を出している');
+  /* `strict` の大会は band にある級だけ。**招待もタブも同じものを通る** */
+  ok(canEnter('rookie', 'C') && !canEnter('rookie', 'S'),
+    '新人戦（strict）に S級は出られない');
+  ok(canEnter('local', 'B') && !canEnter('local', 'A'), '地方リーグ（strict）も同じ');
+  ok(canEnter('open', 'C') && canEnter('open', 'S') && !canEnter('open', 'D'),
+    '全国オープン（strict でない）は C級から上');
+  /* 招待の `when` が同じ判定を通ること */
+  const roster3 = [{ id: 1 }, { id: 2 }, { id: 3 }];
+  const rookie = Offers.byId('taikai-rookie');
+  ok(!rookie.when({ playerRank: 'S', team: [1, 2, 3] }, roster3),
+    '**S級に新人戦の招待は届かない**（押せない札が並ばない）');
+  ok(rookie.when({ playerRank: 'C', team: [1, 2, 3] }, roster3),
+    'C級には届く');
 }
 
 /* ============================================================ */

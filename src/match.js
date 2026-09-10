@@ -430,19 +430,32 @@ const Match = (() => {
     UI._nodes = null;
     UI._seq = null;
     UI._seqKyoku = null;
+    /* おまかせに入る前の速さ。**`UI.auto` と対で戻すこと**
+       ——残っていると、次の対局で `takeOver` が前の半荘の速さを復す */
+    UI._preAutoSpeed = null;
+
+    /* 釦は**切り替え**。消さない（`ui.js` の `giveUp` / `takeOver`）。
+       おまかせは長い大会を流すための機能なのに、押した瞬間に
+       その半荘を手放すことになると、怖くて押せない。
+       **入るときは確認あり、出るときは確認なし**——出るのは
+       取り上げられた操作を返すだけなので、間違って押しても害が無い。
+       **場所は変えない**（右上。帯の下に置かないため。`match.css`） */
     const giveBtn = host.querySelector('#giveup');
+    const syncGive = () => { giveBtn.textContent = UI.auto ? '手打ちに戻る' : 'おまかせ'; };
+    syncGive();
     giveBtn.addEventListener('click', async () => {
+      if (UI.auto) { UI.takeOver(); syncGive(); return; }
       const v = await UI.modal(
         '<h2>残りをおまかせにしますか</h2>' +
         '<p class="mdNote">ここから先は自分の手もCPUが打ちます。' +
-        '着順はそのまま結果になります。<br>途中でやめることはできません。</p>',
+        '着順はそのまま結果になります。<br>同じ釦で手打ちに戻せます。</p>',
         [{ v: 'fast', label: '早送りで終わらせる', primary: true },
          { v: 'auto', label: '見ながら自動で進める' },
          { v: 'x', label: '自分で打つ', ghost: true }]
       );
       if (v === 'x') return;
-      giveBtn.remove();
       UI.giveUp(v === 'fast' ? 0 : UI.speed);
+      syncGive();
     });
 
     /* 向きの誘導。閉じたら二度と出さない（局ごとに出ると邪魔） */

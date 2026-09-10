@@ -524,6 +524,40 @@ cost = SCOUT_COST × (1 + far) × (1 + 同行者数)
 `taikai.js` の大会選択画面は外し、依頼から入る。
 大会は `days` を消費し、出場者は `members` で送る（既存のチーム編成を流用）。
 
+**入れた形（2026年9月10日）。**依頼の経路は第四段で入ったが、
+**その前からある大会のタブが閉じられずに残っていた。**
+招待が来ていないのに五つ並び、終わっても消えないので**出放題**——
+地方リーグは優勝50万なので経済に穴が空き、契約イベントの
+`records[tier].best === '優勝'` も本来より早く開いていた。
+タブから入ると `store.goTaikai` を通らないので `onDone` が無く、
+`afterTournament` → `runJobDays` に届かず、**日が1日も進まなかった。**
+
+**タブは残し、中身を「いま受けている招待の一覧」にした。**
+
+- `renderSelect` は `TOURNAMENTS` を全部並べるのをやめ、
+  **`st.offerAccepted` のうち `kind === 'tournament'` のものだけ**を出す
+- 札は `data-offer` を持ち、押すと **`store.goTaikai(tierId, offerId)`**
+  ——**依頼から入るのと同じ経路**。賞金も `records` も日数も同じ扱いになる
+- **招待は `afterTournament` で消費する**（`Office.dropAccepted`）。
+  二つの入口が合流する一点なので、落とすのもそこ一箇所。
+  `once: false` なので、条件を満たせばまた朝に届く。
+  **落としてよいのは大会だけ**——契約イベントの `offerAccepted` は
+  `RULES.event` が見る印なので、消すと図鑑が閉じる
+- **招待がゼロの日は空でよい。**「今日は招待がありません」の一言だけ
+- **`.tkSettings`（対局の設定）はタブの中に残す。**対局の設定なので
+  大会の画面にあるのがいちばん近い。事務所の物にすると探す場所が増える
+- **`Offers` は「あれば使う」**（`jansou.js` が `Office` を使う作法）。
+  単体ページ（`taikai.html`）は `offers.js` を読まないので、
+  **いままでどおり五つ並ぶ**——開発用の入口はそのまま
+
+**出場資格の判定を一本にした。**`taikai.js`（タブの札）と `offers.js`
+（招待の発火）が別々に `canEnter` を持っていて、`offers.js` の簡略版は
+`strict` を見ていなかった。**S級に新人戦（C級以下だけ）の招待が届き、
+タブでは押せない札として並ぶ**形が、タブを招待の一覧にした瞬間に表へ出た。
+**正は `tournament.js` の `canEnter`**（`TOURNAMENTS` と同じ場所）で、
+両方がそこを通る。`tools/test-office.js` と `tools/test-taikai-field.js` が
+「写しが無いこと」を機械的に見ている。
+
 **契約イベント** — `contract === 'event'` の6人。条件は依頼テーブルに書く
 （HANDOVER §3 の推奨: `favor` ＋ `agency` ＋ 大会実績の三段）。
 受けると「口説く」の遠征になる（§7.3）。`RULES.event` は

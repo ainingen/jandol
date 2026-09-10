@@ -63,10 +63,11 @@ const Offers = (() => {
      **一度きりではない。**条件を満たしているかぎり、また来る
   ------------------------------------------------------------ */
   const RANK_ORDER = ['D', 'C', 'B', 'A', 'S'];
-  function canEnter(tierId, rank) {
-    const t = TOURNAMENTS[tierId];
-    return RANK_ORDER.indexOf(rank) >= RANK_ORDER.indexOf(t.band[0]);
-  }
+  /* **出場資格は `tournament.js` の `canEnter` が正。ここに書かない。**
+     以前ここに簡略版（`band` の一番下以上なら誰でも）があり、`strict` を
+     見ていなかった。大会のタブが招待の一覧になったことで、
+     **S級に新人戦（C級以下だけ）の招待が届いて押せない札として並ぶ**形が
+     表に出た。判定を一本にして直してある */
 
   const TOURNAMENT_OFFERS = Object.keys(TOURNAMENTS).map((tierId) => {
     const t = TOURNAMENTS[tierId];

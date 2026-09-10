@@ -143,6 +143,25 @@ const TOURNAMENTS = {
     band: ['A', 'S'], strict: false, note: '八人の座を賭ける六十四人' },
 };
 
+/* 出場資格。**ここが正。**`taikai.js`（タブの札）と `offers.js`（招待の発火）が
+   同じものを通ること——**二か所に書くと必ずずれる**（`RULES.event` で通った話）。
+   実際にずれていて、`offers.js` の簡略版が「`band` の一番下以上なら誰でも」と
+   見ていたため、**S級のプレイヤーに新人戦（C級以下だけ）の招待が届き、
+   タブでは押せない札として並ぶ**という形になっていた。
+
+   `strict` の大会（新人戦・地方リーグ）は **`band` に自分の級がある人だけ**。
+   `strict` でない大会は **`band` の一番下から上は誰でも**（格上は歓迎される） */
+const CAN_ENTER_RANKS = ['D', 'C', 'B', 'A', 'S'];
+function canEnter(tierId, playerRank) {
+  const t = TOURNAMENTS[tierId];
+  if (!t) return false;
+  if (!t.strict) {
+    const min = t.band.reduce((a, r) => Math.min(a, CAN_ENTER_RANKS.indexOf(r)), 9);
+    return CAN_ENTER_RANKS.indexOf(playerRank) >= min;
+  }
+  return t.band.includes(playerRank);
+}
+
 /* ---------- 64人の枠を組む ---------- */
 /* team は プレイヤー＋仲間3人 の配列。pool は残りの雀ドル全部 */
 function buildField(tierId, team, pool, opts = {}) {
@@ -222,6 +241,6 @@ if (typeof module !== 'undefined') {
   module.exports = {
     gradeOf, compFromRank, addExp, paramsOf, strengthOf,
     PLACE_KEYS, recordResult, hasRecord,
-    TOURNAMENTS, buildField, makeTables, simulateTable, roundName, GROWTH_CURVE,
+    TOURNAMENTS, canEnter, buildField, makeTables, simulateTable, roundName, GROWTH_CURVE,
   };
 }
