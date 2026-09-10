@@ -364,6 +364,18 @@ const Title = (() => {
               ${started ? '最初からはじめる' : 'はじめる'}</button>
           </div>
           <p class="ttFoot">本格麻雀。イカサマなし、牌操作なし。</p>
+          <!-- **版と断りは DOM に置く。canvas には描かないこと。**
+               PLiCy のサムネイルは index.html の最初の canvas の中身だけを撮るので、
+               canvas に描くと版がサムネイルに焼き付き、上げるたびに看板が変わる。
+               「暫定版」が看板に出続けるのも避けたい（README「表紙とサムネイル」）。
+               DOM なら画面には見えて、サムネイルには写らない。
+               **font-weight は 700（既定）のまま。**800 は maru-title.woff2 で
+               題字と副題の20文字しか入っていないので、丸ごと代替書体に落ちる
+               （drawCredit が 700 で描いているのと同じ理由） -->
+          <p class="ttVer">
+            <span class="ttVerNo">${VERSION}　暫定版</span>
+            <span class="ttVerNote">ご意見・不具合は PLiCy のコメントへお願いします</span>
+          </p>
         </div>`;
       fitTop();
     }
@@ -387,10 +399,18 @@ const Title = (() => {
        送られたまま測ると、ボタンが上にあるように見えて「収まっている」と
        誤判定する（設定から戻ったときに実際そうなった）。
        枠の中身の座標に直してから、枠の見える高さと比べる。
-       単体ページには #scroll が無いので、そのときは文書全体で測る。 */
+       単体ページには #scroll が無いので、そのときは文書全体で測る。
+
+       **測るのは `.ttBody` の下端。最後のボタンではない**（2026年9月10日）。
+       ボタンで測っていたころ、**その下の脚注と版が黙って画面の外に落ちていた**
+       ——進行済みのセーブ（「続きから」が増える）だと 1280×800 でも
+       360×568 でも脚注が切れていた（版を足す前から）。
+       **見せる気で置いた文字が、測られていないだけで消える。**
+       落とす順（あらすじ → ロスター）はそのままなので、
+       **新規のセーブではどの大きさでもあらすじは残る**（実測）。
+       落ちるのは進行済みのセーブの狭い画面だけで、そこは一度読んだあと。 */
     function fitsInView() {
-      const btns = root.querySelectorAll('.ttBtn');
-      const last = btns[btns.length - 1];
+      const last = root.querySelector('.ttBody') || root.querySelectorAll('.ttBtn')[0];
       if (!last) return true;
       const host = document.getElementById('scroll') || document.documentElement;
       const bottom = last.getBoundingClientRect().bottom
