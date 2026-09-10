@@ -85,6 +85,26 @@ const viewOf = (p) => p.evaluate(() => ({
   })),
   tier: document.querySelector('.tkRoot').dataset.tier || null,
   hold: document.body.classList.contains('tkHold'),
+  final: !!document.querySelector('.tkBridge.final'),
+  prize: ((document.querySelector('.tkStakes .tkPrizeBig b') || {}).textContent || '').trim(),
+  ladder: document.querySelectorAll('.tkLadder li').length,
+  /* 決勝卓のカードの実測（§5・E）。**顔がカードいっぱいか**、
+     **打ち筋と完成度バーが出ていないか**を計算後の値で見る */
+  shape: (() => {
+    const cs = Array.from(document.querySelectorAll('.tkCards .tkCard'));
+    if (!cs.length) return null;
+    const c = cs[0];
+    /* **打ち筋と完成度バーは自分のカードには元から無い**（`tkBare`）。
+       出す・出さないを見るには**仲間か相手のカード**を取ること */
+    const other = cs.find((x) => !x.classList.contains('tkBare')) || cs[1] || c;
+    const g = (sel) => { const e = other.querySelector(sel); return e ? getComputedStyle(e).display : null; };
+    return {
+      /* 縁のぶんを外して測る（`.mine` は 2px なので、外枠だと必ず食い違う） */
+      cardH: c.clientHeight,
+      faceH: Math.round(c.querySelector('.tkFace').getBoundingClientRect().height),
+      style: g('.tkCardStyle'), track: g('.tkTrack'), cond: g('.tkCond'),
+    };
+  })(),
   result: !!document.querySelector('.tkChampion'),
   rounds: !!document.querySelector('.tkRound'),
 }));
@@ -183,6 +203,24 @@ const install = (p, winRounds) => p.evaluate((wins) => {
     const r3 = await viewOf(p);
     eq(r3.title, '決勝卓', '決勝卓の中継が出る');
     eq(r3.rest, '残り4名', '決勝卓は残り4名');
+    /* ---- 段3（§5・E）---- */
+    ok(r3.final, '決勝卓は .tkBridge.final');
+    ok(!r1.final && !r2.final, '通常の回戦には final が付かない');
+    eq(r3.go, '決勝卓へ', '釦は「決勝卓へ」');
+    ok(r3.up, '②の勝ち上がりは決勝でも出す（四人で入って何人残ったかが読める）');
+    ok(/^[\d,]+円$/.test(r3.prize), '賞金を再掲する', r3.prize);
+    ok(!r1.prize && !r2.prize, '通常の回戦では賞金を出さない', r1.prize + '/' + r2.prize);
+    eq(r3.ladder, 0, '梯子は出さない（ここが最後なので先が無い）');
+    /* **顔がカードいっぱい**（E）。上半分だけの通常のカードと分ける */
+    ok(r3.shape.faceH === r3.shape.cardH,
+      '決勝は顔がカードいっぱい', JSON.stringify(r3.shape));
+    ok(r2.shape.faceH < r2.shape.cardH * 0.8,
+      '通常の回戦は顔が上半分だけのまま', JSON.stringify(r2.shape));
+    /* **打ち筋と完成度バーは出さない**（E）。三回戦打って来た相手なので数字は要らない */
+    eq([r3.shape.style, r3.shape.track], ['none', 'none'],
+      '決勝は打ち筋・完成度バーを出さない');
+    eq([r2.shape.style, r2.shape.track], ['block', 'block'],
+      '通常の回戦では出したまま');
     await shot(p, 'round-3');
 
     await p.click('[data-act="round-go"]');

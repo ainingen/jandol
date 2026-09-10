@@ -281,6 +281,62 @@
   border-top:1px solid rgba(201,162,74,.15);padding-top:5px;
 }
 
+/* ---------- 決勝卓（round-spec.md §5・E） ----------
+   同じ骨格のまま、**顔が主・文字が従**に組み替える。
+   **`cardHTML` には分岐が無い。**ここの CSS だけで別物にする */
+
+/* ① 見出しを大きく、大会の色を効かせる */
+.tkBridge.final .tkFieldHead{border-bottom-width:3px;padding-bottom:9px}
+.tkBridge.final .tkTitle{font-size:30px;color:var(--tk-accent);letter-spacing:.1em}
+
+/* ③ 顔をカードいっぱいに。**打ち筋と完成度バーは出さない**——
+   ここまで三回戦を打って来た相手なので、能力の数字はもう要らない。
+   残った三人が誰かだけが要る */
+.tkBridge.final .tkCard{
+  position:relative;aspect-ratio:5/8;padding:0;gap:0;overflow:hidden;
+}
+.tkBridge.final .tkFace{
+  position:absolute;inset:0;aspect-ratio:auto;border-radius:0;
+}
+.tkBridge.final .tkCardStyle,
+.tkBridge.final .tkCard .tkTrack,
+.tkBridge.final .tkCond{display:none}
+
+/* 名前と級は顔の下端に重ねる。**膜を一枚敷いてから載せる**
+   ——明るいポートレートでは、字だけ置くと沈む */
+.tkBridge.final .tkCard::after{
+  content:"";position:absolute;left:0;right:0;bottom:0;height:58%;z-index:1;
+  background:linear-gradient(rgba(8,16,14,0) 0%,rgba(8,16,14,.5) 40%,rgba(8,16,14,.94) 100%);
+  pointer-events:none;
+}
+/* 下端へ寄せるのは `margin-top:auto`（絶対配置にしない）。
+   **名前が二行になっても級と重ならない**ため */
+/* **顔が主なので、字は詰める。**13px だと 4列（1枚 89px）で六文字の名前が
+   折れて「テスト事務／所」になった */
+.tkBridge.final .tkCard .tkCardName{
+  margin-top:auto;position:relative;z-index:2;
+  padding:0 5px;font-size:12.5px;line-height:1.25;color:#fff;letter-spacing:0;
+}
+.tkBridge.final .tkCardSub{
+  position:relative;z-index:2;padding:1px 5px 6px;
+}
+.tkBridge.final .tkCardSub b{color:var(--ivory)}
+/* **膜の上でも沈まないように、四方に1pxの暗い影**（ホワイトボードの字と同じ手）。
+   ぼかしだけだと、白っぽい服や明るい壁のところで輪郭が消える */
+.tkBridge.final .tkCardName,
+.tkBridge.final .tkCardSub b{
+  text-shadow:1px 1px 0 rgba(0,0,0,.9),-1px 1px 0 rgba(0,0,0,.9),
+              1px -1px 0 rgba(0,0,0,.9),-1px -1px 0 rgba(0,0,0,.9),
+              0 2px 7px rgba(0,0,0,.95);
+}
+/* **A の縦中央（`tkBare`）は決勝では効かせない。**名前と級を顔の下端に
+   重ねるので、真ん中へ寄せると顔の中に浮く。名前の `margin-top:auto` は
+   決勝でも同じものが要るので、消すのは級の下の `auto` だけ */
+.tkBridge.final .tkCard.tkBare .tkCardSub{margin-bottom:0}
+
+/* 自分のカードは決勝でも金の縁。**地の色は敷かない**（顔が全面なので見えない） */
+.tkBridge.final .tkCard.mine{border-color:var(--gold);border-width:2px}
+
 /* ---------- 進行 ---------- */
 .tkRound{margin-bottom:16px}
 .tkRoundT{

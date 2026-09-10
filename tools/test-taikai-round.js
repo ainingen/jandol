@@ -324,6 +324,30 @@ async function withResume(rec, fn) {
     same(acts, ['data-act="round-go"'], '中継の押せる口は round-go 一つだけ');
   }
 
+  /* ============================================================
+     8. 決勝卓は CSS だけで組み替える（§5・E）
+
+     **`cardHTML` に分岐を増やさない。**出走表と中継と決勝で三通りのカードを
+     組むことになり、直すたびに三か所を見ることになる
+     ============================================================ */
+  {
+    const card = (TK.match(/const cardHTML = \(c, o\) => \{[\s\S]*?\n    \};/) || [''])[0];
+    ok(card.length > 100, 'cardHTML が読めた', String(card.length));
+    ok(!/isFinal|final/.test(card), 'cardHTML に決勝卓の分岐が無い（CSS だけで組み替える）');
+    /* 渡せるのは `mine` と `why` の二つだけ */
+    const keys = Array.from(new Set((card.match(/\bo\.[a-zA-Z]+/g) || [])));
+    same(keys.sort(), ['o.mine', 'o.why'], 'cardHTML が見る opts は mine と why だけ');
+
+    /* 決勝の見せ方は `.tkBridge.final` の側に全部あること */
+    const CSS = rd('src/taikai.css');
+    ['\\.tkBridge\\.final \\.tkFace', '\\.tkBridge\\.final \\.tkCard'].forEach((re) => {
+      ok(new RegExp(re).test(CSS), 'CSS に ' + re.replace(/\\\\/g, '') + ' がある');
+    });
+    /* **A の `tkBare` を決勝で打ち消していること**（顔に重なるので縦中央にしない） */
+    ok(/\.tkBridge\.final \.tkCard\.tkBare \.tkCardSub\{[^}]*margin-bottom:0/.test(CSS),
+      '決勝では tkBare の縦中央を効かせない');
+  }
+
   /* ------------------------------------------------------------ */
   if (fails.length) {
     console.log(pass + ' 件通過、' + fails.length + ' 件失敗');

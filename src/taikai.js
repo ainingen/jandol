@@ -866,15 +866,28 @@ const Taikai = (() => {
       const seats = info.table.filter((c) => c.id === 0)
         .concat(info.table.filter((c) => c.id !== 0));
       const cards = seats.map((c) => cardHTML(c, { mine: c.id === 0 })).join('');
+      /* **決勝卓だけ賞金を再掲する**（§5）。出走表で見たきり、ここまで一度も
+         出ていない。**梯子は出さない**——ここが最後なので、もう先が無い */
+      const prize = info.isFinal ? `<div class="tkStakes">
+        <div class="tkPrizeBig"><span class="tkPrizeBigL">優勝</span>
+          <b>${yen(prepared.tier.prize)}</b></div>
+      </div>` : '';
+      /* **決勝卓の見せ方は `.tkBridge.final` の CSS だけで組み替える**（§5・E）。
+         `cardHTML` に分岐を増やさない——出走表と中継と決勝で三通りの
+         カードを組むことになり、直すたびに三か所を見ることになる */
       root.innerHTML = `
-        <div class="tkHead tkFieldHead"><h1 class="tkTitle">${esc(info.name)}</h1>
-          <div class="tkStatus"><span class="tkStat">${esc(prepared.tier.name)}</span></div></div>
-        ${bridgeUp(info)}
-        <section class="tkFieldSec">
-          <h2 class="tkSecT">次の卓</h2>
-          <div class="tkCards">${cards}</div>
-        </section>
-        <button type="button" class="tkGo" data-act="round-go">${esc(info.name)}を打つ</button>`;
+        <div class="tkBridge${info.isFinal ? ' final' : ''}">
+          <div class="tkHead tkFieldHead"><h1 class="tkTitle">${esc(info.name)}</h1>
+            <div class="tkStatus"><span class="tkStat">${esc(prepared.tier.name)}</span></div></div>
+          ${bridgeUp(info)}
+          ${prize}
+          <section class="tkFieldSec">
+            <h2 class="tkSecT">次の卓</h2>
+            <div class="tkCards">${cards}</div>
+          </section>
+          <button type="button" class="tkGo" data-act="round-go">${
+            info.isFinal ? '決勝卓へ' : esc(info.name) + 'を打つ'}</button>
+        </div>`;
     }
 
     /* 卓に入るまでのつなぎ。**中継を渡すときにも必ずこれを出す**——
