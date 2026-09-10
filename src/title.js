@@ -69,6 +69,24 @@ const Title = (() => {
   const CREDIT_LABEL = 'produced by';
   const CREDIT_NAME = '夜中のBBQ';
 
+  /* **公開の版。app 全体の版はここが正で、リポジトリの他のどこにも無い。**
+     上げるときは**この一行を書き換えるだけ**——他に触る場所は無い
+     （表紙が読んで出すだけで、判定にも保存にも使っていない）。
+     ただし**番号ではなく文言のほうを変えたら**（「暫定版」を別の語にするなど）
+     `python3 tools/make-font.py` を回すこと。数字と英字は
+     `KANA_RANGES` が丸ごと入れているので、版を上げるだけなら要らない。
+
+     **`resume.js` の保存形式の版とは別物。混ぜないこと。**
+     あちらは「控えの中身の意味を変えたら上げる」内部の版で、
+     古い控えを黙って捨てるための印。こちらは**遊ぶ人に見せる番号。**
+     片方を上げても、もう片方は動かない。
+
+     **canvas には描かないこと。**PLiCy のサムネイルは
+     index.html の最初の canvas の中身だけを撮るので、描くと
+     版がサムネイルに焼き付き、上げるたびに看板が変わる
+     （README「表紙とサムネイル」）。表紙の DOM に出す。 */
+  const VERSION = 'v0.5.0';
+
   /* 表紙の書体。'Maru' は maru.css が二つの太さで定義している。
      **タグは 700 で描くこと。**800（maru-title.woff2）は題字と副題の
      20文字しか入っていないので、そちらで描くと「夜中のBBQ」が
@@ -349,6 +367,18 @@ const Title = (() => {
               ${started ? '最初からはじめる' : 'はじめる'}</button>
           </div>
           <p class="ttFoot">本格麻雀。イカサマなし、牌操作なし。</p>
+          <!-- **版と断りは DOM に置く。canvas には描かないこと。**
+               PLiCy のサムネイルは index.html の最初の canvas の中身だけを撮るので、
+               canvas に描くと版がサムネイルに焼き付き、上げるたびに看板が変わる。
+               「暫定版」が看板に出続けるのも避けたい（README「表紙とサムネイル」）。
+               DOM なら画面には見えて、サムネイルには写らない。
+               **font-weight は 700（既定）のまま。**800 は maru-title.woff2 で
+               題字と副題の20文字しか入っていないので、丸ごと代替書体に落ちる
+               （drawCredit が 700 で描いているのと同じ理由） -->
+          <p class="ttVer">
+            <span class="ttVerNo">${VERSION}　暫定版</span>
+            <span class="ttVerNote">ご意見・不具合は PLiCy のコメントへお願いします</span>
+          </p>
         </div>`;
       fitTop();
     }
@@ -372,10 +402,18 @@ const Title = (() => {
        送られたまま測ると、ボタンが上にあるように見えて「収まっている」と
        誤判定する（設定から戻ったときに実際そうなった）。
        枠の中身の座標に直してから、枠の見える高さと比べる。
-       単体ページには #scroll が無いので、そのときは文書全体で測る。 */
+       単体ページには #scroll が無いので、そのときは文書全体で測る。
+
+       **測るのは `.ttBody` の下端。最後のボタンではない**（2026年9月10日）。
+       ボタンで測っていたころ、**その下の脚注と版が黙って画面の外に落ちていた**
+       ——進行済みのセーブ（「続きから」が増える）だと 1280×800 でも
+       360×568 でも脚注が切れていた（版を足す前から）。
+       **見せる気で置いた文字が、測られていないだけで消える。**
+       落とす順（あらすじ → ロスター）はそのままなので、
+       **新規のセーブではどの大きさでもあらすじは残る**（実測）。
+       落ちるのは進行済みのセーブの狭い画面だけで、そこは一度読んだあと。 */
     function fitsInView() {
-      const btns = root.querySelectorAll('.ttBtn');
-      const last = btns[btns.length - 1];
+      const last = root.querySelector('.ttBody') || root.querySelectorAll('.ttBtn')[0];
       if (!last) return true;
       const host = document.getElementById('scroll') || document.documentElement;
       const bottom = last.getBoundingClientRect().bottom
@@ -561,7 +599,7 @@ const Title = (() => {
 
   return {
     mount, FACES, DEFAULT_NAME, DEFAULT_FACE, faceSrc, normalizeFace,
-    TITLE, SUBTITLE, CREDIT_LABEL, CREDIT_NAME, paintCover, COVER_W, COVER_H,
+    TITLE, SUBTITLE, CREDIT_LABEL, CREDIT_NAME, VERSION, paintCover, COVER_W, COVER_H,
   };
 })();
 
