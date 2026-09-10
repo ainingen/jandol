@@ -10,7 +10,8 @@
 
 /* ---------- 大会ごとの色（docs/design/taikai/field-spec.md §4） ----------
    **色は変数だけで差し替える。**要素ごとに色を書くと、変えるときに散る。
-   使うのは三つだけ——**見出し帯の罫・カードの縁・梯子の線**。
+   使うのは四つだけ——**見出し帯の罫・見出し帯のバッジ・カードの縁・梯子の線**。
+   **釦（`.tkGo`）は金のまま**——あれは動作の色で、大会の格とは別の軸。
    **賞金は大会によらず金のまま**（`--gold`）——金は「お金の色」として
    `.tkPrize` / `.tkPrizeYen` / `.tkChampion` で既に働いているので、
    大会ごとに変えるとその意味が壊れる。
@@ -29,9 +30,12 @@
   color:var(--ivory);margin:0;
 }
 .tkStatus{display:flex;gap:8px;margin-left:auto;flex-wrap:wrap}
+/* 見出し帯のバッジ。**枠は大会の色**（field-spec.md §4）——罫だけ変えて
+   バッジが金のままだと、同じ帯の中で二つの色が別のことを言う。
+   大会選択の画面では `--tk-accent` が既定（金）なので、いままでどおり */
 .tkStat{
   font-size:12px;color:var(--muted);
-  border:1px solid var(--gold-dim);border-radius:3px;padding:3px 8px;
+  border:1px solid var(--tk-accent-dim);border-radius:3px;padding:3px 8px;
   background:rgba(0,0,0,.25);
 }
 .tkStat b{color:var(--ivory);font-family:var(--maru);font-weight:800;font-size:13px;margin-left:2px}

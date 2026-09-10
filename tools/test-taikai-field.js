@@ -204,6 +204,16 @@ Object.keys(global.TOURNAMENTS).forEach((id) => {
 ok(/\.tkRoot\{--tk-accent:/.test(CSS), '既定の --tk-accent が .tkRoot にある');
 /* **賞金は大会によらず金**（§4）。`.tkPrizeBig b` の色が accent だと、
    お金の色という意味が壊れる */
+/* **見出し帯のバッジも大会の色**（§4）。罫だけ変えると同じ帯の中で
+   二つの色が別のことを言う */
+const stat = (CSS.match(/\.tkStat\{[^}]*\}/) || [''])[0];
+ok(/border:1px solid var\(--tk-accent-dim\)/.test(stat), 'バッジの枠は --tk-accent-dim', stat);
+ok(!/--gold/.test(stat), 'バッジに --gold の直書きが残っていない', stat);
+/* **釦は金のまま**（動作の色。大会の格とは別の軸） */
+const goBtn = (CSS.match(/\.tkGo\{[^}]*\}/) || [''])[0];
+ok(/var\(--gold\)/.test(goBtn), '釦は var(--gold) のまま', goBtn);
+ok(!/--tk-accent/.test(goBtn), '釦に --tk-accent を使っていない', goBtn);
+
 const prizeBig = (CSS.match(/\.tkPrizeBig b\{[^}]*\}/) || [''])[0];
 ok(/var\(--gold\)/.test(prizeBig), '賞金は var(--gold)', prizeBig);
 ok(!/--tk-accent/.test(prizeBig), '賞金に --tk-accent を使っていない', prizeBig);
