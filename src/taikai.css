@@ -168,6 +168,14 @@
   font-size:9.5px;line-height:1.35;color:var(--tk-accent);
   letter-spacing:.02em;margin-bottom:1px;min-height:2.7em;
 }
+/* **出す行が一つも無いカード**（自分。打ち筋も完成度も調子も持たない）。
+   そのまま積むと顔の下が空き、他の三枚に調子の札が付く出走表では
+   三行ぶん空いて壊れて見える。**カードの高さは四枚で揃えたまま**、
+   名前と級だけを残りの高さの真ん中へ寄せる
+   ——名前の上と、級の下の両方を `auto` にすると、空きが上下へ均等に散る */
+.tkCard.tkBare .tkCardName{margin-top:auto}
+.tkCard.tkBare .tkCardSub{margin-bottom:auto}
+
 .tkCardName{
   font-family:var(--maru);font-weight:800;font-size:12px;color:var(--ivory);
   line-height:1.3;letter-spacing:.01em;margin-top:2px;

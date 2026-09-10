@@ -675,16 +675,24 @@ const Taikai = (() => {
       const comp = c.comp != null ? c.comp : compFromRank(c.rank);
       const grade = isMe ? (st.playerRank || 'D') : gradeOf(comp);
       const style = (!isMe && STYLES[c.style]) ? STYLES[c.style].name : '';
-      return `<div class="tkCard${o.mine ? ' mine' : ''}">
+      const bar = isMe ? '' : `<span class="tkTrack"><span class="tkFill"
+        style="width:${Math.round(Math.max(0, Math.min(100, comp)))}%"></span></span>`;
+      const cond = condHTML(c);
+      /* **名前と級の下に出す行が一つも無いカード**（＝自分。打ち筋も完成度も
+         調子も持たない）。そのまま積むと**下半分が空く**——出走表では他の三人に
+         調子の札が付くので三行ぶん空き、実機では壊れて見えた。
+         `tkBare` を立てて、名前と級を顔の下の残りの高さの真ん中へ置く（CSS 側）。
+         **中身から出す**こと——`isMe` で決め打ちにすると、あとで自分に
+         何か一行足したときに空きが戻る */
+      const bare = !style && !bar && !cond;
+      return `<div class="tkCard${o.mine ? ' mine' : ''}${bare ? ' tkBare' : ''}">
         ${o.why ? `<span class="tkWhy">${esc(o.why)}</span>` : ''}
         <span class="tkFace"><img src="${esc(faceOf(c))}" alt=""
           decoding="async" onerror="this.remove()"></span>
         <span class="tkCardName">${esc(c.name)}</span>
         <span class="tkCardSub"><b>${esc(grade)}級</b>${
           style ? `<span class="tkCardStyle">${esc(style)}</span>` : ''}</span>
-        ${isMe ? '' : `<span class="tkTrack"><span class="tkFill"
-          style="width:${Math.round(Math.max(0, Math.min(100, comp)))}%"></span></span>`}
-        ${condHTML(c)}
+        ${bar}${cond}
       </div>`;
     };
 
