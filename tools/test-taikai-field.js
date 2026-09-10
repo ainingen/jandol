@@ -250,6 +250,40 @@ ok(/var\(--gold\)/.test(prizeBig), '賞金は var(--gold)', prizeBig);
 ok(!/--tk-accent/.test(prizeBig), '賞金に --tk-accent を使っていない', prizeBig);
 
 /* ------------------------------------------------------------
+   §7 顔の置き場所（サムネイル）
+
+   **カードは `thumb/`（176×234）を読む。**88px の枠に 768×1024 を
+   流し込むと、展開したぶん（1枚 約3.1MB）が積み上がって実機で落ちる
+   （`H`）。焼くのは `tools/make-thumbs.py`。
+   **名鑑と表紙は `img/` のまま**——大きく出す場所なので縮めない
+------------------------------------------------------------ */
+{
+  const face = (BODY.match(/const faceOf = \(c\) => \([^;]*;/) || [''])[0];
+  ok(face.length > 20, 'faceOf が読めた', String(face.length));
+  ok(!/img\//.test(face), 'カードの faceOf は img/ を読まない（thumb/ を読む）', face);
+  same((face.match(/thumb\//g) || []).length, 2,
+    'faceOf の二本（自分と雀ドル）が両方とも thumb/');
+  /* **二本立てを崩さないこと**（自分は `p01`〜、雀ドルは3桁）。
+     置き場所だけが `match.js` と違う */
+  ok(/'p01'/.test(face) && /pad3\(c\.id\)/.test(face),
+    '二本立て（p01〜／3桁）はそのまま', face);
+  /* `taikai.js` が顔を出すのはカードだけ。ほかに `img/` を書き足していないこと */
+  ok(!/img\/\$\{/.test(BODY), 'taikai.js の本文に img/ の直書きが無い');
+  /* **再取得を足さないこと**（`--sil-img` の落とし口はそのまま）。
+     `onerror` は「消す」だけで、別の src を入れ直さない */
+  const imgTag = (SRC.match(/<img src="\$\{esc\(faceOf\(c\)\)\}"[^>]*>/) || [''])[0];
+  ok(/onerror="this\.remove\(\)"/.test(imgTag), 'カードの img は onerror で消すだけ', imgTag);
+  ok(!/this\.src/.test(imgTag), 'onerror で src を入れ直していない（再取得しない）', imgTag);
+  /* **名鑑と表紙は `img/` のまま**（大きく出す場所） */
+  const big = ['meikan.js', 'title.js'];
+  big.forEach((n) => {
+    const t = fs.readFileSync(path.join(__dirname, '..', 'src', n), 'utf8');
+    ok(/img\//.test(t), n + ' は img/ を読んだまま（大きく出す場所）');
+    ok(!/thumb\//.test(t), n + ' は thumb/ を読まない');
+  });
+}
+
+/* ------------------------------------------------------------
    §8 触らないもの／新しいクラスは tk で始める
 ------------------------------------------------------------ */
 ['.tkGroup{', '.tkGroupT{', '.tkNames{', '.tkName{'].forEach((sel) => {

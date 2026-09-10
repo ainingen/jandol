@@ -47,13 +47,22 @@ const Taikai = (() => {
   const yen = (n) => n.toLocaleString('ja-JP') + '円';
 
   /* 顔の落とし方（`field-spec.md` §7）。**二本立てを崩さないこと**——
-     自分は `p01`〜、雀ドルは3桁。`match.js` の `faceOf` と同じ式で、
-     片方だけ直すと自分の顔だけ出なくなる。
+     自分は `p01`〜、雀ドルは3桁。`match.js` の `faceOf` と同じ式
+     （**違うのは置き場所だけ**）で、片方だけ直すと自分の顔だけ出なくなる。
      画像が無い id（`PORTRAIT_MAX_ID` の先）は `onerror` で消して、
-     CSS の影絵（`ensureSilVar` が入れる `--sil-img`）が下から出る */
+     CSS の影絵（`ensureSilVar` が入れる `--sil-img`）が下から出る。
+
+     **読むのは `thumb/`（176×234）で、`img/`（768×1024）ではない。**
+     ここが顔を出すのはカードだけ（`cardHTML`）で、幅は 88px。
+     768×1024 は展開すると1枚 約3.1MB あり、**出走表の七枚で 22MB** を
+     絵のためだけに使っていた。実機で顔が落ちていた（`H`）のはこれで、
+     「途中まで出て、大会を進めるほど落ちる」＝**展開したぶんの積み上がり**。
+     焼くのは `tools/make-thumbs.py`。**名鑑と表紙は `img/` のまま**
+     ——大きく出す場所なので縮めない。
+     **再取得は足さないこと。**落ちたら `onerror` で影絵に落ちるだけにする */
   const faceOf = (c) => (c && c.id === 0
-    ? `img/${c.face || 'p01'}.webp`
-    : `img/${pad3(c.id)}.webp`);
+    ? `thumb/${c.face || 'p01'}.webp`
+    : `thumb/${pad3(c.id)}.webp`);
 
   /* 注目の三人（`field-spec.md` §3）。**因縁 → 強さ の順に三人まで。**
 
