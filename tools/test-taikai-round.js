@@ -334,22 +334,33 @@ async function withResume(rec, fn) {
     const card = (TK.match(/const cardHTML = \(c, o\) => \{[\s\S]*?\n    \};/) || [''])[0];
     ok(card.length > 100, 'cardHTML が読めた', String(card.length));
     ok(!/isFinal|final/.test(card), 'cardHTML に決勝卓の分岐が無い（CSS だけで組み替える）');
-    /* 渡せるのは `mine` と `why` の二つだけ */
+    /* 渡せるのは `mine` と `why` と `bare` の三つだけ。**`bare` は「印を
+       立てるか」の可否だけ**で、決勝かどうかは呼ぶ側が知っている（G） */
     const keys = Array.from(new Set((card.match(/\bo\.[a-zA-Z]+/g) || [])));
-    same(keys.sort(), ['o.mine', 'o.why'], 'cardHTML が見る opts は mine と why だけ');
+    same(keys.sort(), ['o.bare', 'o.mine', 'o.why'],
+      'cardHTML が見る opts は mine と why と bare だけ');
+    ok(/o\.bare !== false/.test(card), 'bare: false を渡すと tkBare を立てない');
 
     /* 決勝の見せ方は `.tkBridge.final` の側に全部あること */
     const CSS = rd('src/taikai.css');
     ['\\.tkBridge\\.final \\.tkFace', '\\.tkBridge\\.final \\.tkCard'].forEach((re) => {
       ok(new RegExp(re).test(CSS), 'CSS に ' + re.replace(/\\\\/g, '') + ' がある');
     });
-    /* **A の `tkBare` を決勝で打ち消していること**（顔に重なるので縦中央にしない） */
-    ok(/\.tkBridge\.final \.tkCard\.tkBare \.tkCardSub\{[^}]*margin-bottom:0/.test(CSS),
-      '決勝では tkBare の縦中央を効かせない');
+    /* **決勝では `tkBare` を立てない**（G）。CSS で打ち消すのではなく、
+       `renderBridge` が `bare: !info.isFinal` を渡して印そのものを外す
+       ——だから `.tkBridge.final` の側に `tkBare` は一つも出てこない */
+    const bridge = (TK.match(/function renderBridge\(info\) \{[\s\S]*?\n    \}/) || [''])[0];
+    ok(/cardHTML\(c, \{ mine: c\.id === 0, bare: !info\.isFinal \}\)/.test(bridge),
+      '中継は bare: !info.isFinal を渡す（決勝では印を立てない）');
+    ok(!/\.tkBridge\.final[^{]*tkBare/.test(CSS),
+      '決勝の CSS に tkBare の打ち消しが残っていない');
+    /* 通常のカードの縦中央そのものは残す（出走表・通常の中継のもの） */
+    ok(/\.tkCard\.tkBare \.tkCardSub\{[^}]*margin-bottom:auto/.test(CSS),
+      'tkBare の縦中央は通常のカードには効いたまま');
     /* **顔を広げる側は `tkBare` に触らせない**（G）。実機で「自分のカードだけ
-       通常の組み方に見える」と報告が出た。原因は再現していないが、
-       **顔を全面にする二本（`.tkCard` の `aspect-ratio` と `.tkFace` の
-       `position:absolute`）が `tkBare` を挟まない形であること**は錠にしておく
+       通常の組み方に見える」と報告が出た。**顔を全面にする二本（`.tkCard` の
+       `aspect-ratio` と `.tkFace` の `position:absolute`）が `tkBare` を
+       挟まない形であること**は、印を立てなくなったいまも錠にしておく
        ——ここに `tkBare` が入ると、自分のカードだけ本当に外れる */
     const faceRules = (CSS.match(/\.tkBridge\.final [^{]*\.tkFace[^{]*\{[^}]*\}/g) || [])
       .concat(CSS.match(/\.tkBridge\.final \.tkCard\{[^}]*\}/g) || []);

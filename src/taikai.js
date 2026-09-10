@@ -689,8 +689,13 @@ const Taikai = (() => {
          調子の札が付くので三行ぶん空き、実機では壊れて見えた。
          `tkBare` を立てて、名前と級を顔の下の残りの高さの真ん中へ置く（CSS 側）。
          **中身から出す**こと——`isMe` で決め打ちにすると、あとで自分に
-         何か一行足したときに空きが戻る */
-      const bare = !style && !bar && !cond;
+         何か一行足したときに空きが戻る。
+
+         **`o.bare === false` なら中身が空でも立てない。**決勝卓は名前と級を
+         顔の下端に重ねるので、「空いた高さの真ん中へ寄せる」出番がそもそも無い
+         ——`tkBare` は**通常のカード**（出走表・通常の中継）だけのもの。
+         決めるのは呼ぶ側で、ここは `isFinal` を知らないまま */
+      const bare = !style && !bar && !cond && o.bare !== false;
       return `<div class="tkCard${o.mine ? ' mine' : ''}${bare ? ' tkBare' : ''}">
         ${o.why ? `<span class="tkWhy">${esc(o.why)}</span>` : ''}
         <span class="tkFace"><img src="${esc(faceOf(c))}" alt=""
@@ -865,7 +870,12 @@ const Taikai = (() => {
          シャッフルするので、そのまま並べると自分がどこに出るか毎回変わる */
       const seats = info.table.filter((c) => c.id === 0)
         .concat(info.table.filter((c) => c.id !== 0));
-      const cards = seats.map((c) => cardHTML(c, { mine: c.id === 0 })).join('');
+      /* **決勝卓では `tkBare` を付けない**（§5・G）。名前と級が顔に重なるので、
+         「空いた高さの真ん中へ寄せる」出番がそもそも無い。CSS で打ち消すのでは
+         なく**立てない**——打ち消しは、顔を全面にする規則との重なりかたを
+         毎回考えることになる */
+      const cards = seats.map((c) =>
+        cardHTML(c, { mine: c.id === 0, bare: !info.isFinal })).join('');
       /* **決勝卓だけ賞金を再掲する**（§5）。出走表で見たきり、ここまで一度も
          出ていない。**梯子は出さない**——ここが最後なので、もう先が無い */
       const prize = info.isFinal ? `<div class="tkStakes">

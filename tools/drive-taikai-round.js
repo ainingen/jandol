@@ -82,6 +82,7 @@ const viewOf = (p) => p.evaluate(() => ({
     name: (n.querySelector('.tkCardName') || {}).textContent || '',
     mine: n.classList.contains('mine'),
     why: !!n.querySelector('.tkWhy'),
+    bare: n.classList.contains('tkBare'),
   })),
   tier: document.querySelector('.tkRoot').dataset.tier || null,
   hold: document.body.classList.contains('tkHold'),
@@ -94,9 +95,11 @@ const viewOf = (p) => p.evaluate(() => ({
     const cs = Array.from(document.querySelectorAll('.tkCards .tkCard'));
     if (!cs.length) return null;
     const c = cs[0];
-    /* **打ち筋と完成度バーは自分のカードには元から無い**（`tkBare`）。
-       出す・出さないを見るには**仲間か相手のカード**を取ること */
-    const other = cs.find((x) => !x.classList.contains('tkBare')) || cs[1] || c;
+    /* **打ち筋と完成度バーは自分のカードには元から無い。**
+       出す・出さないを見るには**仲間か相手のカード**を取ること。
+       **`tkBare` では選ばない**——決勝では印そのものを立てないので（G）、
+       自分のカードが選ばれて全部 `null` になる */
+    const other = cs.find((x) => !x.classList.contains('mine')) || cs[1] || c;
     const g = (sel) => { const e = other.querySelector(sel); return e ? getComputedStyle(e).display : null; };
     return {
       /* 縁のぶんを外して測る（`.mine` は 2px なので、外枠だと必ず食い違う） */
@@ -221,6 +224,13 @@ const install = (p, winRounds) => p.evaluate((wins) => {
       '決勝は打ち筋・完成度バーを出さない');
     eq([r2.shape.style, r2.shape.track], ['block', 'block'],
       '通常の回戦では出したまま');
+    /* **決勝では `tkBare` を立てない**（G）。名前と級が顔に重なるので、
+       「空いた高さの真ん中へ寄せる」出番がそもそも無い。
+       通常の回戦では自分のカードにだけ立っていること */
+    ok(!r3.cards.some((c) => c.bare), '決勝のカードに tkBare が付かない',
+      JSON.stringify(r3.cards.map((c) => c.bare)));
+    eq(r2.cards.map((c) => c.bare), [true, false, false, false],
+      '通常の回戦では自分のカードだけ tkBare');
     await shot(p, 'round-3');
 
     await p.click('[data-act="round-go"]');

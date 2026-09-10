@@ -329,10 +329,10 @@
               1px -1px 0 rgba(0,0,0,.9),-1px -1px 0 rgba(0,0,0,.9),
               0 2px 7px rgba(0,0,0,.95);
 }
-/* **A の縦中央（`tkBare`）は決勝では効かせない。**名前と級を顔の下端に
-   重ねるので、真ん中へ寄せると顔の中に浮く。名前の `margin-top:auto` は
-   決勝でも同じものが要るので、消すのは級の下の `auto` だけ */
-.tkBridge.final .tkCard.tkBare .tkCardSub{margin-bottom:0}
+/* **A の縦中央（`tkBare`）は決勝には来ない。**`renderBridge` が
+   `bare: false` を渡して**印そのものを立てない**ので、ここで打ち消す規則は
+   要らない（§5・G）。名前を下端へ寄せる `margin-top:auto` は
+   一つ上の `.tkBridge.final .tkCard .tkCardName` が持っている */
 
 /* 自分のカードは決勝でも金の縁。**地の色は敷かない**（顔が全面なので見えない） */
 .tkBridge.final .tkCard.mine{border-color:var(--gold);border-width:2px}

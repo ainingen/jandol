@@ -1022,12 +1022,17 @@ A3 でできたが、中身は `drawOne` 一回の二値のままだった。こ
 - **決勝卓は `.tkBridge.final` の CSS だけで組み替える。`cardHTML` に分岐を
   増やさない。**足すと出走表と中継と決勝で三通りのカードを組むことになり、
   直すたびに三か所を見ることになる。`tools/test-taikai-round.js` が
-  「`cardHTML` が見る opts は `mine` と `why` だけ」を錠にしている
+  「`cardHTML` が見る opts は `mine` と `why` と `bare` だけ」を錠にしている。
+  **`bare` は「印を立てるか」の可否だけ**で、決勝かどうかは呼ぶ側が知っている
+- **決勝卓では `tkBare` を立てない**（`renderBridge` が `bare: !info.isFinal`）。
+  名前と級を顔の下端に重ねるので、**「空いた高さの真ん中へ寄せる」出番が
+  そもそも無い。**`tkBare` は**通常のカード**（出走表・通常の中継）だけのもの。
+  **CSS で打ち消す形にしないこと**——顔を全面にする規則との重なりかたを
+  毎回考えることになる。名前を下端へ寄せる `margin-top:auto` は
+  `.tkBridge.final .tkCard .tkCardName` が別に持っている
 - **顔を全面にする二本（`.tkBridge.final .tkCard` の `aspect-ratio` と
   `.tkBridge.final .tkFace` の `position:absolute`）に `tkBare` や `.mine` を
-  混ぜないこと。**混ぜると**自分のカードだけ通常の組み方に戻る。**
-  決勝で打ち消してよいのは**級の下の `auto` だけ**（`tkBare` の縦中央）で、
-  名前の `margin-top:auto` は決勝でも同じものが要る
+  混ぜないこと。**混ぜると**自分のカードだけ通常の組み方に戻る**
 - **名前は絶対配置にしない。**`margin-top:auto` で下端へ寄せる
   ——絶対配置だと、名前が二行になったときに級と重なる
 - **膜を一枚敷いてから字を載せ、四方に1pxの暗い影を付ける。**ぼかしだけだと
@@ -1053,12 +1058,15 @@ A3 でできたが、中身は `drawOne` 一回の二値のままだった。こ
 
 ### テスト
 
-`node tools/test-taikai-round.js` … 48件。`onRoundStart` の口と、本文の錠
-（`cardHTML` に決勝の分岐が無いこと、顔を全面にする規則が `tkBare` / `.mine` を
-見ないこと、釦の文言を大会のときだけ渡すこと）。
+`node tools/test-taikai-round.js` … 51件。`onRoundStart` の口と、本文の錠
+（`cardHTML` に決勝の分岐が無いこと、`bare: false` で印を立てないこと、
+決勝の CSS に `tkBare` の打ち消しが残っていないこと、
+顔を全面にする規則が `tkBare` / `.mine` を見ないこと、
+釦の文言を大会のときだけ渡すこと）。
 
-`node tools/drive-taikai-round.js` … 47件。**画面でしか確かめられない側。**
+`node tools/drive-taikai-round.js` … 49件。**画面でしか確かめられない側。**
 出る／出ない、中身、押したら進むこと、決勝で顔がカードいっぱいになること、
+**決勝のカードに `tkBare` が付かず、通常の回戦では自分のカードにだけ付くこと**、
 二度押しても一回戦ぶんしか進まないこと。`--shots DIR` で三枚撮る。
 
 **中継を触ったら両方回すこと。**釦の文言は `shell.html` に入っているので、
