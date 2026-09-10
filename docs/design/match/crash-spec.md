@@ -159,7 +159,8 @@
 **`.four` のクラスは付けたまま、JS 側の分岐だけを消す。**落ちれば CSS、落ちなければ JS。
 
 - `src/` より前に：`window.setInterval` の 500 を握り潰す（`?nofit=1` と同じ。
-  **`fourjs=0` は `nofit` を含む**）。`window` / `screen.orientation` / `visualViewport` の
+  **`fourjs=0` は `nofit` を含む**）。**旗が立っているあいだは `ms === 500` を全部飲む**
+  ——下の §4.1 を読むこと。`window` / `screen.orientation` / `visualViewport` の
   `addEventListener` を包み、**listener の `name` が `onOrientationChange` のものだけ登録しない**
   （`match.js` は `function onOrientationChange` と名前付きで定義している。
   名前で拾うのは脆いが、`src/` に触らないならこれがいちばん浅い。名前が変わったら
@@ -169,6 +170,38 @@
 - **初回の `fitFour()` は一度だけ走る**（`updateRotate()` から）。以後は寸法が固定される。
   `?nofit=1` と同じ制約で、向きを変えると崩れる
 - 印は `fourjs=0`。`?bb=1` と重ねられる（段2 の実機は必ず `bb` 付きで回す）
+
+### 4.1 段2.5 ── 二戦目で見張りが復活していた（2026年9月10日・直した）
+
+**実機の3本目で踏んだ。**読み直さずに二戦目を始めたら、`?bb=1` の `sp` が
+**0 から 144 に戻った**——`?nofit=1` も `?fourjs=0` も、**一戦目しか効いていなかった。**
+
+原因は包みの形。もとは
+
+```js
+if (ms === 500) { window.setInterval = orig; return 0; }   // 一本だけ飲んで戻す
+```
+
+で、「見張りの登録は一度きり」という前提だった。**そうではない**
+——`Match.play` は**対局ごとに**登録し直す（`match.js` の `const watch = setInterval(…, 500)`
+は `play()` の中にある）。一本飲んで戻すと、二戦目の登録が素通しになる。
+
+いまは**旗が立っているあいだ `ms === 500` を全部飲む**。`clearInterval(0)` は
+何もしないので後片づけ側も壊れない。ほかに 500ms の `setInterval` を張る所は
+`match.html` が読む `src/` に無い（`jansou-floor.js` の 40ms は別ページ）
+——増えたらここも見直すこと。
+
+**この穴の意味は、道具が効かなかったことより重い。**「削っても落ちた」の表が
+そのぶん嘘になっていた——**二戦目まで打った走行では、外したはずのものが動いていた。**
+`?nofit=1` の行（`BACKLOG.md` の「試したこと」）は**測り直す**。
+
+**錠**：`tools/check-bb.js` が、読み直さずに `startMatch` を二回呼んで
+**二戦目の `t >= 2` の行の `sp` が全部0**であることを、`?nofit=1` と `?fourjs=0` の
+両方で見ている。**戻す形に書き換えると `["2:144","3:144"]` で落ちる**（確認済み）。
+
+**同じ形の包みを足すときは、必ず「二戦目」を考えること。**
+`?bb=1` の `Math.random` / `getBoundingClientRect` / `setProperty` / `addEventListener` の
+包みは**元に戻さない**ので、この穴には掛かっていない。
 
 ## 5. 段3 CSS の階段（`?fourcss=N`）— **段2 で CSS と出てから**
 

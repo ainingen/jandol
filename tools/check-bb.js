@@ -19,6 +19,11 @@
        `sp` が一度も増えない——寸法を測り直す経路が二本とも
        （500ms の見張りも、イベント駆動も）止まっている。
        **`page.setViewportSize` で揺すっても増えない**のがイベント駆動の側の証
+    5. **二戦目でも効いている**こと（段2.5）。`Match.play` は対局ごとに
+       500ms の見張りを登録し直すので、**包みが「一本飲んだら元に戻す」だと
+       二戦目から復活する**（実機の3本目で踏んだ）。読み直さずに
+       `startMatch` を二回続けて呼び、**二戦目の `t >= 2` の行の `sp` が
+       全部0**であることを `?nofit=1` と `?fourjs=0` の両方で見る
 */
 'use strict';
 const path=require('path'),http=require('http'),fs=require('fs');
@@ -140,6 +145,41 @@ ok(late.length>=1,'`t >= 2` の行がある（'+late.length+'行）');
 eq(late.filter((e)=>e.sp>0).map((e)=>e.t+':'+e.sp),[],'**`t >= 2` の行の sp が全部0**（初回の fitFour のあと一度も走っていない）');
 ok(e4.some((e)=>e.ev[0]>0),'resize は来ている（弾いているのは登録であってイベントではない）');
 await p4.close();
+
+/* ---- [5] 二戦目でも効いている（段2.5） ----
+   **`Match.play` は対局ごとに見張りを登録し直す。**包みが一本飲んで元に戻すと、
+   二戦目から `sp` が 0 → 144 に戻る（実機の3本目で踏んだ）。
+   `?start=1` は一戦しか始めないので、**`startMatch` を自分で二回呼ぶ。** */
+async function twice(flag){
+  console.log('\n[5] 二戦目でも効いている（?'+flag+'・段2.5）');
+  const pg=await (await newCtx()).newPage();
+  pg.on('pageerror',(e)=>{fails.push('PAGEERROR(5 '+flag+') '+e.message);console.log('  NG  PAGEERROR '+e.message);});
+  await pg.goto(base+'?bb=1&'+flag+'&sfx=0&seed=1');       // start=1 は付けない
+  const play=()=>pg.evaluate(()=>{window.startMatch(true,0,'ikkyoku');});
+  const late=(r)=>((r&&r.entries)||[]).filter((e)=>e.t>=2);
+
+  await play();                                             // 一戦目
+  await pg.waitForFunction(()=>document.body.classList.contains('inMatch'),null,{timeout:20000});
+  await pg.waitForSelector('#overlay.show [data-v]',{timeout:120000});
+  const one=late(await read(pg));
+  ok(one.length>=1,'一戦目に `t >= 2` の行がある（'+one.length+'行）');
+  eq(one.filter((e)=>e.sp>0).map((e)=>e.t+':'+e.sp),[],'一戦目の sp が全部0');
+
+  await pg.click('#overlay.show [data-v]');                 // 打ち切って二戦目へ
+  await pg.waitForFunction(()=>!document.body.classList.contains('inMatch'),null,{timeout:20000});
+  await play();                                             // **二戦目。読み直していない**
+  await pg.waitForFunction(()=>document.body.classList.contains('inMatch'),null,{timeout:20000});
+  await pg.waitForTimeout(3400);
+  const r2=await read(pg);
+  const two=late(r2);
+  ok(((r2&&r2.entries)||[]).length>=1,'二戦目の走行に差し替わっている');
+  ok(two.length>=1,'二戦目に `t >= 2` の行がある（'+two.length+'行）');
+  eq(two.filter((e)=>e.sp>0).map((e)=>e.t+':'+e.sp),[],
+    '**二戦目の sp も全部0**（一本飲んで元に戻すと 144 が返ってくる）');
+  await pg.close();
+}
+await twice('nofit=1');
+await twice('fourjs=0');
 
 console.log('\n通過 '+pass+' 件'+(fails.length?' / 失敗 '+fails.length+' 件':''));
 if(fails.length){fails.forEach((f)=>console.log('  ✗ '+f));process.exitCode=1;}
