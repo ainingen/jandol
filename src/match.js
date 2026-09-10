@@ -37,10 +37,26 @@ const Match = (() => {
      席プレート（#plate-*）は卓面の外。列レイアウト（縦持ち）では
      #felt / #center / .rslot を display:contents にして、同じ DOM を格子に並べ直す */
   /* 顔の置き場所。プレイヤーは p01〜p12、雀ドルは3桁の番号。
-     **席プレートと対局終了の順位表が同じ式を通ること**——書き写すと片方だけ古びる */
-  const faceOf = (c) => (c && c.id === 0
-    ? `img/${c.face || 'p01'}.webp`
-    : `img/${String(c.id).padStart(3, '0')}.webp`);
+     **二本立て（自分は `p01`〜、雀ドルは3桁）を書くのは `faceName` の一行だけ。**
+     席プレートも順位表も立ち絵もここを通る——書き写すと片方だけ古びる。
+
+     **大きさで置き場所が分かれる**（`BACKLOG.md`「対局画面のサムネイル化」）。
+
+     | 出る場所 | 表示px（四人卓 844×334） | 読む先 |
+     | --- | --- | --- |
+     | 席プレートの丸 | 24〜36px | `thumb/` |
+     | カットインの札 | 82×119 | `thumb/` |
+     | 対局終了の順位表 | 34px | `thumb/` |
+     | **局の締めの立ち絵** | **150×196** | **`img/`** |
+
+     `thumb/` は 176×234 なので、DPR 3 の実機でも 24〜36px の丸には十分。
+     **立ち絵だけは足りない**（DPR 3 で 450×588 が要る）ので `img/` のまま。
+     焼くのは `tools/make-thumbs.py`。**大会のカードと同じ絵を使う** */
+  const faceName = (c) => (c && c.id === 0
+    ? (c.face || 'p01')
+    : String(c.id).padStart(3, '0'));
+  const faceOf = (c) => `img/${faceName(c)}.webp`;      // 大きく出す場所
+  const thumbOf = (c) => `thumb/${faceName(c)}.webp`;   // 小さく出す場所
 
   const TABLE_HTML = `
     <div id="app">
@@ -382,7 +398,12 @@ const Match = (() => {
        入れなければ従来どおりの打ち方になる */
     seats.forEach((c, i) => {
       if (!c) return;
-      g.players[i].face = faceOf(c);
+      /* **`face` は小さい版、`faceBig` は大きい版。**席プレートと
+         カットインは `face`、局の締めの立ち絵だけが `faceBig` を読む
+         （`ui.js`）。一本にすると、24pxの丸のために 768×1024 を
+         展開することになる */
+      g.players[i].face = thumbOf(c);
+      g.players[i].faceBig = faceOf(c);
       if (c.id === 0) return;
       g.players[i].name = c.name;
       g.players[i].styleName = (STYLES[c.style] || {}).name || '';
@@ -520,7 +541,7 @@ const Match = (() => {
       const diff = r.score - START;
       return `<div class="mzRow${mine ? ' mine' : ''}${i === 0 ? ' top' : ''}">
         <span class="mzR">${i + 1}<i>位</i></span>
-        <span class="mzFace"><img src="${esc(faceOf(c))}" alt="" onerror="this.remove()"></span>
+        <span class="mzFace"><img src="${esc(thumbOf(c))}" alt="" onerror="this.remove()"></span>
         <span class="mzName">${esc(c.name || r.name)}</span>
         <span class="mzPt">${r.score}</span>
         <span class="mzDiff" data-dir="${diff > 0 ? 'up' : diff < 0 ? 'down' : 'flat'}">${

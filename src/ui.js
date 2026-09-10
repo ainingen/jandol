@@ -872,7 +872,11 @@ const UI = {
       : g.dealer;
     const img = bust.querySelector('img');
     const sp = g.players[star];
-    const face = sp ? sp.face : null;
+    /* **ここだけ `faceBig`（768×1024）。**150×196 で出すので、
+       席プレートやカットインが読む `face`（`thumb/` の 176×234）では
+       足りない（DPR 3 の実機で 450×588 が要る）。
+       `faceBig` を持たない席（古い呼び出し）は `face` に落とす */
+    const face = sp ? (sp.faceBig || sp.face) : null;
     const app = $('#app');
     if (face) {
       img.src = face;
