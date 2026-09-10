@@ -69,6 +69,21 @@ const Title = (() => {
   const CREDIT_LABEL = 'produced by';
   const CREDIT_NAME = '夜中のBBQ';
 
+  /* **公開の版。app 全体の版はここが正で、リポジトリの他のどこにも無い。**
+     上げるときは**この一行を書き換えるだけ**——他に触る場所は無い
+     （表紙が読んで出すだけで、判定にも保存にも使っていない）。
+
+     **`resume.js` の保存形式の版とは別物。混ぜないこと。**
+     あちらは「控えの中身の意味を変えたら上げる」内部の版で、
+     古い控えを黙って捨てるための印。こちらは**遊ぶ人に見せる番号。**
+     片方を上げても、もう片方は動かない。
+
+     **canvas には描かないこと。**PLiCy のサムネイルは
+     index.html の最初の canvas の中身だけを撮るので、描くと
+     版がサムネイルに焼き付き、上げるたびに看板が変わる
+     （README「表紙とサムネイル」）。表紙の DOM に出す。 */
+  const VERSION = 'v0.5.0';
+
   /* 表紙の書体。'Maru' は maru.css が二つの太さで定義している。
      **タグは 700 で描くこと。**800（maru-title.woff2）は題字と副題の
      20文字しか入っていないので、そちらで描くと「夜中のBBQ」が
@@ -561,7 +576,7 @@ const Title = (() => {
 
   return {
     mount, FACES, DEFAULT_NAME, DEFAULT_FACE, faceSrc, normalizeFace,
-    TITLE, SUBTITLE, CREDIT_LABEL, CREDIT_NAME, paintCover, COVER_W, COVER_H,
+    TITLE, SUBTITLE, CREDIT_LABEL, CREDIT_NAME, VERSION, paintCover, COVER_W, COVER_H,
   };
 })();
 
