@@ -10,7 +10,8 @@
 
 /* ---------- 大会ごとの色（docs/design/taikai/field-spec.md §4） ----------
    **色は変数だけで差し替える。**要素ごとに色を書くと、変えるときに散る。
-   使うのは三つだけ——**見出し帯の罫・カードの縁・梯子の線**。
+   使うのは四つだけ——**見出し帯の罫・見出し帯のバッジ・カードの縁・梯子の線**。
+   **釦（`.tkGo`）は金のまま**——あれは動作の色で、大会の格とは別の軸。
    **賞金は大会によらず金のまま**（`--gold`）——金は「お金の色」として
    `.tkPrize` / `.tkPrizeYen` / `.tkChampion` で既に働いているので、
    大会ごとに変えるとその意味が壊れる。
@@ -29,9 +30,12 @@
   color:var(--ivory);margin:0;
 }
 .tkStatus{display:flex;gap:8px;margin-left:auto;flex-wrap:wrap}
+/* 見出し帯のバッジ。**枠は大会の色**（field-spec.md §4）——罫だけ変えて
+   バッジが金のままだと、同じ帯の中で二つの色が別のことを言う。
+   大会選択の画面では `--tk-accent` が既定（金）なので、いままでどおり */
 .tkStat{
   font-size:12px;color:var(--muted);
-  border:1px solid var(--gold-dim);border-radius:3px;padding:3px 8px;
+  border:1px solid var(--tk-accent-dim);border-radius:3px;padding:3px 8px;
   background:rgba(0,0,0,.25);
 }
 .tkStat b{color:var(--ivory);font-family:var(--maru);font-weight:800;font-size:13px;margin-left:2px}
@@ -168,6 +172,14 @@
   font-size:9.5px;line-height:1.35;color:var(--tk-accent);
   letter-spacing:.02em;margin-bottom:1px;min-height:2.7em;
 }
+/* **出す行が一つも無いカード**（自分。打ち筋も完成度も調子も持たない）。
+   そのまま積むと顔の下が空き、他の三枚に調子の札が付く出走表では
+   三行ぶん空いて壊れて見える。**カードの高さは四枚で揃えたまま**、
+   名前と級だけを残りの高さの真ん中へ寄せる
+   ——名前の上と、級の下の両方を `auto` にすると、空きが上下へ均等に散る */
+.tkCard.tkBare .tkCardName{margin-top:auto}
+.tkCard.tkBare .tkCardSub{margin-bottom:auto}
+
 .tkCardName{
   font-family:var(--maru);font-weight:800;font-size:12px;color:var(--ivory);
   line-height:1.3;letter-spacing:.01em;margin-top:2px;
@@ -239,6 +251,91 @@
 .tkNames{display:flex;flex-wrap:wrap;gap:4px}
 .tkName{font-size:11.5px;color:var(--muted);padding:2px 6px;border-radius:2px;background:rgba(0,0,0,.22)}
 .tkName.own{color:var(--ink);background:var(--gold);font-weight:600}
+
+/* ---------- 回戦のあいだ（docs/design/taikai/round-spec.md §4） ----------
+   出走表の部品（`.tkFieldHead` / `.tkFieldSec` / `.tkCards` / `.tkCard`）を
+   そのまま使い回す。ここで足すのは**②勝ち上がり**の帯だけ */
+.tkBridgeUp{
+  border:1px solid var(--tk-accent-dim);border-radius:6px;
+  background:linear-gradient(var(--urushi-2),rgba(19,36,32,.45));
+  padding:9px 12px;margin:0 0 14px;
+}
+.tkBridgeUp p{margin:0}
+.tkBridgeLine{font-size:12.5px;color:var(--ivory-2);line-height:1.7}
+.tkBridgeLine b{
+  font-family:var(--maru);font-weight:800;font-size:15px;color:var(--ivory);margin:0 2px;
+}
+.tkBridgeWho{
+  font-family:var(--maru);font-weight:800;font-size:13px;color:var(--gold);
+  line-height:1.7;margin-top:2px;letter-spacing:.02em;
+}
+/* 落ちた子。**残った子と同じ大きさで書かない**——読む順が入れ替わる */
+.tkBridgeOut{font-size:11.5px;color:var(--muted);line-height:1.7;margin-top:3px}
+/* 一人ぶんの箱。**名前の途中で折らない**（「湊 いお／り（一回戦・3位）」になった）。
+   `inline-block` にして、折れるのは人と人のあいだだけにする */
+.tkBridgeOne{display:inline-block;white-space:nowrap}
+.tkBridgeWho .tkBridgeOne{margin:0 4px}
+.tkBridgeOut .tkBridgeOne{margin-right:10px}
+.tkBridgeRest{
+  font-size:11.5px;color:var(--muted);margin-top:5px;
+  border-top:1px solid rgba(201,162,74,.15);padding-top:5px;
+}
+
+/* ---------- 決勝卓（round-spec.md §5・E） ----------
+   同じ骨格のまま、**顔が主・文字が従**に組み替える。
+   **`cardHTML` には分岐が無い。**ここの CSS だけで別物にする */
+
+/* ① 見出しを大きく、大会の色を効かせる */
+.tkBridge.final .tkFieldHead{border-bottom-width:3px;padding-bottom:9px}
+.tkBridge.final .tkTitle{font-size:30px;color:var(--tk-accent);letter-spacing:.1em}
+
+/* ③ 顔をカードいっぱいに。**打ち筋と完成度バーは出さない**——
+   ここまで三回戦を打って来た相手なので、能力の数字はもう要らない。
+   残った三人が誰かだけが要る */
+.tkBridge.final .tkCard{
+  position:relative;aspect-ratio:5/8;padding:0;gap:0;overflow:hidden;
+}
+.tkBridge.final .tkFace{
+  position:absolute;inset:0;aspect-ratio:auto;border-radius:0;
+}
+.tkBridge.final .tkCardStyle,
+.tkBridge.final .tkCard .tkTrack,
+.tkBridge.final .tkCond{display:none}
+
+/* 名前と級は顔の下端に重ねる。**膜を一枚敷いてから載せる**
+   ——明るいポートレートでは、字だけ置くと沈む */
+.tkBridge.final .tkCard::after{
+  content:"";position:absolute;left:0;right:0;bottom:0;height:58%;z-index:1;
+  background:linear-gradient(rgba(8,16,14,0) 0%,rgba(8,16,14,.5) 40%,rgba(8,16,14,.94) 100%);
+  pointer-events:none;
+}
+/* 下端へ寄せるのは `margin-top:auto`（絶対配置にしない）。
+   **名前が二行になっても級と重ならない**ため */
+/* **顔が主なので、字は詰める。**13px だと 4列（1枚 89px）で六文字の名前が
+   折れて「テスト事務／所」になった */
+.tkBridge.final .tkCard .tkCardName{
+  margin-top:auto;position:relative;z-index:2;
+  padding:0 5px;font-size:12.5px;line-height:1.25;color:#fff;letter-spacing:0;
+}
+.tkBridge.final .tkCardSub{
+  position:relative;z-index:2;padding:1px 5px 6px;
+}
+.tkBridge.final .tkCardSub b{color:var(--ivory)}
+/* **膜の上でも沈まないように、四方に1pxの暗い影**（ホワイトボードの字と同じ手）。
+   ぼかしだけだと、白っぽい服や明るい壁のところで輪郭が消える */
+.tkBridge.final .tkCardName,
+.tkBridge.final .tkCardSub b{
+  text-shadow:1px 1px 0 rgba(0,0,0,.9),-1px 1px 0 rgba(0,0,0,.9),
+              1px -1px 0 rgba(0,0,0,.9),-1px -1px 0 rgba(0,0,0,.9),
+              0 2px 7px rgba(0,0,0,.95);
+}
+/* **A の縦中央（`tkBare`）は決勝には来ない。**`renderBridge` が
+   `bare: false` を渡して**印そのものを立てない**ので、ここで打ち消す規則は
+   要らない（§5・G）。名前を下端へ寄せる `margin-top:auto` は
+   一つ上の `.tkBridge.final .tkCard .tkCardName` が持っている */
+
+/* 自分のカードは決勝でも金の縁。**地の色は敷かない**（顔が全面なので見えない） */
+.tkBridge.final .tkCard.mine{border-color:var(--gold);border-width:2px}
 
 /* ---------- 進行 ---------- */
 .tkRound{margin-bottom:16px}

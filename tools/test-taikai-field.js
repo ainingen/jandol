@@ -88,16 +88,35 @@ Object.keys(global.TOURNAMENTS).forEach((id) => {
     const st = { team, recent: [7], beaten: [] };
     const r = Taikai.pickSpotlight(field, st);
     ok(r[0].chara.id === 7 && r[0].why === 'grudge', '因縁が一人 … 先頭は因縁枠', J(ids(r)));
-    same(whys(r), ['grudge', 'strong', 'strong'], '因縁が一人 … 残りは強さ枠');
+    same(whys(r), ['grudge', 'strong', 'strong'],
+      '因縁が一人 … 残りは強さ枠（大本命は付かない）');
     const rest = byStrength(pick(others).filter((c) => c.id !== 7)).slice(0, 2).map((c) => c.id);
     same(ids(r).slice(1), rest, '因縁が一人 … 残りは強さの降順');
   }
   /* --- 因縁が一人もいないとき（初回） --- */
   {
     const r = Taikai.pickSpotlight(field, { team, recent: [], beaten: [] });
-    same(whys(r), ['strong', 'strong', 'strong'], '因縁ゼロ … 三人とも強さ枠');
+    /* **一人目だけ「大本命」。**「優勝候補」が三つ並ぶと平らに見えて、
+       目が止まる場所が無い（実機で見た） */
+    same(whys(r), ['top', 'strong', 'strong'], '因縁ゼロ … 一人目だけ大本命');
     same(ids(r), byStrength(pick(others)).slice(0, 3).map((c) => c.id),
-      '因縁ゼロ … 強さの降順');
+      '因縁ゼロ … 強さの降順（並びは変わらない）');
+  }
+  /* --- 因縁が一人でもいれば「大本命」は付けない --- */
+  {
+    const r = Taikai.pickSpotlight(field, { team, recent: [7], beaten: [] });
+    ok(whys(r).indexOf('top') < 0,
+      '因縁が一人でもいれば大本命は付けない（強い言葉を二つ出さない）', J(whys(r)));
+  }
+  {
+    const r = Taikai.pickSpotlight(field, { team, recent: [5, 3, 9], beaten: [] });
+    ok(whys(r).indexOf('top') < 0, '因縁が三人なら大本命は付けない', J(whys(r)));
+  }
+  /* --- 相手が一人しかいなくても落ちない --- */
+  {
+    const one = [Object.assign({}, global.PLAYER)].concat(pick([1]));
+    same(whys(Taikai.pickSpotlight(one, { team: [] })), ['top'], '一人だけなら大本命');
+    same(Taikai.pickSpotlight([], { team: [] }), [], '誰もいなければ空のまま');
   }
   /* --- 一度勝った相手は因縁枠にしない（beaten は消えない） --- */
   {
@@ -173,6 +192,18 @@ ok((BODY.match(/root\.dataset\.tier = run\.tierId/g) || []).length === 2,
   '進行と結果の二画面にも data-tier が付く（§4）');
 ok(/delete root\.dataset\.tier/.test(BODY), '大会選択に戻るときは data-tier を外す');
 
+/* `why` の三つに、画面側の文面が揃っていること。
+   **足したのに文面を足し忘れると、札が空で出る** */
+{
+  const why = (BODY.match(/const WHY = \{[\s\S]*?\};/) || [''])[0];
+  ['grudge', 'top', 'strong'].forEach((k) => {
+    ok(new RegExp(k + ':').test(why), 'WHY に ' + k + ' の文面がある', why);
+  });
+  ok(/大本命/.test(why), '大本命の札がある', why);
+  ok(!/当たります/.test(BODY),
+    '「この中の誰かと当たります」とは書かない（卓割りはまだ決まっていない）');
+}
+
 /* ------------------------------------------------------------
    §6 入場の演出 — 後片づけは一箇所（`clearEntrance`）
 ------------------------------------------------------------ */
@@ -204,9 +235,53 @@ Object.keys(global.TOURNAMENTS).forEach((id) => {
 ok(/\.tkRoot\{--tk-accent:/.test(CSS), '既定の --tk-accent が .tkRoot にある');
 /* **賞金は大会によらず金**（§4）。`.tkPrizeBig b` の色が accent だと、
    お金の色という意味が壊れる */
+/* **見出し帯のバッジも大会の色**（§4）。罫だけ変えると同じ帯の中で
+   二つの色が別のことを言う */
+const stat = (CSS.match(/\.tkStat\{[^}]*\}/) || [''])[0];
+ok(/border:1px solid var\(--tk-accent-dim\)/.test(stat), 'バッジの枠は --tk-accent-dim', stat);
+ok(!/--gold/.test(stat), 'バッジに --gold の直書きが残っていない', stat);
+/* **釦は金のまま**（動作の色。大会の格とは別の軸） */
+const goBtn = (CSS.match(/\.tkGo\{[^}]*\}/) || [''])[0];
+ok(/var\(--gold\)/.test(goBtn), '釦は var(--gold) のまま', goBtn);
+ok(!/--tk-accent/.test(goBtn), '釦に --tk-accent を使っていない', goBtn);
+
 const prizeBig = (CSS.match(/\.tkPrizeBig b\{[^}]*\}/) || [''])[0];
 ok(/var\(--gold\)/.test(prizeBig), '賞金は var(--gold)', prizeBig);
 ok(!/--tk-accent/.test(prizeBig), '賞金に --tk-accent を使っていない', prizeBig);
+
+/* ------------------------------------------------------------
+   §7 顔の置き場所（サムネイル）
+
+   **カードは `thumb/`（176×234）を読む。**88px の枠に 768×1024 を
+   流し込むと、展開したぶん（1枚 約3.1MB）が積み上がって実機で落ちる
+   （`H`）。焼くのは `tools/make-thumbs.py`。
+   **名鑑と表紙は `img/` のまま**——大きく出す場所なので縮めない
+------------------------------------------------------------ */
+{
+  const face = (BODY.match(/const faceOf = \(c\) => \([^;]*;/) || [''])[0];
+  ok(face.length > 20, 'faceOf が読めた', String(face.length));
+  ok(!/img\//.test(face), 'カードの faceOf は img/ を読まない（thumb/ を読む）', face);
+  same((face.match(/thumb\//g) || []).length, 2,
+    'faceOf の二本（自分と雀ドル）が両方とも thumb/');
+  /* **二本立てを崩さないこと**（自分は `p01`〜、雀ドルは3桁）。
+     置き場所だけが `match.js` と違う */
+  ok(/'p01'/.test(face) && /pad3\(c\.id\)/.test(face),
+    '二本立て（p01〜／3桁）はそのまま', face);
+  /* `taikai.js` が顔を出すのはカードだけ。ほかに `img/` を書き足していないこと */
+  ok(!/img\/\$\{/.test(BODY), 'taikai.js の本文に img/ の直書きが無い');
+  /* **再取得を足さないこと**（`--sil-img` の落とし口はそのまま）。
+     `onerror` は「消す」だけで、別の src を入れ直さない */
+  const imgTag = (SRC.match(/<img src="\$\{esc\(faceOf\(c\)\)\}"[^>]*>/) || [''])[0];
+  ok(/onerror="this\.remove\(\)"/.test(imgTag), 'カードの img は onerror で消すだけ', imgTag);
+  ok(!/this\.src/.test(imgTag), 'onerror で src を入れ直していない（再取得しない）', imgTag);
+  /* **名鑑と表紙は `img/` のまま**（大きく出す場所） */
+  const big = ['meikan.js', 'title.js'];
+  big.forEach((n) => {
+    const t = fs.readFileSync(path.join(__dirname, '..', 'src', n), 'utf8');
+    ok(/img\//.test(t), n + ' は img/ を読んだまま（大きく出す場所）');
+    ok(!/thumb\//.test(t), n + ' は thumb/ を読まない');
+  });
+}
 
 /* ------------------------------------------------------------
    §8 触らないもの／新しいクラスは tk で始める

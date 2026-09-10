@@ -140,8 +140,15 @@ const viewOf = (p) => p.evaluate(() => ({
     ok(v.cards[0].mine, '先頭は自分');
     eq(v.cards.slice(0, 4).filter((c) => c.why).length, 0, '③には見出し語が無い');
     eq(v.cards.slice(4).filter((c) => c.why).length, 3, '④は三人とも見出し語を持つ');
-    ok(v.cards.slice(4).every((c) => /前に当たって|優勝候補/.test(c.why)),
-      '見出し語は二種類のどちらか', JSON.stringify(v.cards.slice(4).map((c) => c.why)));
+    ok(v.cards.slice(4).every((c) => /前に当たって|大本命|優勝候補/.test(c.why)),
+      '見出し語は三種類のどれか', JSON.stringify(v.cards.slice(4).map((c) => c.why)));
+    /* **「大本命」は一枚まで。**二枚出ると、いちばん強い言葉が二つあることになる */
+    ok(v.cards.filter((c) => c.why === '大本命').length <= 1,
+      '大本命は多くても一枚', JSON.stringify(v.cards.slice(4).map((c) => c.why)));
+    /* 因縁と大本命は同居しない（この走行は recent:[5,3] / beaten:[5] で因縁が一人いる） */
+    ok(!(v.cards.some((c) => /前に当たって/.test(c.why))
+      && v.cards.some((c) => c.why === '大本命')),
+      '因縁と大本命が同じ画面に並ばない', JSON.stringify(v.cards.slice(4).map((c) => c.why)));
     ok(!/当たります/.test(JSON.stringify(v.cards)),
       '「この中の誰かと当たります」とは書かない（卓割りはまだ）');
     /* 単体ページには office.js が無いので調子は出ない（§6.3） */

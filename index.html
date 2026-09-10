@@ -11,7 +11,7 @@
 <link rel="stylesheet" href="src/title.css?v=50212c56">
 <link rel="stylesheet" href="src/meikan.css?v=4d26b349">
 <link rel="stylesheet" href="src/team.css?v=5b51958b">
-<link rel="stylesheet" href="src/taikai.css?v=36319d4e">
+<link rel="stylesheet" href="src/taikai.css?v=2fcf5ae2">
 <link rel="stylesheet" href="src/scout.css?v=ece27472">
 <link rel="stylesheet" href="src/office.css?v=72394628">
 <link rel="stylesheet" href="src/jansou.css?v=d1597733">
@@ -88,6 +88,21 @@ body.onTitle{padding-bottom:0}
 
 /* 対局中は卓だけにする */
 body.inMatch #appTop,body.inMatch #nav,body.inMatch .appReset,body.inMatch #view{display:none}
+/* 「答えるまで先へ進めない画面」のあいだは、枠を出さない。
+   いまは大会の中継（`docs/design/taikai/round-spec.md` §7）だけが立てる。
+   **`inMatch` が nav を隠しているのと同じ扱い。**
+
+   - `.appReset` … 「打つ」の隣に、押すと大会が消える釦を置くには危なすぎる
+   - `#nav` … 下のタブで抜けられると、**解決されない `runTournament` が
+     控えを抱えたまま残る。**遊ぶ側は「続きから」で入り直した別の走行を見ることになり、
+     動きはするが二重になる。**入口を塞ぐほうが安い**
+
+   中断の出口は残っている（リロード →「続きから」→「この大会を諦める」）。
+   立てるのは taikai.js、何を隠すかを決めるのはここ（枠はこちらの持ち物） */
+body.tkHold .appReset,body.tkHold #nav{display:none}
+/* nav を消したら、そのぶんの下の余白も消す。**残すと画面の底に 64px の空白**
+   （表紙が `body.onTitle #scroll` で同じことをしている） */
+body.tkHold #scroll{padding-bottom:0}
 body.inMatch{padding-bottom:0}
 #matchRoot:empty{display:none}
 #matchRoot{display:flex;justify-content:center;width:100%}
@@ -142,7 +157,7 @@ body.inMatch #matchRoot{flex:1;min-height:0}
 <script src="src/sound.js?v=2230964f"></script>
 <script src="src/ui.js?v=4c39b9e7"></script>
 <script src="src/resume.js?v=6fb7a013"></script>
-<script src="src/match.js?v=13827e9b"></script>
+<script src="src/match.js?v=5dc3b65c"></script>
 <script src="src/characters.js?v=8bf8a640"></script>
 <script src="src/geo.js?v=633f2f25"></script>
 <script src="src/tournament.js?v=531d3cb1"></script>
@@ -151,7 +166,7 @@ body.inMatch #matchRoot{flex:1;min-height:0}
 <script src="src/title.js?v=33808ebe"></script>
 <script src="src/meikan.js?v=8d44e517"></script>
 <script src="src/team.js?v=8a677ba5"></script>
-<script src="src/taikai.js?v=2d452cf9"></script>
+<script src="src/taikai.js?v=25a10a4d"></script>
 <script src="src/scout.js?v=57d0fadf"></script>
 <script src="src/jansou-guests.js?v=784a4250"></script>
 <script src="src/jansou-floor.js?v=423482f6"></script>
@@ -382,6 +397,18 @@ body.inMatch #matchRoot{flex:1;min-height:0}
         /* 遠征先の常連との一局は 'ikkyoku'（scout/spec.md §10.3）。
            渡さなければ既定の東風のまま */
         length: ctx.length || undefined,
+        /* 対局終了の釦の文言（taikai/round-spec.md §6）。
+           **通常の回戦の行く先は次の半荘**なので「結果へ」では嘘になる。
+           決勝卓はそこで大会が終わるので「結果へ」でよい。
+
+           **大会から来たかどうかは ctx.round で見分ける**
+           ——round を入れているのは runTournament だけで、
+           雀荘（直営店）も遠征も練習対局も入れない。isFinal だけでは
+           「通常の回戦」と「雀荘」がどちらも undefined で見分けられない。
+           **新しく数えないこと**——どちらも ctx にもう入っている値。
+           渡さない経路は match.js の既定（'結果へ'）のまま動く */
+        doneLabel: ctx.round == null ? undefined
+          : (ctx.isFinal ? '結果へ' : '次の回戦へ'),
       }, ctx.resume)).then(function (rank) {
         document.body.classList.remove('inMatch');
         return rank;
@@ -419,6 +446,9 @@ body.inMatch #matchRoot{flex:1;min-height:0}
       document.querySelectorAll('.popup,.mkOverlay,.scReveal'),
       function (el) { el.remove(); }
     );
+    /* 「答えるまで先へ進めない」印は、画面を出たら必ず落とす。
+       立てた画面から下のタブで抜けられるので、**ここが最後の砦** */
+    document.body.classList.remove('tkHold');
     current = name;
     view.innerHTML = '';
     var root = document.createElement('div');

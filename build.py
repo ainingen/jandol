@@ -88,6 +88,15 @@ DEV_ONLY = ['debug.html', 'src/debug.js']
 
 LIMIT = 500 * 1024          # PLiCyの上限。分割版では掛からないはずの保険
 
+# 絵と音は index.html に入らない（ZIP に同梱するだけ）ので、build.py は
+# 組み立てない。**ただし thumb/ だけは数えて出す。**
+# 大会のカードは `taikai.js` の `faceOf` が `thumb/` を読んでいて、
+# **無いと顔が全部シルエットに落ちる**——しかも画面は普通に動くので、
+# 目では気づけない（`debug.js` の混入を毎回確かめているのと同じ理由）。
+# 焼くのは tools/make-thumbs.py。**ここでは焼かない**
+# （ビルドに Pillow を要求しないため）
+THUMB = 'thumb'
+
 
 def read(name, base=SRC):
     with open(os.path.join(base, name), encoding='utf-8') as f:
@@ -165,6 +174,26 @@ def main():
     if present:
         print('  開発用（index.html には入っていない。配布ZIPからは外すこと）: %s'
               % ', '.join(present))
+
+    # カード用のサムネイル。**組み立てはしない。数えて言うだけ。**
+    tdir = os.path.join(HERE, THUMB)
+    imgs = os.path.join(HERE, 'img')
+    if not os.path.isdir(tdir):
+        print('  %s/ がありません。大会のカードの顔が全部シルエットになります。'
+              % THUMB, file=sys.stderr)
+        print('  python3 tools/make-thumbs.py で焼くこと。', file=sys.stderr)
+    else:
+        n = len([f for f in os.listdir(tdir) if f.endswith('.webp')])
+        size = sum(os.path.getsize(os.path.join(tdir, f))
+                   for f in os.listdir(tdir) if f.endswith('.webp'))
+        print('  %s/ の %d枚（%.1fMB）を大会のカードが読みに行く。'
+              'ZIPには %s/ も含めること' % (THUMB, n, size / 1048576.0, THUMB))
+        if os.path.isdir(imgs):
+            m = len([f for f in os.listdir(imgs) if f.endswith('.webp')])
+            if n < m:
+                print('  img/ は %d枚あるのに %s/ は %d枚です。'
+                      'python3 tools/make-thumbs.py を回すこと。'
+                      % (m, THUMB, n), file=sys.stderr)
     return 0
 
 

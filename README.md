@@ -75,7 +75,9 @@ ZIPに混ぜるとURLを知っている人には届いてしまう。
 ```
 zip -r jandol.zip . -x '.git/*' '.gitignore' 'debug.html' 'src/debug.js' \
   'tools/*' 'docs/*' 'audio_raw/*' '__pycache__/*'
-# audio/（効果音）と tiles/（牌の絵）と img/ と fonts/ は入れること
+# audio/（効果音）と tiles/（牌の絵）と img/ と thumb/ と fonts/ は入れること
+# **thumb/ を忘れないこと**——大会のカードの顔がここを読むので、
+# 無いと出走表も中継も決勝卓も顔が全部シルエットになる（画面は普通に動く）
 # audio_raw/ は .gitignore に入っているが**手元のフォルダにはある**（4.8MB の音の素材）。
 # zip は .gitignore を見ないので、除外に書かないと配布物へ混ざる
 ```
@@ -101,6 +103,7 @@ index.html          ビルド結果。これを配布する（500KB以下に保�
 shell.html          外枠。表紙・タブ・セーブ。ビルド時にCSS/JSが差し込まれる
 build.py            index.html を組み立てる（約13KB。CSS/JSは src/ のまま読む）
 tools/make-font.py  表紙の丸ゴシックを作り直す
+tools/make-thumbs.py 大会のカード用に img/ を 176×234 へ焼き直して thumb/ に出す
 tools/make-sfx.py   控えの discard.wav だけを合成して書く（鳴る12本は書かない）
 tools/prep-sfx.py   生成した音源（audio_raw/）を切り出して整形し audio/ に書く（鳴る12本）
 tools/test-match.js  対局まわりの純関数テスト（副露の横倒し・締めの四分岐・ルールの既定）
@@ -151,6 +154,9 @@ fonts/              maru-ui.woff2（本文・568KB）／ maru-title.woff2（題�
 tiles/              牌の絵39枚（SVG・770KB）。出典は tiles/LICENSE.txt
 img/                001.webp 〜 200.webp（雀ドル200人）
                     p01.webp 〜 p12.webp（プレイヤーの顔・十二人から選ぶ）
+                    どれも 768×1024。名鑑・表紙・対局画面はここを読む
+thumb/              その 176×234 版（212枚・1.0MB）。**大会のカードだけが読む。**
+                    焼き直すのは tools/make-thumbs.py。**配布ZIPに必ず含めること**
 docs/HANDOVER.md    設計の経緯、決めごと、ハマった罠
 docs/ROADMAP.md     これからの構想と順番を一枚に（なぜこの順か・再測をいつやるか）
 docs/design/jansou/ 直営雀荘の設計一式（spec.md ＝リニューアル、
