@@ -801,7 +801,9 @@ body.inMatch:not(.four){--ebh:168px}
 body.inMatch #endband[hidden],body.inMatch #endbust[hidden],body.inMatch .endTint[hidden]{display:none}
 body.inMatch #endband{
   position:absolute;left:0;right:0;bottom:0;height:var(--ebh);z-index:8;
-  display:flex;align-items:stretch;gap:14px;padding:8px 14px;box-sizing:border-box;
+  /* 縦は 6px。**役名を左の列へ移したぶん（20px）を、余白と行間から返している**
+     ——`--ebh` は上げられない（上げると卓が縮む。agari-spec.md §2 の追補） */
+  display:flex;align-items:stretch;gap:14px;padding:6px 14px;box-sizing:border-box;
   background:linear-gradient(180deg,#251d3d 0%,#1a1430 100%);
   border-top:3px solid var(--line);box-shadow:0 -6px 14px rgba(0,0,0,.45);
   opacity:0;transition:opacity .2s ease,translate .3s cubic-bezier(.2,.9,.3,1);
@@ -831,7 +833,13 @@ body.inMatch .ebNext[hidden]{display:none}
 @media(prefers-reduced-motion:reduce){body.inMatch .ebNext{animation:none;opacity:.8}}
 body.inMatch:not(.four) .ebNext{right:12px;bottom:4px}
 
-body.inMatch .ebLeft{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;justify-content:center;gap:4px}
+/* **言葉は縮ませない。**`.ebLeft` は縦の flex なので、入りきらないと
+   既定（flex-shrink:1）で全部が均等に潰れる——`.ebLine`（セリフ）は 16px 要るのに
+   11px まで潰れて、**字が上下から切れて読めなくなっていた**（役を左へ移して気づいた。
+   移す前から潰れていた）。**縮んでよいのは牌の並び（.ebTiles）だけ**にする */
+body.inMatch .ebLeft{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;justify-content:center;gap:2px}
+body.inMatch .ebHead,body.inMatch .ebLine,body.inMatch .ebDora,body.inMatch .ebYaku{flex:none}
+body.inMatch .ebTiles{flex:0 1 auto}
 body.inMatch .ebRight{
   flex:0 0 auto;width:196px;display:flex;flex-direction:column;
   justify-content:center;align-items:flex-end;text-align:right;gap:2px;
@@ -902,7 +910,8 @@ body.inMatch #endband.scoreLead .ebScore .v{
   font-family:var(--maru);font-weight:900;line-height:1;font-size:clamp(26px,6.4vh,36px);
   color:#cfc4e6;-webkit-text-stroke:3.5px var(--line);paint-order:stroke fill;
 }
-body.inMatch #endband.scoreLead .ebYaku{order:3}
+/* **.ebYaku はもう .ebRight にいない**ので order を持たせない（agari-spec.md §2 追補）。
+   ここの order は .ebRight の中の並び（合計点が先、増減が後）だけの話 */
 body.inMatch:not(.four) #endband.scoreLead .ebScore{flex-direction:row;align-items:baseline;gap:6px}
 body.inMatch:not(.four) #endband.scoreLead .ebScore .v{font-size:26px}
 body.inMatch .ebScore{font-size:12px;color:#cfc4e6;display:flex;gap:6px;align-items:baseline}
@@ -910,13 +919,32 @@ body.inMatch .ebScore:empty{display:none}
 body.inMatch .ebScore .who{color:#a99ec6;font-size:10.5px}
 body.inMatch .ebScore .v{font-family:var(--maru);font-weight:800}
 body.inMatch .ebRight{overflow:hidden}
+
+/* ---- 三番目：符と翻と役名（§2 の追補・2026年9月10日） ----
+   **右は数字、左は言葉。**役名は `.ebRight`（四人卓で 196px）に
+   増減・合計点と一緒に積んでいて、10.5px ＋ `max-height:28px` ＋ `overflow:hidden`
+   だったので、**役が多いと黙って切れていた**（混一色ドラ4 で 14px ぶん＝六つのうち
+   三つが消える。実測）。幅の余っている `.ebLeft` へ移して字を大きくする。
+
+   **`--maru` にしないこと。**役名には `槓` が出る（槍槓・三槓子・四槓子）が、
+   丸ゴシックには収録が無い（CLAUDE.md「既知の課題」）。`--sans` のままなら割れない。
+
+   **溢れたら畳む。**`overflow:hidden` はあくまで保険で、実際に減らすのは
+   `ui.js` の `showEnd`（三つを超えたら「ほか N」）。
+   **`--ebh` は変えない**——高くすると卓が縮む */
 body.inMatch .ebYaku{
-  display:flex;flex-wrap:wrap;justify-content:flex-end;gap:0 8px;
-  font-size:10.5px;line-height:14px;color:#a99ec6;max-height:28px;overflow:hidden;
+  display:flex;flex-wrap:wrap;align-items:baseline;justify-content:flex-start;gap:0 10px;
+  font-size:15px;line-height:19px;color:#cfc4e6;max-height:38px;overflow:hidden;
 }
 body.inMatch .ebYaku:empty{display:none}
-body.inMatch .ebYaku .fu{color:#e6dcff;width:100%}
-body.inMatch .ebYaku .y i{font-style:normal;color:#7a7096;margin-left:3px}
+/* **符と翻は改行しない**（`width:100%` を持たせない）。四人卓の左の列は 610px あり、
+   「40符 9翻 倍満 立直1翻 一発1翻 混一色2翻 ほか 3」が**一行に入る**。
+   右に積んでいたころは幅が 196px しかなかったので改行が要っただけ。
+   一行に収まると `.ebLeft` の縦が 20px 空き、**`--ebh` を上げずに字を大きくできる** */
+body.inMatch .ebYaku .fu{color:#e6dcff;font-size:16px;font-weight:800}
+body.inMatch .ebYaku .y i{font-style:normal;color:#9a90b8;margin-left:3px;font-size:12px}
+/* 畳んだぶん。**「隠した」ではなく「まだある」と言うためのもの** */
+body.inMatch .ebYaku .more{color:#a99ec6;font-size:13px}
 
 /* ---------- 立ち絵（§3） ----------
    カットインの枠は流用しない。あれは会話の演出で、こちらは局の締め。
@@ -1042,15 +1070,20 @@ body.inMatch .seat .tp.no{background:#4b4463;color:#c9c0dd}
 body.inMatch:not(.four) #endband{flex-direction:column;gap:5px;padding:8px 12px 10px}
 body.inMatch:not(.four) .ebScore,body.inMatch:not(.four) .ebYaku .fu,
 body.inMatch:not(.four) .ebYaku .y{white-space:nowrap}
-body.inMatch:not(.four) .ebLeft{flex:0 0 auto;gap:3px}
+body.inMatch:not(.four) .ebLeft{flex:0 0 auto;gap:2px}
 body.inMatch:not(.four) .ebRight{
   width:auto;flex-direction:row;align-items:baseline;justify-content:flex-start;
-  gap:12px;border-left:0;border-top:2px solid rgba(255,255,255,.09);padding:5px 0 0;text-align:left;
+  gap:12px;border-left:0;border-top:2px solid rgba(255,255,255,.09);padding:3px 0 0;text-align:left;
 }
 body.inMatch:not(.four) .ebDelta{font-size:30px;flex:none}
 body.inMatch:not(.four) .ebScore{font-size:11px;gap:4px}
-body.inMatch:not(.four) .ebYaku{justify-content:flex-start;max-height:15px;flex:1 1 auto}
-body.inMatch:not(.four) .ebYaku .fu{width:auto}
+/* **縦は 13.5px まで**（四人卓は 15px）。列レイアウトの左の列は 368px しかなく、
+   「25符 6翻 跳満 立直1翻 門前清自摸和1翻 七対子2翻 ほか 1」は**必ず二行になる。**
+   `--ebh` は 168px で動かせないので（上げると卓が縮む）、二行ぶんの高さを
+   字の側で作る。10.5px からは 29% 大きい。**四人卓の 15px は下げないこと** */
+body.inMatch:not(.four) .ebYaku{justify-content:flex-start;
+  font-size:13.5px;line-height:17px;max-height:36px}
+body.inMatch:not(.four) .ebYaku .fu{font-size:14.5px}
 body.inMatch:not(.four) .ebTiles .tile{width:calc(var(--tw)*.62);height:calc(var(--tw)*.84)}
 body.inMatch:not(.four) #endbust{
   width:118px;height:min(196px,calc(100% - var(--ebh) - 6px));bottom:calc(var(--ebh) - 12px);

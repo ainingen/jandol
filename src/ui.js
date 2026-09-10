@@ -912,9 +912,16 @@ const UI = {
     band.querySelector('.ebScore').innerHTML = data.type === 'win'
       ? `<span class="who">${esc(data.winner.name)}</span><span class="v">${r.score.total}点</span>`
       : '';
+    /* 役名は左の列（言葉の側）。**溢れたら畳む**——`overflow:hidden` で隠すと、
+       隠れていること自体が見えない（10.5px で右に積んでいたころ、混一色ドラ4 は
+       六つのうち三つが黙って切れていた）。**畳むのはここ一箇所。**
+       並びは game.js が返した順のまま——並べ替えると「何が消えたか」が読めなくなる */
+    const YAKU_SHOWN = 3;
     band.querySelector('.ebYaku').innerHTML = data.type === 'win'
       ? `<span class="fu">${r.fu}符 ${r.han}翻${r.score.name ? ' ' + esc(r.score.name) : ''}</span>`
-        + r.yaku.map((y) => `<span class="y">${esc(y.name)}<i>${y.yakuman ? '役満' : y.han + '翻'}</i></span>`).join('')
+        + r.yaku.slice(0, YAKU_SHOWN)
+          .map((y) => `<span class="y">${esc(y.name)}<i>${y.yakuman ? '役満' : y.han + '翻'}</i></span>`).join('')
+        + (r.yaku.length > YAKU_SHOWN ? `<span class="more">ほか ${r.yaku.length - YAKU_SHOWN}</span>` : '')
       : '';
 
     /* --- 立ち絵。主役は §1 の表。振り込みの主役は「和了った相手」で、自分ではない --- */

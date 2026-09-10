@@ -751,6 +751,68 @@ const winData = (winnerSeat, loserSeat, total, payments, sticks) => ({
     '列レイアウトの #felt は display:contents（影の落ちる箱を持たない）');
 }
 
+/* ============================================================
+   11. 右は数字、左は言葉（docs/design/match/agari-spec.md §2 の追補・2026年9月10日）
+
+   役名（`.ebYaku`）は `.ebRight`（四人卓で 196px）に増減・合計点と一緒に
+   積んでいて、10.5px ＋ `max-height:28px` ＋ `overflow:hidden` だったので、
+   **役が多いと黙って切れていた**（混一色ドラ4 で 14px ぶん＝六つのうち三つ）。
+   幅の余っている `.ebLeft` へ移して 15px（符の行 16px）にした。
+
+   **溢れたら畳む。**`overflow` で隠すと隠れていることが見えないので、
+   三つを超えたら `showEnd` が「ほか N」を置く。**組むのはそこ一箇所。**
+   ============================================================ */
+{
+  const fs = require('fs'), path = require('path');
+  const mj = fs.readFileSync(path.join(__dirname, '../src/match.js'), 'utf8');
+  const uj = fs.readFileSync(path.join(__dirname, '../src/ui.js'), 'utf8');
+  const css = fs.readFileSync(path.join(__dirname, '../src/match.css'), 'utf8');
+
+  /* ---- 並び（TABLE_HTML） ---- */
+  const left = (mj.match(/<div class="ebLeft">([\s\S]*?)<\/div>\s*<div class="ebRight">/) || [])[1] || '';
+  const right = (mj.match(/<div class="ebRight">([\s\S]*?)\n        <\/div>/) || [])[1] || '';
+  ok(/class="ebYaku"/.test(left), '.ebYaku は .ebLeft の中（言葉の側）');
+  ok(!/class="ebYaku"/.test(right), '.ebRight に .ebYaku を残していない');
+  ok(/class="ebDelta"/.test(right) && /class="ebScore"/.test(right),
+    '.ebRight は数字だけ（.ebDelta と .ebScore）');
+  ok(!/class="ebDelta"/.test(left) && !/class="ebScore"/.test(left),
+    '数字を .ebLeft へ持ち込んでいない');
+
+  /* ---- 畳むのは showEnd の一箇所だけ ---- */
+  ok((uj.match(/ほか /g) || []).length === 1, '「ほか N」を組むのは ui.js の一箇所だけ');
+  ok(!/ほか /.test(mj), 'match.js（TABLE_HTML）には書かない');
+  ok(!/content:[^;]*ほか/.test(css), 'match.css の content: で足していない（数が出せない）');
+  const se = (uj.match(/showEnd\(kind, data\) \{[\s\S]*?\n  \},/) || [''])[0];
+  ok(/ほか /.test(se), '「ほか N」を組んでいるのは showEnd の中');
+  ok(/YAKU_SHOWN/.test(se) && /slice\(0, YAKU_SHOWN\)/.test(se),
+    '出す数は名前の付いた定数（YAKU_SHOWN）で切っている');
+  ok(/const YAKU_SHOWN = 3;/.test(se), '出すのは三つまで');
+  /* **並べ替えないこと**——何が畳まれたかが読めなくなる */
+  ok(!/yaku\.slice\(\)\.sort|yaku\.sort/.test(uj), '役を並べ替えていない（game.js の順のまま）');
+
+  /* ---- CSS ---- */
+  const yk = (css.match(/\nbody\.inMatch \.ebYaku\{([^}]*)\}/) || [])[1] || '';
+  const fs2 = (yk.match(/font-size:\s*(\d+(?:\.\d+)?)px/) || [])[1];
+  ok(+fs2 >= 14, '役名は 14px 以上（10.5px では読めなかった）', fs2 + 'px');
+  const fu = (css.match(/body\.inMatch \.ebYaku \.fu\{([^}]*)\}/) || [])[1] || '';
+  ok(!/width:\s*100%/.test(fu),
+    '符と翻に width:100% を持たせない（一行に収めて .ebLeft の縦を空ける）');
+  /* **`--maru` にしないこと**——役名には `槓` が出るが丸ゴシックに収録が無い */
+  ok(!/font-family/.test(yk) && !/font-family/.test(fu),
+    '役名の書体を --maru にしていない（槓 が丸ゴシックに無い）');
+  /* .ebRight の中の並び（order）は .ebScore と .ebDelta だけの話 */
+  ok(!/scoreLead \.ebYaku\{[^}]*order/.test(css),
+    'scoreLead に .ebYaku の order を残していない（もう .ebRight の子ではない）');
+  ok(/scoreLead \.ebScore\{[^}]*order:1/.test(css) && /scoreLead \.ebDelta\{[^}]*order:2/.test(css),
+    'scoreLead の並び（合計点が先、増減が後）は残っている');
+  /* **言葉は縮ませない。**縮んでよいのは牌の並びだけ */
+  ok(/body\.inMatch \.ebHead,body\.inMatch \.ebLine,body\.inMatch \.ebDora,body\.inMatch \.ebYaku\{flex:none\}/.test(css),
+    '見出し・セリフ・ドラ・役名は縮まない（flex:none）');
+  /* **--ebh は変えない**（高くすると卓が縮む） */
+  ok(/--ebh:132px/.test(css) && /body\.inMatch:not\(\.four\)\{--ebh:168px\}/.test(css),
+    '--ebh は 132px / 168px のまま');
+}
+
 /* ---------------- 結果 ---------------- */
 console.log('対局まわりの純関数テスト');
 console.log('通過 ' + pass + ' 件' + (fails.length ? ' / 失敗 ' + fails.length + ' 件' : ''));
