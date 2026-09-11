@@ -143,6 +143,7 @@ src/
   theme.css         全画面に効く「華」の層（金箔・漆・朱）
   maru.css          丸ゴシックの読み込み定義（tools/make-font.py が生成）
   title.js/.css     表紙とプレイヤー設定（名前と顔）
+  prologue.js/.css  プロローグ（表紙と「あなたのこと」のあいだの独白）
   meikan.js/.css    名鑑
   team.js/.css      チーム編成
   taikai.js/.css    大会
@@ -167,10 +168,13 @@ docs/design/jansou/ 直営雀荘の設計一式（spec.md ＝リニューアル�
                     monthly.md ＝月末決算と月報）
 docs/design/office/ 事務所ハブと日進行の統一（spec.md ＝全5段階）
 docs/design/taikai/ 大会の設計（field-spec.md ＝出走表、resume-spec.md ＝進行の控え）
+docs/design/title/  表紙まわりの設計（prologue-spec.md ＝プロローグ）
 tools/test-office.js 事務所の純関数テスト（node tools/test-office.js）
 tools/test-taikai-field.js  出走表の純関数テスト（node tools/test-taikai-field.js）
 tools/drive-taikai-field.js 出走表をブラウザで見る（--shots DIR で五つの大会を撮る）
 tools/test-scout.js  遠征先の店の純関数テスト（node tools/test-scout.js）
+tools/test-prologue.js  プロローグの錠（node tools/test-prologue.js）
+tools/drive-prologue.js プロローグをブラウザで押す（--shots DIR で三枚撮る）
 tools/measure-jansou.js 直営店の経済を測る（HANDOVER §4 の表を作り直す）
 tools/measure-office.js 遠征と日進行の釣り合いを測る（spec.md §11 の A3）
 tools/test-jansou.js 雀荘の純関数テスト（node tools/test-jansou.js）
@@ -505,6 +509,38 @@ Android Chromeでしか効かず、iOS Safariは非対応。PLiCyはiframeで動
 足りないぶんは `title.js` の `fitTop` があらすじ→ロスターの順に落とす。
 **`fitsInView()` は `.ttBody` の下端で測る**（最後のボタンではない）
 ——ボタンで測っていたころ、その下の脚注が画面の外に落ちていた。
+
+### プロローグは canvas の外（2026年9月11日）
+
+表紙で「はじめる」（「最初からはじめる」）を押すと、プレイヤー設定
+（`あなたのこと`）の前に短い独白が挟まる。**プロローグは `src/prologue.js`。**
+設計は `docs/design/title/prologue-spec.md`。
+
+- **`#cover` の canvas には触らない。**`.plRoot` を `position:fixed` の覆いとして
+  `document.body` に足し、閉じるときに `remove()` するだけ（`.popup` と同じ形）。
+  **canvas を DOM から外さない・`display:none` にしない・中身を消さない**
+  ——上に重ねるだけならサムネイルの撮影には影響しない
+  （`.popup` が既に全画面を覆っていて、それでも撮れている）
+- **最後の一行は副題（`Title.SUBTITLE`）と完全に同じ文字列。**
+  片方だけ動かすと `tools/test-prologue.js` が落ちる。
+  **本文でそこだけ句点を打たない**のは副題が看板だから
+  ——**照合に例外を置かないこと**（例外の幅だけ捕まえ損ねる）。
+  **副題を変えたら、プロローグの最後の一行も変えること**
+- **「見たか」をセーブに書かない。**出すかどうかは押した経路で決まるので、
+  覚える必要が無い（`blankState()` / `loadState()` / `onStart()` の
+  三箇所に項目が増えるのを避ける）。二周目の人には毎回出るが、
+  **とばす釦が最初から出ている**ので一押しで抜けられる
+- **書体は `var(--mincho)`。丸ゴ（`Maru`）を使わないこと。**
+  `maru.css` の二つの woff2 は表紙と UI に出る字だけを切り出してあるので、
+  指定すると「入っている字だけ丸ゴ・残りは代替書体」という混ざりかたになる。
+  **本文のためにフォントを焼き直さないこと**（`tools/make-font.py` の
+  `source_chars()` に、本文の字が拾われることと実測が書いてある）
+- **一画面は5行まで。**いちばん狭い iOS の横持ち 334px で読める上限
+  （`tools/drive-prologue.js` が 812×334 と 375×812 の両方で、
+  とばす釦が画面の中にいることと、流さずに収まることを見ている）
+- 単体ページ（`team.html` / `taikai.html` / `meikan.html`）は `prologue.js` を
+  読まない。`title.js` は `typeof PROLOGUE === 'undefined'` を見て、
+  **無ければ黙って設定画面へ行く**
 
 ## 字体
 

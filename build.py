@@ -63,7 +63,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 SRC = os.path.join(HERE, 'src')
 
 # 読み込み順。並べ替えるときは依存を確認すること
-CSS = ['style.css', 'theme.css', 'maru.css', 'title.css', 'meikan.css',
+CSS = ['style.css', 'theme.css', 'maru.css', 'title.css', 'prologue.css', 'meikan.css',
        'team.css', 'taikai.css', 'scout.css', 'office.css',
        'jansou.css', 'jansou-floor.css', 'office-room.css', 'match.css']
 # jansou.js は jansou-guests.js / jansou-floor.js を参照するので、必ず後ろに置く。
@@ -75,9 +75,12 @@ CSS = ['style.css', 'theme.css', 'maru.css', 'title.css', 'meikan.css',
 # sound.js は ui.js が「あれば使う」（読み込み時には触らない）。audio/ は ZIP に含めること
 # resume.js は match.js より前に置く。match.js が `typeof Resume` で見るのは
 # 呼ぶときだけなので順序は効かないが、taikai.js も読むので依存を先に並べておく
+# prologue.js は title.js より前。title.js は `typeof PROLOGUE` で
+# 「呼ぶときにだけ」見るので順序は効かないが、依存を先に並べる慣わしに合わせる
+# （docs/design/title/prologue-spec.md §5）
 JS = ['engine.js', 'ai.js', 'game.js', 'sound.js', 'ui.js', 'resume.js', 'match.js',
       'characters.js', 'geo.js', 'tournament.js', 'offers.js', 'office.js',
-      'title.js', 'meikan.js',
+      'prologue.js', 'title.js', 'meikan.js',
       'team.js', 'taikai.js', 'scout.js',
       'jansou-guests.js', 'jansou-floor.js', 'office-room.js', 'jansou.js', 'scoutshop.js', 'serifu.js']
 
