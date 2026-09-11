@@ -156,6 +156,7 @@ body.inMatch #matchRoot{flex:1;min-height:0}
 <script src="src/ai.js?v=420099e2"></script>
 <script src="src/game.js?v=b56c088a"></script>
 <script src="src/sound.js?v=2230964f"></script>
+<script src="src/ui-sound.js?v=36a782c2"></script>
 <script src="src/ui.js?v=b6391029"></script>
 <script src="src/resume.js?v=4cd59575"></script>
 <script src="src/match.js?v=423ed5ef"></script>
@@ -495,6 +496,12 @@ body.inMatch #matchRoot{flex:1;min-height:0}
   });
 
   document.getElementById('appHome').addEventListener('click', function () { go('title'); });
+
+  /* 効果音の音量だけ起動時に入れておく。**AudioContext はまだ作らない**
+     （自動再生制限。init は最初の pointerdown で src/ui-sound.js が呼ぶ）。
+     Sound.volume は ctx が無くても値を控えるので、init のときに反映される。
+     **ここを落とすと、音量0にしていても釦の音だけ既定の1で鳴る** */
+  Sound.volume(state.sfxVolume);
 
   /* 表紙の絵は起動時に一度だけ描く。以降どの画面にいても撮影できる */
   Title.paintCover(document.getElementById('cover'), state);

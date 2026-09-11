@@ -826,6 +826,85 @@ const winData = (winnerSeat, loserSeat, total, payments, sticks) => ({
     '--ebh は 132px / 168px のまま');
 }
 
+/* ============================================================
+   §12 釦の音の委譲（`src/ui-sound.js`。spec.md §2.7）
+
+   **画面ごとに `Sound.play('tap')` を書き足さないための錠。**
+   対局の外はぜんぶ無音だったので、`document` に委譲の listener を
+   一つだけ置いた。散らすと、押し忘れと、**Node で落ちる**危険が出る。
+
+   ブラウザで押す側は `tools/check-tap.js`。ここは形だけ。
+   ============================================================ */
+{
+  const fs = require('fs'), path = require('path');
+  const rd = (f) => fs.readFileSync(path.join(__dirname, '..', f), 'utf8');
+  const strip = (t) => t.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/[^\n]*/g, '$1');
+  const us = rd('src/ui-sound.js');
+  const ub = strip(us);
+
+  /* **委譲は一本。**`document` に置く listener はここだけ */
+  ok((ub.match(/document\.addEventListener\(/g) || []).length === 1,
+    'ui-sound.js が document に置く listener は一つだけ');
+  ok(/'pointerdown'/.test(ub), '拾うのは pointerdown（click ではない）');
+
+  /* **`Sound.play('tap')` を書くのは一箇所。**
+     `ui.js` の `UI.buttons`（対局中の釦）と `taikai.js` の音量の見本は
+     「対局の外の釦」ではないので、別の口として数に入れない */
+  ok((ub.match(/Sound\.play\(/g) || []).length === 1,
+    '**tap を鳴らすのは ui-sound.js の一行だけ**');
+  ok(/Sound\.play\('tap'\)/.test(ub), "鳴らすのは 'tap'");
+
+  /* **除きかたは一箇所（`muted`）で決める。**画面ごとに条件を散らさない */
+  ok(/function muted\(/.test(ub), '除きかたは muted() 一つ');
+  const mu = (ub.match(/function muted\([\s\S]*?\n  \}/) || [''])[0];
+  ok(/inMatch/.test(mu), 'muted() が body.inMatch を見る（tap と discard の二重を避ける）');
+  ok(/data-nosound/.test(mu), 'muted() が [data-nosound] を見る（逃げ道）');
+  ok((ub.match(/inMatch/g) || []).length === 1,
+    'inMatch を見るのは muted() の中だけ（分岐を増やさない）');
+
+  /* **初期化はここで前に出す。**いままでは大会の「卓に着く」だけが解除の口で、
+     表紙から入って事務所を触っても AudioContext が無かった。**二度目は呼ばない** */
+  ok(/Sound\.init\(\)/.test(ub) && /Sound\.load\(\)/.test(ub),
+    '最初の pointerdown で init と load を呼ぶ');
+  ok(/if \(started\) return;/.test(ub), '二度目からは呼ばない（started の錠）');
+
+  /* **build.py に入っていること。**入れ忘れると index.html で一度も読まれない */
+  const bp = rd('build.py');
+  ok(/'ui-sound\.js'/.test(bp), "build.py の JS に 'ui-sound.js' がある");
+
+  /* **音量は起動時に入れる。**落とすと、音量0にしていても釦だけ既定の1で鳴る */
+  ok(/Sound\.volume\(state\.sfxVolume\)/.test(strip(rd('shell.html'))),
+    'shell.html が起動時に Sound.volume(state.sfxVolume) を入れる');
+
+  /* ------------------------------------------------------------
+     **Node から読まれるモジュールに Sound の参照を増やさないこと。**
+     `tools/*.js` が require している src は、参照した瞬間に
+     ヘッドレスで落ちうる（`typeof` で守れば落ちないが、
+     守り忘れが効くのは実行するまで分からない）。**数で固定する。**
+
+     いま Sound を見てよいのは二つだけ。
+       ui.js    … 対局の io 層（spec.md §2.3）
+       taikai.js … 音量の設定と「卓に着く」の解除。どれも typeof で守ってある
+     `ui-sound.js` は**どの tools からも require されていない**ので、
+     この表に出てこないのが正しい
+     ------------------------------------------------------------ */
+  const SOUND_REFS = { 'ui.js': 2, 'taikai.js': 13 };
+  const mods = new Set();
+  fs.readdirSync(path.join(__dirname)).filter((f) => f.endsWith('.js')).forEach((f) => {
+    const t = fs.readFileSync(path.join(__dirname, f), 'utf8');
+    (t.match(/require\(['"]\.\.\/src\/[a-z-]+\.js['"]\)/g) || [])
+      .forEach((m) => mods.add(m.match(/src\/([a-z-]+\.js)/)[1]));
+  });
+  ok(mods.size > 15, 'tools が require している src を数え上げられた（' + mods.size + '本）');
+  ok(!mods.has('ui-sound.js'),
+    '**ui-sound.js はどの tools からも require されていない**（document を直に触ってよい根拠）');
+  [...mods].sort().forEach((m) => {
+    const n = (strip(rd('src/' + m)).match(/\bSound\b/g) || []).length;
+    ok(n === (SOUND_REFS[m] || 0),
+      'Node から読まれる ' + m + ' の Sound の参照は ' + (SOUND_REFS[m] || 0) + '（got ' + n + '）');
+  });
+}
+
 /* ---------------- 結果 ---------------- */
 console.log('対局まわりの純関数テスト');
 console.log('通過 ' + pass + ' 件' + (fails.length ? ' / 失敗 ' + fails.length + ' 件' : ''));
