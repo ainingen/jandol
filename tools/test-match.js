@@ -827,13 +827,17 @@ const winData = (winnerSeat, loserSeat, total, payments, sticks) => ({
 }
 
 /* ============================================================
-   §12 釦の音の委譲（`src/ui-sound.js`。spec.md §2.7）
+   §12 対局の外の音（`src/ui-sound.js`。spec.md §2.7）
 
-   **画面ごとに `Sound.play('tap')` を書き足さないための錠。**
+   **画面ごとに `Sound.play` を書き足さないための錠。**
    対局の外はぜんぶ無音だったので、`document` に委譲の listener を
    一つだけ置いた。散らすと、押し忘れと、**Node で落ちる**危険が出る。
 
-   ブラウザで押す側は `tools/check-tap.js`。ここは形だけ。
+     (A) 釦の音 … `tap`。ブラウザで押す側は `tools/check-tap.js`
+     (B) 営業中の店の牌の音 … `discard` / `draw` をまばらに。
+         上限は `FLOOR_MAX_PER_SEC` **一箇所**。実測は `tools/check-floor-sound.js`
+
+   ここは形だけ。
    ============================================================ */
 {
   const fs = require('fs'), path = require('path');
@@ -850,9 +854,39 @@ const winData = (winnerSeat, loserSeat, total, payments, sticks) => ({
   /* **`Sound.play('tap')` を書くのは一箇所。**
      `ui.js` の `UI.buttons`（対局中の釦）と `taikai.js` の音量の見本は
      「対局の外の釦」ではないので、別の口として数に入れない */
-  ok((ub.match(/Sound\.play\(/g) || []).length === 1,
+  ok((ub.match(/Sound\.play\('tap'\)/g) || []).length === 1,
     '**tap を鳴らすのは ui-sound.js の一行だけ**');
-  ok(/Sound\.play\('tap'\)/.test(ub), "鳴らすのは 'tap'");
+  /* 鳴らす口は二つだけ（釦の tap と、営業中の牌）。増やすときは spec に書くこと */
+  ok((ub.match(/Sound\.play\(/g) || []).length === 2,
+    'ui-sound.js が Sound.play を呼ぶのは二箇所（tap と 営業の牌）');
+
+  /* ---- (B) 営業中の店の牌の音 ---- */
+  /* **上限は一箇所の定数。**倍速で機械銃にならないための唯一の栓 */
+  ok((ub.match(/FLOOR_MAX_PER_SEC/g) || []).length === 3,
+    'FLOOR_MAX_PER_SEC は定義1・使用1・export1 の三回だけ（数を散らさない）');
+  ok(/const FLOOR_MAX_PER_SEC = \d+;/.test(ub), 'FLOOR_MAX_PER_SEC は定数として一度だけ書く');
+  const fl = (ub.match(/function floor\([\s\S]*?\n  \}/) || [''])[0];
+  ok(/FLOOR_MAX_PER_SEC \/ Math\.max\(1, speed/.test(fl),
+    '**倍速のときは減らす**（上限を速さで割る）');
+  ok(/document\.hidden/.test(fl), 'タブが隠れているあいだは鳴らさない');
+  ok(/FLOOR_SOUND\[kind\]/.test(fl) && /if \(!name\) return false/.test(fl),
+    '表に無い節目では鳴らさない（FLOOR_SOUND がすべて）');
+  /* **新しい音源は足していない。**使うのは既存の13本のうち二つだけ。
+     **`src/sound.js` も `src/ui-sound.js` も require しない**
+     ——ここで読むと下の SOUND_REFS の数え上げに自分で名前を足すことになる
+     （`ui-sound.js` は読んだ瞬間に document を触って落ちる。実際に落とした） */
+  const fs2 = strip(rd('src/sound.js'));
+  const nm = (fs2.match(/const NAMES = \[([^\]]*)\]/) || [, ''])[1];
+  ok(/'discard'/.test(nm) && /'draw'/.test(nm),
+    '当てた二つは Sound.NAMES にある（新しい音源を足していない）');
+  ok(/arrive: 'draw'/.test(ub) && /pay: 'discard'/.test(ub),
+    '営業で鳴らすのは arrive→draw と pay→discard');
+  ok(!/FLOOR_SOUND = \{[^}]*(agari|riichi|ryuukyoku|deal|dora|call|tap)/.test(ub),
+    '営業に和了・リーチ・流局などを当てていない（音の性格が違う）');
+
+  /* **時計を増やさない。**四人卓で落ちた件と同じ土地 */
+  ok(!/setInterval|setTimeout|requestAnimationFrame/.test(ub),
+    'ui-sound.js は時計を持たない（営業の進行に相乗りしている）');
 
   /* **除きかたは一箇所（`muted`）で決める。**画面ごとに条件を散らさない */
   ok(/function muted\(/.test(ub), '除きかたは muted() 一つ');
@@ -867,6 +901,20 @@ const winData = (winnerSeat, loserSeat, total, payments, sticks) => ({
   ok(/Sound\.init\(\)/.test(ub) && /Sound\.load\(\)/.test(ub),
     '最初の pointerdown で init と load を呼ぶ');
   ok(/if \(started\) return;/.test(ub), '二度目からは呼ばない（started の錠）');
+
+  /* ---- 呼ぶ側（`src/jansou-floor.js` の再生層） ----
+     **あちらは Node から読まれている**ので、`Sound` を書いてはいけない。
+     書けるのは `UiSound` を「あれば使う」一行だけ */
+  const jf = strip(rd('src/jansou-floor.js'));
+  ok(!/\bSound\b/.test(jf), '**jansou-floor.js に Sound の参照が無い**（Node で読まれる）');
+  ok((jf.match(/UiSound\.floor\(/g) || []).length === 1,
+    'UiSound.floor を呼ぶのは一箇所だけ');
+  ok(/typeof UiSound !== 'undefined'/.test(jf), "UiSound は「あれば使う」（typeof で守る）");
+  /* **スキップ中は合図も出さない。**skip は一フレームで残りを全部飲み干す */
+  ok(/!live\.skipping && typeof UiSound !== 'undefined'/.test(jf),
+    '**スキップ中は合図を出さない**（一フレームで数百本ぶんが飛ぶ）');
+  ok(/UiSound\.floor\(e\.kind, live\.speed\)/.test(jf),
+    '節目の種類と速さを渡す（policy は ui-sound.js 側）');
 
   /* **build.py に入っていること。**入れ忘れると index.html で一度も読まれない */
   const bp = rd('build.py');

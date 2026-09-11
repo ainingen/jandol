@@ -414,9 +414,12 @@ const log = (...a) => { process.stdout.write(a.join(' ') + '\n'); };
       log('！対局の速さがセーブの matchSpeed と違う'); process.exitCode = 2;
     }
     /* **対局の外で鳴ってよい名前**（spec.md §2.7）。
-       `tap` は釦の音（`src/ui-sound.js` の委譲）。
+       `tap` は釦の音、`discard` / `draw` は営業中の店の牌
+       （どちらも `src/ui-sound.js`）。**一秒あたりの回数はここでは測らない**
+       ——この道具は毎日スキップを押すので、営業の音はほとんど鳴らない。
+       測るのは `tools/check-floor-sound.js`。
        ここに名前が増えるときは、どこから鳴らしているかを spec に書くこと */
-    const OUTSIDE_OK = ['tap'];
+    const OUTSIDE_OK = ['tap', 'discard', 'draw'];
     const out = await page.evaluate(() => window.__sfxOut || {});
     log('  対局の外 ' + JSON.stringify(out));
     const bad = Object.keys(out).filter((k) => OUTSIDE_OK.indexOf(k) < 0);
