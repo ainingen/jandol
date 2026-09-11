@@ -215,6 +215,29 @@ const Meikan = (() => {
       ).join('') + `</div>`;
     }
 
+    /* 出演歴（`office/spec.md` §8.2 の追補）。
+       **一回ごとの手応えは夜の結果カードが返す。ここは積み上がりのほう。**
+
+       **`Office` と `Offers` は「あれば使う」**（`jansou.js` が `Office` を
+       使うのと同じ作法）。単体ページ（`meikan.html`）はどちらも読まないので、
+       そこでは何も出ない——開発用の入口はいままでどおり。
+
+       **依頼ごとに畳んで数える。**50回こなしても行は依頼の種類ぶん（10行）まで。
+       畳むのは `Office.worksOf`（純関数）で、並びも向こうが固定している。
+       **名前は `Offers.titleOf` から引く**——ここに案件の名前を書き写すと、
+       案件を足すたび二か所を埋めることになる（§1.3 の運営型が崩れる） */
+    function worksHTML(c, st) {
+      if (typeof Office === 'undefined' || typeof Offers === 'undefined') return '';
+      const list = Office.worksOf(st, c.id);
+      if (!list.length) return '';
+      const total = Office.workCount(st, c.id);
+      return `<h2 class="mkSecT">出演歴 <span class="mkSecN">${total}回</span></h2>
+        <dl>${list.map((w) => `<div class="mkRow">
+          <dt>${esc(Offers.titleOf({ id: w.id }))}</dt>
+          <dd>${w.n}回${w.won ? `　<i class="mkWon">${w.won}勝</i>` : ''}</dd>
+        </div>`).join('')}</dl>`;
+    }
+
     function detailHTML(c, st) {
       const discovered = c.isPlayer || st.discovered.includes(c.id);
       const signed = !c.isPlayer && st.contracted.includes(c.id);
@@ -299,6 +322,8 @@ const Meikan = (() => {
           </dl>
 
           ${compRow}
+
+          ${worksHTML(c, st)}
 
           <h2 class="mkSecT">契約</h2>
           <dl>

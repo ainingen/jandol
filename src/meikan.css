@@ -207,6 +207,10 @@
   border-bottom:1px solid var(--gold-dim);padding-bottom:3px;margin:14px 0 8px;
   letter-spacing:.05em;
 }
+/* 見出しに添える数（出演歴の総数）。**見出しと競わせない** */
+.mkSecN{font-family:var(--sans);font-weight:400;font-size:11px;color:var(--muted);margin-left:6px}
+/* 出演歴の勝ち数（対局付きの案件だけ付く） */
+.mkWon{font-style:normal;font-size:11px;color:var(--gold)}
 .mkRow{display:flex;justify-content:space-between;gap:10px;font-size:12.5px;margin:5px 0}
 .mkRow dt{color:var(--muted)}
 .mkRow dd{margin:0;color:var(--text)}

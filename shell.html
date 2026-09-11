@@ -187,6 +187,11 @@ body.inMatch #matchRoot{flex:1;min-height:0}
       offerFired: [],            // once の依頼で既に発火した id
       offerAccepted: [],         // 受けた依頼の id（RULES.event が見る）
       popUp: {},                 // { [charaId]: 人気の底上げ }。アイドル活動で貯まる
+      /* 出演歴（spec.md §8.2）。{ [charaId]: [{ id: 依頼id, day, won }] }。
+         **一回ごとの手応えは夜の結果カードが返す。ここは積み上がりのほう**
+         ——名鑑の詳細で「テレビ対局 2回」と数える。
+         **既存の項目は消さない・意味を変えない。**無い古いセーブは空として扱う */
+      works: {},
       wins: {},                  // { [charaId]: { [tierId]: {entries,win,place} } } 大会戦績
       fatigue: {},               // { [charaId]: 0..100 }
       cond: {},                  // { [charaId]: -2..2 }
@@ -244,6 +249,8 @@ body.inMatch #matchRoot{flex:1;min-height:0}
         offerFired: Array.isArray(s.offerFired) ? s.offerFired : [],
         offerAccepted: Array.isArray(s.offerAccepted) ? s.offerAccepted : [],
         popUp: s.popUp && typeof s.popUp === 'object' ? s.popUp : {},
+        /* **works が無い古いセーブでも落ちないこと**（空として扱う） */
+        works: s.works && typeof s.works === 'object' ? s.works : {},
         wins: s.wins && typeof s.wins === 'object' ? s.wins : {},
         fatigue: s.fatigue && typeof s.fatigue === 'object' ? s.fatigue : {},
         cond: s.cond && typeof s.cond === 'object' ? s.cond : {},
@@ -326,6 +333,8 @@ body.inMatch #matchRoot{flex:1;min-height:0}
       keep.mailRead = [];
       /* 土地に馴染んだぶんも進行なので持ち越さない（blankState が空で入れる） */
       keep.local = {};
+      /* 出演歴も進行。**三箇所を揃えておく**（mailRead / local と同じ扱い） */
+      keep.works = {};
       state = Object.assign(blankState(), keep);
       saveState(state);
       /* **`Resume` の控えは別の localStorage キー**（§4）。

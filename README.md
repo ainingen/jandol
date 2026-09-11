@@ -137,7 +137,10 @@ src/
 
   geo.js            47都道府県（座標・規模・所属地方）、距離と遠さの段階
   office.js/.css    事務所ハブ。朝と夜、本拠地の選択、所属一覧、配置、遠征、依頼
-  offers.js         届く依頼15件（大会5・契約イベント6・アイドル案件4）と発火判定
+  offers.js         届く依頼21件（大会5・契約イベント6・アイドル案件10）と発火判定。
+                    **案件を足すときの手順は、この表の頭のコメントが正**
+  idol-art.js       アイドル案件の結果の絵（枠10種を SVG で描き、thumb/ の顔を入れる）。
+                    **絵の側に文字を持たせない**（文面は offers.js の payload.res）
   scoutshop.js      遠征先の雀荘（型4種・パレット・誰がいるか）
 
   theme.css         全画面に効く「華」の層（金箔・漆・朱）
@@ -300,6 +303,8 @@ src/debug.js        その中身。build.py は読まない（配布から外す
 | 一日に声をかけられる回数 | `src/scoutshop.js` の `CALLS_PER_DAY` |
 | 依頼の中身と発火条件 | `src/offers.js` の `TABLE`（大会・契約イベント・アイドル案件） |
 | 事務所に溜まる依頼の上限 | `src/offers.js` の `MAX_OPEN` |
+| 結果の絵の枠（案件ごと） | `src/offers.js` の `art` と `src/idol-art.js` の `FRAMES` |
+| 結果の絵の色 | `src/office.css` の `.ia*`（SVG に直書きしない） |
 | 遠さの段階ごとの距離 | `src/geo.js` の `FAR_KM` |
 
 ## 実対局
@@ -453,6 +458,22 @@ Android Chromeでしか効かず、iOS Safariは非対応。PLiCyはiframeで動
 `discovered` `contracted` `comp` `compMax` `grades` `team` `money`
 `playerRank` `playerWins` `records` `recent` `agency` `beaten`
 `playerName` `playerFace`。
+
+事務所ハブが足したぶんは**最上位**に置く（`parlor` の下ではない
+——`Jansou.normalize()` が知らないキーを捨てるため）。
+一覧は `docs/design/office/spec.md` §10。よく触るのは
+
+| 項目 | 中身 |
+| --- | --- |
+| `popUp` | `{ [charaId]: 人気の底上げ }`。アイドル活動で貯まる（読み口は `popOf` ただ一つ） |
+| `works` | `{ [charaId]: [{ id: 依頼id, day, won }] }` **出演歴。**名鑑の詳細で数える |
+| `wins` | `{ [charaId]: { [tierId]: {...} } }` 子ごとの大会戦績 |
+| `favor` / `local` | 人への好感度／県ごとの「認められた度合い」 |
+| `fatigue` / `cond` | 疲労と調子（＋ `fatigueDay` / `condDay` の印） |
+
+**最上位の項目を足したら三箇所**（`shell.html` の `blankState` /
+`loadState` / `store.onStart`）。どれか一つ落とすと、リロードや
+「最初からはじめる」で黙って消える。
 
 各画面はセーブを読むとき、**自分が知らない項目もそのまま残すこと**。
 拾い直した項目だけを返すと、他の画面が保存した内容を消してしまう。

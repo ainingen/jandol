@@ -319,11 +319,12 @@ function sameJ(a, b, name) {
   /* **課題（A4.5-3）は雀ドル一人につき一件。**`fire` は引かないが表には載る
      （`byId` で引けないと `st.offers` から戻せない。`scout/spec.md` §5.2） */
   const CHARA_N = JANDOLS.concat(FREE_AGENTS).length;
-  eq(Offers.TABLE.length, 15 + CHARA_N, '大会5・契約6・アイドル4 ＋ 課題は雀ドルの数だけ');
+  eq(Offers.TABLE.length, 21 + CHARA_N,
+    '大会5・契約6・アイドル10 ＋ 課題は雀ドルの数だけ');
   const kinds = Offers.TABLE.reduce((a, o) => { a[o.kind] = (a[o.kind] || 0) + 1; return a; }, {});
   eq(kinds.tournament, 5, '大会は既存の5つ');
   eq(kinds.contract, 6, "契約イベントは contract === 'event' の6人ぶん");
-  eq(kinds.idol, 4, 'アイドル案件は4種');
+  eq(kinds.idol, 10, 'アイドル案件は10種（2026年9月11日に4→10）');
   eq(kinds.quest, CHARA_N, '課題は雀ドル一人につき一件（相手ごとに一枠）');
 
   eq(new Set(Offers.TABLE.map((o) => o.id)).size, Offers.TABLE.length, 'id が重複していない');
@@ -1708,6 +1709,543 @@ function sameJ(a, b, name) {
     '**S級に新人戦の招待は届かない**（押せない札が並ばない）');
   ok(rookie.when({ playerRank: 'C', team: [1, 2, 3] }, roster3),
     'C級には届く');
+}
+
+/* ============================================================
+   アイドル案件の結果カード（spec.md §8.2 の追補・2026年9月11日）
+
+   **四分岐**（向いていた × 勝った）が全部引けること。
+   **`match` でない案件で「勝った側」を選ばないこと**
+   ——存在しない勝負を書くことになる。
+   文面は `offers.js` の表が正で、`serifu.js` からは引かない。
+   ============================================================ */
+{
+  const tv = Offers.byId('idol-tv-match');     // match: true
+  const ph = Offers.byId('idol-photo');        // match: false
+  ok(!!tv && !!ph, 'アイドル案件が引ける');
+
+  const fitChara = tv.payload.fit[0];
+  const missChara = '人見知り';
+  ok(tv.payload.fit.indexOf(missChara) < 0, 'テレビ対局に向いていない性格を選べている');
+
+  const hit = { id: 101, name: '向いてる子', chara: fitChara };
+  const mis = { id: 102, name: '向いてない子', chara: missChara };
+  const won = { 101: 1, 102: 1 };
+  const lost = { 101: 3, 102: 3 };
+
+  /* --- 四分岐 --- */
+  const k = (c, pl) => Office.idolTell(tv, c, pl).key;
+  eq(k(hit, won), 'hitWin', '向いていて勝った → hitWin');
+  eq(k(hit, lost), 'hit', '向いていて負けた → hit');
+  eq(k(mis, won), 'missWin', '向いていなくて勝った → missWin');
+  eq(k(mis, lost), 'miss', '向いていなくて負けた → miss');
+
+  /* 四通りとも別の文面であること（同じものを四回書いていない） */
+  const heads = [k(hit, won), k(hit, lost), k(mis, won), k(mis, lost)]
+    .map((key) => tv.payload.res[key].head);
+  ok(new Set(heads).size === 4, '四分岐の見出しが四通りとも別', heads.join(' / '));
+  const lines = [k(hit, won), k(hit, lost), k(mis, won), k(mis, lost)]
+    .map((key) => tv.payload.res[key].line);
+  ok(new Set(lines).size === 4, '四分岐の一言が四通りとも別');
+
+  /* --- match でない案件は「勝った側」を使わない --- */
+  const phFit = { id: 103, name: 'グラビア向き', chara: ph.payload.fit[0] };
+  const phMis = { id: 104, name: 'そうでもない', chara: missChara };
+  ok(ph.payload.fit.indexOf(missChara) < 0, 'グラビアに向いていない性格を選べている');
+  eq(Office.idolTell(ph, phFit, { 103: 1 }).key, 'hit',
+    '**match でない案件は、着順を渡しても hitWin にならない**');
+  eq(Office.idolTell(ph, phMis, { 104: 1 }).key, 'miss',
+    '**match でない案件は、着順を渡しても missWin にならない**');
+  ok(!Office.idolTell(ph, phFit, { 103: 1 }).won, 'match でなければ won が立たない');
+  ok(!ph.payload.res.hitWin && !ph.payload.res.missWin,
+    'match でない案件の表に「勝った側」を書いていない');
+
+  /* --- カードの組み立て --- */
+  const res = Office.idolResult(tv, [hit, mis], lost);
+  const card = Office.idolCard(tv, [hit, mis], res, lost);
+  eq(card.pay, tv.payload.pay, 'カードの報酬は案件の pay');
+  eq(card.rows.length, 2, '送った人数ぶん行がある');
+  /* **見出しは代表の一人**＝いちばん pop が伸びた子。向いているほうが伸びる */
+  eq(card.head, tv.payload.res.hit.head, '見出しは代表（pop がいちばん伸びた子）のもの');
+  eq(card.rows[0].name, hit.name, '代表を先頭に置く');
+  ok(card.rows[0].pop > card.rows[1].pop, '向いていた子のほうが人気が伸びる');
+  /* 同点なら送った順（並びが揺れない） */
+  const tie = Office.idolCard(tv, [mis, hit], Office.idolResult(tv, [mis, hit], null), null);
+  ok(tie.rows.length === 2, '同点でも人数ぶん出る');
+
+  /* --- 純関数のまま（`idolResult` は st を触らない） --- */
+  const before = JSON.stringify(tv.payload);
+  Office.idolCard(tv, [hit, mis], res, lost);
+  eq(JSON.stringify(tv.payload), before, 'カードを組んでも表を書き換えない');
+
+  /* --- 文面を `serifu.js` から引いていないこと（本文の錠） --- */
+  const fs = require('fs'), path = require('path');
+  const src = fs.readFileSync(path.join(__dirname, '../src/office.js'), 'utf8');
+  const tell = (src.match(/function idolTell\([\s\S]*?\n  \}/) || [''])[0];
+  ok(tell && !/LINES|SERIFU/.test(tell),
+    'idolTell は serifu.js（LINES / SERIFU）を読まない');
+  ok(/payload[\s\S]{0,40}res/.test(tell), '文面は payload.res から引く');
+
+  /* --- `noDay` の依頼（契約イベント）にカードは付かない --- */
+  const ev = Offers.byId('event-001');
+  ok(ev && ev.days === 0 && ev.kind === 'contract', '契約イベントは日を使わない');
+  ok(!/kind === 'contract'[\s\S]{0,700}runJobDays/.test(src),
+    '契約イベントの枝は runJobDays（カードを載せる経路）を通らない');
+
+  /* --- 同じ一言を並べない（三人送っても「また打ちましょうね」が三行続かない） --- */
+  const three = [
+    { id: 201, name: 'あ', chara: fitChara },
+    { id: 202, name: 'い', chara: fitChara },
+    { id: 203, name: 'う', chara: fitChara },
+  ];
+  const c3 = Office.idolCard(tv, three, Office.idolResult(tv, three, null), null);
+  eq(c3.rows.filter((r) => r.line).length, 1,
+    '同じ分岐の子が並んでも、一言は一度だけ');
+  /* 分岐が割れたら両方出る */
+  const mixed = [{ id: 204, name: 'あ', chara: fitChara },
+                 { id: 205, name: 'い', chara: missChara }];
+  const cm = Office.idolCard(tv, mixed, Office.idolResult(tv, mixed, null), null);
+  eq(cm.rows.filter((r) => r.line).length, 2,
+    '向いていた子と違う子では、別の一言が二つ出る');
+
+  /* --- 四人以上は畳む（縦に伸ばさない） --- */
+  ok(/const IDOL_SHOWN = 3;/.test(src), '並べるのは三人まで');
+  ok(/rows\.slice\(0, IDOL_SHOWN\)/.test(src), '三人までで切っている');
+  ok(/rows\.length > IDOL_SHOWN[\s\S]{0,90}ほか \$\{card\.rows\.length - IDOL_SHOWN\}人/.test(src),
+    '溢れたぶんは「ほか N人」で畳む（黙って消さない）');
+  const four = [1, 2, 3, 4].map((i) => ({ id: 300 + i, name: 'x' + i, chara: fitChara }));
+  const c4 = Office.idolCard(tv, four, Office.idolResult(tv, four, null), null);
+  eq(c4.rows.length, 4, 'カードのほうは人数ぶん持つ（畳むのは描く側）');
+
+  /* --- 顔は thumb/。img/ の 768×1024 は読まない --- */
+  const cardHtml = (src.match(/const cardBody = card \? `[\s\S]*?` : '';/) || [''])[0];
+  ok(/thumb\/\$\{pad3/.test(cardHtml), '結果カードの顔は thumb/ を読む');
+  ok(!/img\/\$\{pad3/.test(cardHtml), '結果カードで img/ を読んでいない');
+  ok(/onerror="this\.remove\(\)"/.test(cardHtml),
+    '顔が無ければ消える（シルエットが下から出る。再取得しない）');
+  ok(/mkFace sil/.test(cardHtml), 'シルエットの下地（.mkFace.sil）を敷いている');
+}
+
+/* ============================================================
+   アイドル案件を10件に増やした（段B・2026年9月11日）
+
+   **足すのは表の一行だけ**という設計（§1.3）をそのまま使う。
+   ここで見るのは、その一行に何が要るか——id・`when`・`fit`・`res`。
+   ============================================================ */
+{
+  const idol = Offers.TABLE.filter((o) => o.kind === 'idol');
+  eq(idol.length, 10, 'アイドル案件は10件');
+
+  /* --- id は重複しない（セーブに残るので、あとから変えない） --- */
+  const ids = idol.map((o) => o.id);
+  eq(new Set(ids).size, ids.length, 'id に重複が無い');
+  /* 表ぜんぶ（大会・契約・課題も含めて）で重複が無いこと */
+  const allIds = Offers.TABLE.map((o) => o.id);
+  eq(new Set(allIds).size, allIds.length, '表ぜんぶで id に重複が無い');
+
+  /* --- fit は characters.js の chara だけ。新しい分類を作らない --- */
+  const CHARAS = new Set(JANDOLS.concat(FREE_AGENTS).map((c) => c.chara));
+  const strays = [];
+  idol.forEach((o) => (o.payload.fit || []).forEach((f) => {
+    if (!CHARAS.has(f)) strays.push(o.id + ':' + f);
+  }));
+  eq(strays.length, 0, 'fit は characters.js に実在する chara だけ', strays.join(' '));
+  /* **19種が偏らないこと。**足す前は4種に出番が無かった */
+  const use = {};
+  CHARAS.forEach((c) => { use[c] = 0; });
+  idol.forEach((o) => o.payload.fit.forEach((f) => { use[f] += 1; }));
+  const zero = Object.keys(use).filter((c) => !use[c]);
+  eq(zero.length, 0, '出番の無い性格が一つも無い', zero.join('、'));
+  const counts = Object.keys(use).map((c) => use[c]);
+  ok(Math.max.apply(null, counts) - Math.min.apply(null, counts) <= 1,
+    'いちばん多い性格といちばん少ない性格の差は1件まで',
+    Math.min.apply(null, counts) + '〜' + Math.max.apply(null, counts));
+
+  /* --- すべての案件が res を持つ（match は四通り、そうでなければ二通り） --- */
+  idol.forEach((o) => {
+    const r = o.payload.res || {};
+    ok(!!r.hit && !!r.miss, o.payload.name + ' に hit / miss がある');
+    ok(!!(r.hit && r.hit.head && r.hit.line), o.payload.name + ' の hit に見出しと一言がある');
+    if (o.payload.match) {
+      ok(!!r.hitWin && !!r.missWin, o.payload.name + '（対局あり）に hitWin / missWin がある');
+    } else {
+      ok(!r.hitWin && !r.missWin,
+        o.payload.name + '（対局なし）に「勝った側」を書いていない');
+    }
+  });
+
+  /* --- 見出しは28本すべて別。**語彙もかぶらせない** --- */
+  const heads = [];
+  idol.forEach((o) => Object.keys(o.payload.res)
+    .forEach((k) => heads.push(o.payload.res[k].head)));
+  eq(new Set(heads).size, heads.length, '見出しが28本とも別の文', String(heads.length));
+  const lines = [];
+  idol.forEach((o) => Object.keys(o.payload.res)
+    .forEach((k) => lines.push(o.payload.res[k].line)));
+  eq(new Set(lines).size, lines.length, '一言も全部別の文');
+  /* **案件をまたいで同じ語を使わない。**「話題になった」「顔が売れた」の類が
+     散ると、増やしたのに同じに見える。案件ごとの固有名詞で分けること。
+     同じ案件の中で繰り返すのは可（テレビ対局の「全国」） */
+  const owner = {};
+  const shared = [];
+  idol.forEach((o) => {
+    const seen = new Set();
+    Object.keys(o.payload.res).forEach((k) => {
+      o.payload.res[k].head
+        .split(/[はがをにでのとも、。ないたっるれてくしま]+/)
+        .filter((w) => w.length >= 2)
+        .forEach((w) => seen.add(w));
+    });
+    seen.forEach((w) => {
+      if (owner[w] && owner[w] !== o.id) shared.push(w + '（' + owner[w] + ' と ' + o.id + '）');
+      owner[w] = o.id;
+    });
+  });
+  eq(shared.length, 0, '見出しの語が案件をまたいでかぶっていない', shared.join(' / '));
+
+  /* --- 名前を表に焼き込んでいない（textOf と同じ作法） --- */
+  const names = JANDOLS.concat(FREE_AGENTS).map((c) => c.name);
+  const baked = [];
+  idol.forEach((o) => Object.keys(o.payload.res).forEach((k) => {
+    const t = o.payload.res[k];
+    names.forEach((n) => { if (t.head.indexOf(n) >= 0 || t.line.indexOf(n) >= 0) baked.push(o.id); });
+  }));
+  eq(baked.length, 0, 'res に雀ドルの名前を焼き込んでいない');
+
+  /* --- when はプレイヤーの状態だけ。`parlor.day` を見ない（§8.1） --- */
+  idol.forEach((o) => {
+    const src = String(o.when);
+    ok(!/parlor|\.day\b/.test(src), o.id + ' の when が parlor.day を見ていない', src);
+  });
+
+  /* --- 狙った時期に発火すること（序盤・中盤・終盤） --- */
+  const rs = (n, pop, favor) => Array.from({ length: n }, (_, i) =>
+    ({ id: i + 1, pop: i === 0 ? pop : 50, favor: i === 0 ? favor : 10 }));
+  const on = (st, roster) => idol.filter((o) => o.when(st, roster)).map((o) => o.id);
+  const early = on({ agency: 1, records: {} }, rs(2, 50, 0));
+  const mid = on({ agency: 2, records: { rookie: { entries: 2, best: 'ベスト16' } } },
+    rs(4, 72, 20));
+  const late = on({ agency: 4, records: { rookie: { entries: 5, best: '優勝' } } },
+    rs(8, 85, 70));
+  ok(early.indexOf('idol-radio') >= 0, '序盤からラジオは来る');
+  ok(early.indexOf('idol-stream') >= 0, '序盤からネット配信は来る');
+  ok(early.indexOf('idol-school') < 0, '序盤に麻雀教室は来ない（所属3人から）');
+  ok(early.indexOf('idol-team') < 0, '序盤に団体戦は来ない');
+  ok(early.indexOf('idol-cm') < 0, '**序盤に CM は来ない**（人気のある子が要る）');
+  ok(early.indexOf('idol-photobook') < 0, '**序盤に写真集は来ない**');
+  /* **いちばん大きい二件が序盤に来ないこと**（2026年9月11日に直した）。
+     テレビ対局は足す前 `roster.length >= 2` だけで、序盤から来ていた */
+  ok(early.indexOf('idol-tv-match') < 0,
+    '**序盤にテレビ対局は来ない**（事務所の格と大会実績が要る）');
+  ok(mid.indexOf('idol-cm') >= 0 && mid.indexOf('idol-team') >= 0,
+    '中盤で CM と団体戦が開く');
+  ok(mid.indexOf('idol-tv-match') >= 0, '中盤でテレビ対局が開く');
+  ok(mid.indexOf('idol-photobook') < 0, '写真集は中盤でもまだ来ない（好感度が要る）');
+  eq(late.length, 10, '終盤には10件とも来る');
+  ok(early.length < mid.length && mid.length < late.length,
+    '序盤 < 中盤 < 終盤 と増える', early.length + ' < ' + mid.length + ' < ' + late.length);
+
+  /* --- **大きい二件は別の軸で開くこと。**同じ条件だと二つ同時に解禁されて偏る --- */
+  const tvSrc = String(Offers.byId('idol-tv-match').when);
+  const pbSrc = String(Offers.byId('idol-photobook').when);
+  ok(/records/.test(tvSrc) && /agency/.test(tvSrc),
+    'テレビ対局は事務所の格の軸（ランクと大会実績）で見る', tvSrc);
+  ok(/pop/.test(pbSrc) && /favor/.test(pbSrc),
+    '写真集は人の軸（人気と好感度）で見る', pbSrc);
+  ok(!/pop|favor/.test(tvSrc), 'テレビ対局は人の軸を見ていない');
+  ok(!/records|agency/.test(pbSrc), '写真集は事務所の格を見ていない');
+  /* 実際に、片方だけが開く状態が存在すること */
+  const onlyTv = on({ agency: 3, records: { rookie: { entries: 1, best: '—' } } },
+    rs(5, 50, 0));
+  ok(onlyTv.indexOf('idol-tv-match') >= 0 && onlyTv.indexOf('idol-photobook') < 0,
+    '事務所を育てただけならテレビ対局だけが開く');
+  const onlyPb = on({ agency: 1, records: {} }, rs(2, 85, 70));
+  ok(onlyPb.indexOf('idol-photobook') >= 0 && onlyPb.indexOf('idol-tv-match') < 0,
+    '子を育てただけなら写真集だけが開く');
+
+  /* --- 同じ日に大量に届かない（§8.3 の重みづけ） --- */
+  const roster8 = rs(8, 85, 70);
+  let seed = 1;
+  const rng = () => ((seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff);
+  let worst = 0;
+  ['tokyo', 'tottori'].forEach((pref) => {
+    const st = { agency: 4, playerRank: 'B', officePref: pref,
+                 team: [1, 2, 3], offers: [], offerFired: [], records: {} };
+    for (let d = 0; d < 30; d++) {
+      const add = Offers.fire(st, roster8, rng);
+      worst = Math.max(worst, add.length);
+      st.offers = st.offers.concat(add).slice(-Offers.MAX_OPEN);
+      if (d % 3 === 2) st.offers = st.offers.slice(1);
+    }
+  });
+  ok(worst <= 3, '一日に届くのは3件まで（案件を10件に増やしても変わらない）', String(worst));
+
+  /* --- 報酬と伸びが既存の幅から外れていない --- */
+  const pops = idol.map((o) => o.payload.pop);
+  const pays = idol.map((o) => o.payload.pay);
+  ok(Math.min.apply(null, pops) >= 2 && Math.max.apply(null, pops) <= 8,
+    'pop は 2〜8 の幅に収まっている');
+  ok(Math.min.apply(null, pays) >= 30000 && Math.max.apply(null, pays) <= 250000,
+    'pay は 3万〜25万 の幅に収まっている');
+  /* 人数と日数が定義どおり */
+  idol.forEach((o) => {
+    ok(o.members.min >= 1 && o.members.max >= o.members.min,
+      o.id + ' の members が min <= max');
+    ok(o.days >= 1, o.id + ' は日を使う');
+  });
+}
+
+/* ============================================================
+   出演歴（spec.md §8.2 の追補・段C・2026年9月11日）
+
+   一回ごとの手応えは結果カードが返す。**ここは積み上がりのほう。**
+   `st.works = { [charaId]: [{ id, day, won }] }`。
+   **既存の項目は消さない・意味を変えない。**無い古いセーブは空として扱う。
+   ============================================================ */
+{
+  const tv = Offers.byId('idol-tv-match');     // match: true
+  const ph = Offers.byId('idol-photo');        // match: false
+  const a = { id: 401, name: 'あ', chara: tv.payload.fit[0] };
+  const b = { id: 402, name: 'い', chara: tv.payload.fit[1] };
+
+  /* --- works が無い古いセーブでも落ちない --- */
+  eq(Office.worksOf({}, 401).length, 0, 'works が無いセーブで worksOf が空を返す');
+  eq(Office.workCount({}, 401), 0, 'works が無いセーブで workCount が 0');
+  eq(Office.worksOf({ works: {} }, 401).length, 0, 'works が空でも落ちない');
+  eq(Office.worksOf(undefined, 401).length, 0, 'st ごと無くても落ちない');
+  eq(Office.worksOf({ works: { 401: [] } }, 401).length, 0, '履歴が空の子でも落ちない');
+
+  /* --- 一件積む --- */
+  let st = { works: {} };
+  st = { works: Office.addWork(st, tv, [a, b], { 401: 1, 402: 3 }, 12) };
+  eq(st.works[401].length, 1, '送った子に一件積まれる');
+  eq(st.works[402].length, 1, 'もう一人にも積まれる');
+  eq(st.works[401][0].id, 'idol-tv-match', '積むのは依頼の id');
+  eq(st.works[401][0].day, 12, '日は parlor.day');
+  eq(st.works[401][0].won, true, '一着なら won');
+  eq(st.works[402][0].won, false, '一着でなければ won ではない');
+  /* **match でない案件では won が立たない**（結果カードと同じ決め） */
+  const st2 = { works: Office.addWork({ works: {} }, ph, [a], { 401: 1 }, 3) };
+  eq(st2.works[401][0].won, false, 'match でない案件は、着順を渡しても won にならない');
+
+  /* --- 単調増加（消えない・減らない） --- */
+  let acc = { works: {} };
+  for (let i = 0; i < 10; i++) {
+    const before = Office.workCount(acc, 401);
+    acc = { works: Office.addWork(acc, tv, [a], null, i) };
+    eq(Office.workCount(acc, 401), before + 1, '一回こなすたび一件ずつ増える');
+  }
+  /* 別の案件を混ぜても、前のぶんは残る */
+  acc = { works: Office.addWork(acc, ph, [a], null, 20) };
+  eq(Office.workCount(acc, 401), 11, '別の案件を足しても前のぶんは残る');
+  /* **純関数。**元の `st` を書き換えない */
+  const frozen = { works: { 401: [{ id: 'idol-photo', day: 1, won: false }] } };
+  const snapshot = JSON.stringify(frozen);
+  Office.addWork(frozen, tv, [a], null, 9);
+  eq(JSON.stringify(frozen), snapshot, 'addWork は渡された st を書き換えない');
+
+  /* --- 依頼ごとに畳む。多い順、同数なら id で固定（並びが揺れない） --- */
+  const folded = Office.worksOf(acc, 401);
+  eq(folded.length, 2, '10回＋1回でも行は依頼の種類ぶん（2行）');
+  eq(folded[0].id, 'idol-tv-match', '多いほうが先');
+  eq(folded[0].n, 10, '回数を数えている');
+  eq(folded[1].n, 1, '少ないほうも残る');
+  eq(JSON.stringify(Office.worksOf(acc, 401)), JSON.stringify(folded),
+    '同じセーブなら並びが揺れない');
+  /* 同数のときは id で固定 */
+  let tie = { works: {} };
+  tie = { works: Office.addWork(tie, ph, [a], null, 1) };
+  tie = { works: Office.addWork(tie, tv, [a], null, 2) };
+  const t1 = Office.worksOf(tie, 401).map((w) => w.id);
+  eq(JSON.stringify(t1), JSON.stringify(['idol-photo', 'idol-tv-match']),
+    '同数なら id の順（毎回同じ表になる）');
+
+  /* --- 50回こなしても崩れない（畳むので行は増えない） --- */
+  let many = { works: {} };
+  for (let i = 0; i < 50; i++) many = { works: Office.addWork(many, tv, [a], { 401: 1 }, i) };
+  eq(Office.workCount(many, 401), 50, '50回ぶん積まれる');
+  eq(Office.worksOf(many, 401).length, 1, '50回でも行は1行（依頼の種類ぶん）');
+  eq(Office.worksOf(many, 401)[0].won, 50, '勝った回数も数える');
+
+  /* --- 名鑑は Office / Offers を「あれば使う」。名前を書き写さない --- */
+  const fs = require('fs'), path = require('path');
+  const mk = fs.readFileSync(path.join(__dirname, '../src/meikan.js'), 'utf8');
+  const wh = (mk.match(/function worksHTML[\s\S]*?\n    \}/) || [''])[0];
+  ok(/typeof Office === 'undefined'/.test(wh) && /typeof Offers === 'undefined'/.test(wh),
+    '名鑑は Office / Offers を「あれば使う」（単体ページで落ちない）');
+  ok(/Offers\.titleOf/.test(wh), '案件の名前は Offers.titleOf から引く（書き写さない）');
+  const NAMES = Offers.TABLE.filter((o) => o.kind === 'idol').map((o) => o.payload.name);
+  const baked = NAMES.filter((n) => mk.indexOf(n) >= 0);
+  eq(baked.length, 0, '名鑑に案件の名前を書き写していない', baked.join('、'));
+
+  /* --- セーブの三箇所（blankState / loadState / onStart） --- */
+  const sh = fs.readFileSync(path.join(__dirname, '../shell.html'), 'utf8');
+  ok(/works: \{\},/.test(sh), 'blankState に works がある');
+  ok(/works: s\.works && typeof s\.works === 'object' \? s\.works : \{\}/.test(sh),
+    'loadState が works を受ける（無ければ空）');
+  ok(/keep\.works = \{\};/.test(sh), 'onStart にも works がある');
+  /* **既存の項目を消していないこと** */
+  ['popUp', 'wins', 'favor', 'local', 'mailRead', 'offerFired', 'offerAccepted']
+    .forEach((k) => ok(sh.indexOf(k) >= 0, 'セーブの ' + k + ' が残っている'));
+}
+
+/* ============================================================
+   出演の絵（段E・2026年9月11日）
+
+   `src/idol-art.js` が枠を SVG で描き、中に `thumb/` の顔を入れる。
+   **絵の側に文字を持たせない**（文面の正は `offers.js` の `payload.res`）。
+   ============================================================ */
+{
+  const fs = require('fs'), path = require('path');
+  const { IdolArt } = require('../src/idol-art.js');
+  const idol = Offers.TABLE.filter((o) => o.kind === 'idol');
+  const known = new Set(IdolArt.KINDS);
+
+  /* --- 10件すべてに art があり、IdolArt が知っている kind であること --- */
+  eq(idol.length, 10, '絵の錠：アイドル案件は10件');
+  idol.forEach((o) => {
+    const a = (o.payload || {}).art;
+    ok(!!a, o.id + ' に art がある');
+    ok(known.has(a), o.id + ' の art（' + a + '）を IdolArt が知っている');
+  });
+  /* 枠を一つの案件が二つ使っていない（案件ごとに一つ描いた意味が消える） */
+  const arts = idol.map((o) => o.payload.art);
+  eq(new Set(arts).size, arts.length, '案件ごとに別の枠を使っている');
+  eq(new Set(arts).size, IdolArt.KINDS.length, '描いた枠は全部どこかの案件が使っている');
+
+  /* --- 知らない kind で落ちず、汎用の枠を返すこと --- */
+  const g = IdolArt.frame('generic', {});
+  [undefined, null, '', 'no-such-kind', 0, 123, {}].forEach((k) => {
+    let out = null, threw = null;
+    try { out = IdolArt.frame(k, { face: 'thumb/001.webp' }); } catch (e) { threw = e; }
+    ok(!threw, '知らない kind（' + String(k) + '）で落ちない');
+    ok(typeof out === 'string' && /^<svg /.test(out), '  … SVG を返す');
+  });
+  /* 汎用の枠そのものであること（黙って別のものを返していない） */
+  eq(IdolArt.frame('no-such-kind', {}), g, '知らない kind は汎用の枠');
+  /* opts ごと無くても落ちない（単体ページ・古い呼び口への保険） */
+  ok(/^<svg /.test(IdolArt.frame('tv')), 'opts が無くても落ちない');
+
+  /* --- 10種の枠が互いに別のもの（同じ SVG を使い回していない） --- */
+  const seen = new Map();
+  IdolArt.KINDS.forEach((k) => {
+    const svg = IdolArt.frame(k, { face: 'thumb/001.webp' });
+    if (seen.has(svg)) fails.push('枠が同じ：' + k + ' と ' + seen.get(svg));
+    else pass++;
+    seen.set(svg, k);
+  });
+  IdolArt.KINDS.forEach((k) => {
+    ok(IdolArt.frame(k, { face: 'thumb/001.webp' }) !== g, k + ' は汎用の枠ではない');
+  });
+  /* 同じ引数なら同じ絵（id を振るなど、呼ぶたびに変わるものを持ち込まない） */
+  IdolArt.KINDS.forEach((k) => {
+    eq(IdolArt.frame(k, { face: 'thumb/001.webp' }),
+      IdolArt.frame(k, { face: 'thumb/001.webp' }), k + ' は同じ引数なら同じ絵');
+  });
+  /* id を振らないこと（同じ頁に二枚出たときにぶつかる） */
+  IdolArt.KINDS.concat(['generic']).forEach((k) => {
+    ok(!/\sid=/.test(IdolArt.frame(k, { face: 'thumb/001.webp', won: true })),
+      k + ' は id を振らない');
+  });
+
+  /* --- 勝ったら足す。枠は共通（四通りの枠は作らない） --- */
+  IdolArt.KINDS.forEach((k) => {
+    const bare = IdolArt.frame(k, { face: 'thumb/001.webp' });
+    const won = IdolArt.frame(k, { face: 'thumb/001.webp', won: true });
+    ok(won.length > bare.length, k + '：勝つと足される');
+    ok(won.indexOf(bare.replace(/<\/svg>$/, '')) === 0,
+      k + '：勝っても素の枠はそのまま（差し替えない）');
+  });
+  /* 向き不向きでは絵を変えない（`fits` を渡す口そのものが無い） */
+  eq(IdolArt.frame('tv', { face: 'thumb/001.webp', fits: true }),
+    IdolArt.frame('tv', { face: 'thumb/001.webp', fits: false }),
+    '向き不向きでは絵が変わらない');
+
+  /* --- 顔が無くても枠は成立する（シルエットが残る） --- */
+  IdolArt.KINDS.concat(['generic']).forEach((k) => {
+    const noface = IdolArt.frame(k, {});
+    ok(/^<svg /.test(noface) && noface.indexOf('<image') < 0,
+      k + '：顔が無ければ <image> を置かない');
+    ok(/class="iaSil"/.test(noface), k + '：シルエットは残る');
+  });
+  /* 顔があるときは thumb/ を読み、onerror は消すだけ（取り直さない） */
+  const tv = IdolArt.frame('tv', { face: 'thumb/007.webp' });
+  ok(/<image href="thumb\/007\.webp"/.test(tv), '顔は渡された URL をそのまま読む');
+  ok(/onerror="this\.remove\(\)"/.test(tv), 'onerror は消すだけ');
+  ok(!/img\//.test(tv), 'img/（768×1024）は読まない');
+  ok(/preserveAspectRatio="xMidYMid slice"/.test(tv), 'はみ出しは slice が切る');
+
+  /* --- 絵の側に文字を持たせない（名鑑で案件名を書き写さなかったのと同じ錠） --- */
+  const body = fs.readFileSync(path.join(__dirname, '../src/idol-art.js'), 'utf8')
+    .replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+  const words = [];
+  idol.forEach((o) => {
+    const p2 = o.payload || {};
+    words.push(p2.name);
+    Object.keys(p2.res || {}).forEach((k) => {
+      words.push((p2.res[k] || {}).head, (p2.res[k] || {}).line);
+    });
+  });
+  const leaked = words.filter((w) => w && body.indexOf(w) >= 0);
+  eq(leaked.length, 0, 'idol-art.js に案件の名前・見出し・一言が無い', leaked.join(' / '));
+  /* 抜け道を塞ぐ：**仮名も漢字も一字も書かれていないこと**。
+     「大将」のように語の一部だけ書けば上の照合は抜けられるので、
+     日本語そのものを禁じる。数字とラテン文字は絵に出てよい */
+  const jp = body.match(/[぀-ヿ㐀-鿿]/g) || [];
+  eq(jp.length, 0, 'idol-art.js の本文に日本語が一字も無い', jp.slice(0, 12).join(''));
+
+  /* --- 動かさない（四人卓で落ちた件と同じ土地） --- */
+  const raw = fs.readFileSync(path.join(__dirname, '../src/idol-art.js'), 'utf8');
+  ['setInterval', 'setTimeout', 'requestAnimationFrame'].forEach((w) => {
+    ok(raw.indexOf(w) < 0, 'idol-art.js に ' + w + ' が無い');
+  });
+  IdolArt.KINDS.concat(['generic']).forEach((k) => {
+    ok(!/<animate/.test(IdolArt.frame(k, { face: 'thumb/001.webp', won: true })),
+      k + '：SVG のアニメーションを持たない');
+  });
+  const css = fs.readFileSync(path.join(__dirname, '../src/office.css'), 'utf8');
+  /* **コメントを外してから見ること**——この区画のコメント自身が
+     「`@keyframes` は持たない」と書いているので、素のまま探すと引っかかる */
+  const iaCss = css.slice(css.indexOf('.ofArt{'), css.indexOf('.ofSecNote{'))
+    .replace(/\/\*[\s\S]*?\*\//g, '');
+  ok(iaCss.indexOf('@keyframes') < 0 && iaCss.indexOf('animation') < 0,
+    '出演の絵の CSS に animation が無い（一度きりの transition まで）');
+  ok(/transition:/.test(iaCss), '勝った日の差は transition で付ける');
+  ok(/max-width:340px/.test(iaCss), '絵を横に伸ばさない（PC で収支が落ちる）');
+
+  /* --- 色は既存の変数から取る（SVG に色を直書きしない） --- */
+  ok(!/#[0-9a-fA-F]{3,6}/.test(body), 'idol-art.js に色の直書きが無い');
+  const vars = (iaCss.match(/var\(--[a-z0-9-]+\)/g) || []);
+  ok(vars.length > 10, '絵の色は CSS 変数から取っている');
+  const known2 = new Set(['--urushi', '--urushi-2', '--gold', '--gold-dim', '--ivory',
+    '--ivory-2', '--muted', '--vermilion', '--felt', '--back', '--back-2', '--ink', '--sans']);
+  const newVars = [...new Set(vars.map((v) => v.slice(4, -1)))].filter((v) => !known2.has(v));
+  eq(newVars.length, 0, '新しい色を増やしていない', newVars.join(','));
+
+  /* --- office.js の側：あれば使う・枠を選ぶのはここではない --- */
+  const osrc2 = fs.readFileSync(path.join(__dirname, '../src/office.js'), 'utf8');
+  ok(/typeof IdolArt !== 'undefined'/.test(osrc2),
+    'office.js は IdolArt を「あれば使う」（office.html で落ちない）');
+  ok(/IdolArt\.frame\(card\.art/.test(osrc2), '枠は card.art を渡すだけ（ここで選ばない）');
+  eq((osrc2.match(/IdolArt\.frame\(/g) || []).length, 1, 'IdolArt を呼ぶのは一箇所だけ');
+  ok(!/idol-art/.test(fs.readFileSync(path.join(__dirname, '../office.html'), 'utf8')),
+    'office.html は idol-art.js を読まない（無くても落ちないことの検証を兼ねる）');
+  const bp = fs.readFileSync(path.join(__dirname, '../build.py'), 'utf8');
+  ok(/'idol-art\.js'/.test(bp), 'build.py の JS リストに idol-art.js がある');
+
+  /* --- idolCard が art を運ぶ（表示側が payload を覗かない） --- */
+  const def = Offers.byId('idol-tv-match');
+  const mem = [{ id: 1, name: 'A', chara: def.payload.fit[0] }];
+  const res = Office.idolResult(def, mem, { 1: 1 });
+  const card = Office.idolCard(def, mem, res, { 1: 1 });
+  eq(card.art, 'tv', 'idolCard が art を運ぶ');
+  ok(card.rows[0].won === true, '勝ちが代表の行に立つ（絵の won はこれを読む）');
+  /* `match` でない案件では won が立たない＝素の枠になる */
+  const def2 = Offers.byId('idol-photobook');
+  const mem2 = [{ id: 2, name: 'B', chara: def2.payload.fit[0] }];
+  const card2 = Office.idolCard(def2, mem2, Office.idolResult(def2, mem2, null), null);
+  eq(card2.art, 'photobook', 'match でない案件も art を持つ');
+  ok(card2.rows[0].won === false, 'match でない案件では won が立たない（素の枠）');
 }
 
 /* ============================================================ */
