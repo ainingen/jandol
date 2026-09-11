@@ -1,0 +1,88 @@
+/* ============================================================
+   prologue.css — 表紙と「あなたのこと」のあいだ
+   仕様：docs/design/title/prologue-spec.md §6 §7 §8
+
+   **接頭辞は pl。**CSSのクラス名は全画面で一つの名前空間なので
+   （引き継ぎ書 §5）、`line` `text` `dots` のような一般名を裸で使わない。
+   足したら、コミット前に
+
+     grep -rn "\.plRoot\|\.plLine\|\.plText\|\.plSkip\|\.plDots\|\.plGo" src/*.css
+
+   で既存に無いことを確かめる。**単体ページでの確認では足りない**
+   ——prologue.css を読まない画面とぶつかった場合、index.html でしか壊れない。
+   ============================================================ */
+
+/* `#view` の外、`document.body` の直下に置く覆い（spec §4）。
+   `.popup`（z-index:70）より下、`#nav`（50）より上。
+   表紙にいるあいだは `#nav` は隠れているが、**層の順は決めておく。**
+
+   **`#cover` の canvas には触らない。**上に重ねるだけ。
+   `.popup` が既に全画面を覆っていて、それでもサムネイルは撮れている。 */
+.plRoot{
+  position:fixed;inset:0;z-index:60;
+  display:flex;flex-direction:column;
+  background:#081010;                  /* 表紙の下端と同じ色。**写真は敷かない** */
+  cursor:pointer;
+  /* 入りきらないときは流す。**行数を減らす仕掛けは作らない**（spec §6）
+     ——表紙の fitTop のような実測の仕掛けを、もう一つ持ちたくない */
+  overflow-y:auto;overflow-x:hidden;
+  -webkit-overflow-scrolling:touch;overscroll-behavior:contain;
+  padding:calc(16px + env(safe-area-inset-top)) 16px
+          calc(16px + env(safe-area-inset-bottom));
+}
+
+.plText{
+  flex:1;display:flex;flex-direction:column;justify-content:center;
+  width:100%;max-width:640px;margin:0 auto;
+  transition:opacity 180ms ease;      /* 画面が替わるとき（spec §7） */
+}
+.plText.out{opacity:0}
+
+/* **書体は var(--mincho)。丸ゴ（Maru）を使わないこと**（spec §6）。
+   maru.css の二つの woff2 は表紙と UI に出る字だけを切り出してあるので、
+   指定すると「入っている字だけ丸ゴ・残りは代替書体」という混ざりかたになる。
+
+   いちばん狭いのは iOS の横持ち 334px（引き継ぎ書 §5）。
+   この高さで5行が入ることを条件にしている——14px × 1.9 ＋ 行間で
+   5行 約170px、上下の余白と釦・とばす・点を足して 約290px。 */
+.plLine{
+  margin:0 0 .5em;
+  font-family:var(--mincho);
+  font-size:clamp(14px,3.6vmin,19px);
+  line-height:1.9;letter-spacing:.06em;
+  color:var(--ivory);
+  /* 下から 8px ぶん持ち上げながら 520ms で入れる（spec §7）。
+     ずらす間隔（260ms）は prologue.js が持つ */
+  opacity:0;transform:translateY(8px);
+  transition:opacity 520ms ease,transform 520ms ease;
+}
+.plLine:last-child{margin-bottom:0}
+.plLine.on{opacity:1;transform:none}
+
+/* 最後の一行だけ金。副題と揃える（spec §7）。
+   `--kin` は theme.css の金の斜めグラデーション */
+.plLine.plKin{
+  background:var(--kin);
+  -webkit-background-clip:text;background-clip:text;
+  color:transparent;
+}
+
+/* 最後の画面の釦。**font-weight は 700 のまま**
+   ——800（maru-title.woff2）は題字と副題の20文字しか入っていないので、
+   「はじめる」は丸ごと代替書体に落ちる（README「字体」） */
+.plGo{
+  flex:none;display:block;width:100%;max-width:320px;
+  margin:18px auto 0;padding:13px;cursor:pointer;border-radius:5px;
+  font-family:var(--maru);font-weight:700;font-size:16px;letter-spacing:.05em;
+  border:1px solid var(--gold-lo);color:var(--ink);
+  background:linear-gradient(150deg,var(--gold-hi),var(--gold) 42%,var(--gold-lo));
+  box-shadow:0 1px 0 rgba(255,255,255,.3) inset,0 3px 10px rgba(0,0,0,.5);
+  opacity:0;transition:opacity 520ms ease;
+}
+.plGo.on{opacity:1}
+/* **`[hidden]` は UA スタイルなので、クラスの `display:block` に負ける。**
+   打ち消しておかないと、最後の画面へ行く前から釦のぶん（約64px）が
+   場所を取り、本文の中央寄せがそのぶん上にずれる（実際にずれた）。
+   `el.hidden` で出し入れするものには、必ずこれを対で書くこと */
+.plGo[hidden]{display:none}
+.plGo:focus-visible{outline:2px solid var(--ivory);outline-offset:2px}

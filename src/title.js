@@ -546,9 +546,15 @@ const Title = (() => {
       if (act.dataset.act === 'continue') {
         if (typeof store.onContinue === 'function') store.onContinue();
       } else if (act.dataset.act === 'new') {
-        screen = 'setup';
-        renderSetup();
-        toTop();
+        /* 表紙と「あなたのこと」のあいだにプロローグを挟む
+           （docs/design/title/prologue-spec.md §1・§4）。
+           **画面の切り替えではない。**`screen` は 'top' のまま、
+           覆いを被せて、閉じてから `setup` へ進む */
+        playPrologue(function () {
+          screen = 'setup';
+          renderSetup();
+          toTop();
+        });
       } else if (act.dataset.act === 'back') {
         screen = 'top';
         renderTop();
@@ -567,6 +573,23 @@ const Title = (() => {
         if (typeof store.onStart === 'function') store.onStart(clean, face);
       }
     });
+
+    /* プロローグ（docs/design/title/prologue-spec.md）。
+       **`PROLOGUE` が無ければ何も出さずに即 done()。**
+       単体ページ（team.html / taikai.html / meikan.html）は prologue.js を
+       読まないので、そこは黙って設定画面へ行く——`office.js` / `geo.js` が
+       無いときに事務所の欄を出さないのと同じ形（spec §5）。
+
+       **「見たか」をセーブに書かないこと**（spec §1）。
+       書くと `blankState()` / `loadState()` / `onStart()` の三箇所に
+       項目が増える（引き継ぎ書 §5 の `mailRead` と同じ形）。
+       出すかどうかは**押した経路で決まる**ので、覚える必要が無い。 */
+    function playPrologue(done) {
+      if (typeof PROLOGUE === 'undefined' || typeof Prologue === 'undefined') {
+        done(); return;
+      }
+      Prologue.play(done);
+    }
 
     /* 流れるのは shell.html の #scroll。単体ページにはそれが無い */
     function toTop() {
