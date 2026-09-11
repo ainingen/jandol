@@ -470,7 +470,10 @@ const Office = (() => {
       if (!r.line || said.has(r.line)) { r.line = ''; return; }
       said.add(r.line);
     });
-    return { name: (def.payload || {}).name || '', pay: res.pay | 0, head, rows: order };
+    /* `art` は絵の枠の名前（`idol-art.js`・段E）。**表示側で選ばない**
+       ——ここで `payload` から一度だけ引いて、描く側はそれを渡すだけ */
+    return { name: (def.payload || {}).name || '', art: (def.payload || {}).art || '',
+             pay: res.pay | 0, head, rows: order };
   }
 
   /* ------------------------------------------------------------
@@ -2323,13 +2326,28 @@ const Office = (() => {
          ——`takeOffer` の `contract` の枝は `runJobDays` を通らない */
       const IDOL_SHOWN = 3;
       const card = job && job.card;
+      /* **出演の絵は代表の一人ぶん、一枚だけ**（§8.2 の追補・段E）。
+         三人送っても増やさない——夜の日報は店の収支と同居するので、
+         人数ぶん絵を積むと収支が画面の外へ落ちる。
+         代表の行は顔を出さない（絵がもう言っている）。
+
+         **`IdolArt` は「あれば使う」**——単体ページ（`office.html`）は
+         `idol-art.js` を読まないので、そこは今までどおり行だけになる。
+         **枠を選ぶのはここではない**：`idolCard` が `payload.art` を引いている */
+      const lead = card && card.rows.length ? card.rows[0] : null;
+      const art = (typeof IdolArt !== 'undefined' && lead)
+        ? IdolArt.frame(card.art, { face: 'thumb/' + pad3(lead.id) + '.webp', won: lead.won })
+        : '';
+      const artBody = art
+        ? `<div class="ofArt${lead.won ? ' won' : ''}">${art}</div>` : '';
       const cardBody = card ? `
         <div class="ofIdol">
           ${card.head ? `<div class="ofIdolHead">${esc(card.head)}</div>` : ''}
-          ${card.rows.slice(0, IDOL_SHOWN).map((r) => `
-            <div class="ofIdolRow">
-              <span class="ofIdolFace mkFace sil"><img src="thumb/${pad3(r.id)}.webp"
-                alt="" loading="lazy" onerror="this.remove()"></span>
+          ${artBody}
+          ${card.rows.slice(0, IDOL_SHOWN).map((r, i) => `
+            <div class="ofIdolRow${art && i === 0 ? ' lead' : ''}">
+              ${art && i === 0 ? '' : `<span class="ofIdolFace mkFace sil"><img src="thumb/${pad3(r.id)}.webp"
+                alt="" loading="lazy" onerror="this.remove()"></span>`}
               <span class="ofIdolBody">
                 <span class="ofIdolName">${esc(r.name)}${r.place
                   ? `<i>${r.place}着</i>` : ''}${r.fits ? '<em>向いていた</em>' : ''}</span>

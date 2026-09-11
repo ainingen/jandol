@@ -2089,6 +2089,165 @@ function sameJ(a, b, name) {
     .forEach((k) => ok(sh.indexOf(k) >= 0, 'セーブの ' + k + ' が残っている'));
 }
 
+/* ============================================================
+   出演の絵（段E・2026年9月11日）
+
+   `src/idol-art.js` が枠を SVG で描き、中に `thumb/` の顔を入れる。
+   **絵の側に文字を持たせない**（文面の正は `offers.js` の `payload.res`）。
+   ============================================================ */
+{
+  const fs = require('fs'), path = require('path');
+  const { IdolArt } = require('../src/idol-art.js');
+  const idol = Offers.TABLE.filter((o) => o.kind === 'idol');
+  const known = new Set(IdolArt.KINDS);
+
+  /* --- 10件すべてに art があり、IdolArt が知っている kind であること --- */
+  eq(idol.length, 10, '絵の錠：アイドル案件は10件');
+  idol.forEach((o) => {
+    const a = (o.payload || {}).art;
+    ok(!!a, o.id + ' に art がある');
+    ok(known.has(a), o.id + ' の art（' + a + '）を IdolArt が知っている');
+  });
+  /* 枠を一つの案件が二つ使っていない（案件ごとに一つ描いた意味が消える） */
+  const arts = idol.map((o) => o.payload.art);
+  eq(new Set(arts).size, arts.length, '案件ごとに別の枠を使っている');
+  eq(new Set(arts).size, IdolArt.KINDS.length, '描いた枠は全部どこかの案件が使っている');
+
+  /* --- 知らない kind で落ちず、汎用の枠を返すこと --- */
+  const g = IdolArt.frame('generic', {});
+  [undefined, null, '', 'no-such-kind', 0, 123, {}].forEach((k) => {
+    let out = null, threw = null;
+    try { out = IdolArt.frame(k, { face: 'thumb/001.webp' }); } catch (e) { threw = e; }
+    ok(!threw, '知らない kind（' + String(k) + '）で落ちない');
+    ok(typeof out === 'string' && /^<svg /.test(out), '  … SVG を返す');
+  });
+  /* 汎用の枠そのものであること（黙って別のものを返していない） */
+  eq(IdolArt.frame('no-such-kind', {}), g, '知らない kind は汎用の枠');
+  /* opts ごと無くても落ちない（単体ページ・古い呼び口への保険） */
+  ok(/^<svg /.test(IdolArt.frame('tv')), 'opts が無くても落ちない');
+
+  /* --- 10種の枠が互いに別のもの（同じ SVG を使い回していない） --- */
+  const seen = new Map();
+  IdolArt.KINDS.forEach((k) => {
+    const svg = IdolArt.frame(k, { face: 'thumb/001.webp' });
+    if (seen.has(svg)) fails.push('枠が同じ：' + k + ' と ' + seen.get(svg));
+    else pass++;
+    seen.set(svg, k);
+  });
+  IdolArt.KINDS.forEach((k) => {
+    ok(IdolArt.frame(k, { face: 'thumb/001.webp' }) !== g, k + ' は汎用の枠ではない');
+  });
+  /* 同じ引数なら同じ絵（id を振るなど、呼ぶたびに変わるものを持ち込まない） */
+  IdolArt.KINDS.forEach((k) => {
+    eq(IdolArt.frame(k, { face: 'thumb/001.webp' }),
+      IdolArt.frame(k, { face: 'thumb/001.webp' }), k + ' は同じ引数なら同じ絵');
+  });
+  /* id を振らないこと（同じ頁に二枚出たときにぶつかる） */
+  IdolArt.KINDS.concat(['generic']).forEach((k) => {
+    ok(!/\sid=/.test(IdolArt.frame(k, { face: 'thumb/001.webp', won: true })),
+      k + ' は id を振らない');
+  });
+
+  /* --- 勝ったら足す。枠は共通（四通りの枠は作らない） --- */
+  IdolArt.KINDS.forEach((k) => {
+    const bare = IdolArt.frame(k, { face: 'thumb/001.webp' });
+    const won = IdolArt.frame(k, { face: 'thumb/001.webp', won: true });
+    ok(won.length > bare.length, k + '：勝つと足される');
+    ok(won.indexOf(bare.replace(/<\/svg>$/, '')) === 0,
+      k + '：勝っても素の枠はそのまま（差し替えない）');
+  });
+  /* 向き不向きでは絵を変えない（`fits` を渡す口そのものが無い） */
+  eq(IdolArt.frame('tv', { face: 'thumb/001.webp', fits: true }),
+    IdolArt.frame('tv', { face: 'thumb/001.webp', fits: false }),
+    '向き不向きでは絵が変わらない');
+
+  /* --- 顔が無くても枠は成立する（シルエットが残る） --- */
+  IdolArt.KINDS.concat(['generic']).forEach((k) => {
+    const noface = IdolArt.frame(k, {});
+    ok(/^<svg /.test(noface) && noface.indexOf('<image') < 0,
+      k + '：顔が無ければ <image> を置かない');
+    ok(/class="iaSil"/.test(noface), k + '：シルエットは残る');
+  });
+  /* 顔があるときは thumb/ を読み、onerror は消すだけ（取り直さない） */
+  const tv = IdolArt.frame('tv', { face: 'thumb/007.webp' });
+  ok(/<image href="thumb\/007\.webp"/.test(tv), '顔は渡された URL をそのまま読む');
+  ok(/onerror="this\.remove\(\)"/.test(tv), 'onerror は消すだけ');
+  ok(!/img\//.test(tv), 'img/（768×1024）は読まない');
+  ok(/preserveAspectRatio="xMidYMid slice"/.test(tv), 'はみ出しは slice が切る');
+
+  /* --- 絵の側に文字を持たせない（名鑑で案件名を書き写さなかったのと同じ錠） --- */
+  const body = fs.readFileSync(path.join(__dirname, '../src/idol-art.js'), 'utf8')
+    .replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+  const words = [];
+  idol.forEach((o) => {
+    const p2 = o.payload || {};
+    words.push(p2.name);
+    Object.keys(p2.res || {}).forEach((k) => {
+      words.push((p2.res[k] || {}).head, (p2.res[k] || {}).line);
+    });
+  });
+  const leaked = words.filter((w) => w && body.indexOf(w) >= 0);
+  eq(leaked.length, 0, 'idol-art.js に案件の名前・見出し・一言が無い', leaked.join(' / '));
+  /* 抜け道を塞ぐ：**仮名も漢字も一字も書かれていないこと**。
+     「大将」のように語の一部だけ書けば上の照合は抜けられるので、
+     日本語そのものを禁じる。数字とラテン文字は絵に出てよい */
+  const jp = body.match(/[぀-ヿ㐀-鿿]/g) || [];
+  eq(jp.length, 0, 'idol-art.js の本文に日本語が一字も無い', jp.slice(0, 12).join(''));
+
+  /* --- 動かさない（四人卓で落ちた件と同じ土地） --- */
+  const raw = fs.readFileSync(path.join(__dirname, '../src/idol-art.js'), 'utf8');
+  ['setInterval', 'setTimeout', 'requestAnimationFrame'].forEach((w) => {
+    ok(raw.indexOf(w) < 0, 'idol-art.js に ' + w + ' が無い');
+  });
+  IdolArt.KINDS.concat(['generic']).forEach((k) => {
+    ok(!/<animate/.test(IdolArt.frame(k, { face: 'thumb/001.webp', won: true })),
+      k + '：SVG のアニメーションを持たない');
+  });
+  const css = fs.readFileSync(path.join(__dirname, '../src/office.css'), 'utf8');
+  /* **コメントを外してから見ること**——この区画のコメント自身が
+     「`@keyframes` は持たない」と書いているので、素のまま探すと引っかかる */
+  const iaCss = css.slice(css.indexOf('.ofArt{'), css.indexOf('.ofSecNote{'))
+    .replace(/\/\*[\s\S]*?\*\//g, '');
+  ok(iaCss.indexOf('@keyframes') < 0 && iaCss.indexOf('animation') < 0,
+    '出演の絵の CSS に animation が無い（一度きりの transition まで）');
+  ok(/transition:/.test(iaCss), '勝った日の差は transition で付ける');
+  ok(/max-width:340px/.test(iaCss), '絵を横に伸ばさない（PC で収支が落ちる）');
+
+  /* --- 色は既存の変数から取る（SVG に色を直書きしない） --- */
+  ok(!/#[0-9a-fA-F]{3,6}/.test(body), 'idol-art.js に色の直書きが無い');
+  const vars = (iaCss.match(/var\(--[a-z0-9-]+\)/g) || []);
+  ok(vars.length > 10, '絵の色は CSS 変数から取っている');
+  const known2 = new Set(['--urushi', '--urushi-2', '--gold', '--gold-dim', '--ivory',
+    '--ivory-2', '--muted', '--vermilion', '--felt', '--back', '--back-2', '--ink', '--sans']);
+  const newVars = [...new Set(vars.map((v) => v.slice(4, -1)))].filter((v) => !known2.has(v));
+  eq(newVars.length, 0, '新しい色を増やしていない', newVars.join(','));
+
+  /* --- office.js の側：あれば使う・枠を選ぶのはここではない --- */
+  const osrc2 = fs.readFileSync(path.join(__dirname, '../src/office.js'), 'utf8');
+  ok(/typeof IdolArt !== 'undefined'/.test(osrc2),
+    'office.js は IdolArt を「あれば使う」（office.html で落ちない）');
+  ok(/IdolArt\.frame\(card\.art/.test(osrc2), '枠は card.art を渡すだけ（ここで選ばない）');
+  eq((osrc2.match(/IdolArt\.frame\(/g) || []).length, 1, 'IdolArt を呼ぶのは一箇所だけ');
+  ok(!/idol-art/.test(fs.readFileSync(path.join(__dirname, '../office.html'), 'utf8')),
+    'office.html は idol-art.js を読まない（無くても落ちないことの検証を兼ねる）');
+  const bp = fs.readFileSync(path.join(__dirname, '../build.py'), 'utf8');
+  ok(/'idol-art\.js'/.test(bp), 'build.py の JS リストに idol-art.js がある');
+
+  /* --- idolCard が art を運ぶ（表示側が payload を覗かない） --- */
+  const def = Offers.byId('idol-tv-match');
+  const mem = [{ id: 1, name: 'A', chara: def.payload.fit[0] }];
+  const res = Office.idolResult(def, mem, { 1: 1 });
+  const card = Office.idolCard(def, mem, res, { 1: 1 });
+  eq(card.art, 'tv', 'idolCard が art を運ぶ');
+  ok(card.rows[0].won === true, '勝ちが代表の行に立つ（絵の won はこれを読む）');
+  /* `match` でない案件では won が立たない＝素の枠になる */
+  const def2 = Offers.byId('idol-photobook');
+  const mem2 = [{ id: 2, name: 'B', chara: def2.payload.fit[0] }];
+  const card2 = Office.idolCard(def2, mem2, Office.idolResult(def2, mem2, null), null);
+  eq(card2.art, 'photobook', 'match でない案件も art を持つ');
+  ok(card2.rows[0].won === false, 'match でない案件では won が立たない（素の枠）');
+}
+
 /* ============================================================ */
 console.log('通過 ' + pass + ' 件');
 if (fails.length) {

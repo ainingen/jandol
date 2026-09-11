@@ -153,6 +153,54 @@
 .ofIdolNum b{font-family:var(--maru);font-size:13px;color:var(--ivory);margin:0 1px}
 .ofIdolSay{font-size:11.5px;line-height:1.6;color:var(--gold)}
 .ofIdolMore{font-size:10.5px;color:var(--muted);padding:3px 0 5px;text-align:left}
+/* ---------- 出演の絵（§8.2 の追補・段E） ----------
+   枠は `src/idol-art.js` が SVG の文字列で組む。**色はここが持つ**
+   ——SVG 側に色を直書きすると、テーマを変えたときにそこだけ取り残される。
+   **新しい色は増やしていない**（`style.css` の変数の付け替えだけ）。
+
+   **`.ofArt` は代表の一人ぶん一枚だけ。**三人送っても増えない
+   （二人目からは行だけ。縦に伸ばすと店の収支が画面の外へ落ちる）。
+   高さは viewBox（160×64）が決めるので、`height:auto` で 2.5:1 に落ちる */
+/* **横に伸ばさないこと。**事務所のシートは PC だと 700px 以上あり、
+   任せると絵が 708×284 まで育って収支の行が画面の外へ落ちた（実測）。
+   340px は 392px の端末で取れる幅——**どの窓でも同じ大きさの一枚**になる */
+.ofArt{
+  margin:5px 0 3px;border-radius:4px;overflow:hidden;max-width:340px;
+  border:1px solid var(--gold-dim);background:var(--urushi);
+}
+.ofArt .iaSvg{display:block;width:100%;height:auto}
+/* 勝った日は枠を少しだけ強くする。**一度きりの transition まで**
+   ——`@keyframes` は持たない（`idol-art.js` の「動かさないこと」） */
+.ofArt{transition:border-color .5s ease-out,box-shadow .5s ease-out}
+.ofArt.won{border-color:var(--gold);box-shadow:0 0 10px rgba(201,162,74,.28)}
+/* 代表の行は顔を出さない（絵が言っている）。二人目からは今までどおり */
+.ofIdolRow.lead .ofIdolBody{flex:1}
+
+.iaBg{fill:var(--urushi)}
+.iaBg2{fill:var(--urushi-2)}
+.iaBody{fill:var(--urushi-2);stroke:var(--gold-dim);stroke-width:1}
+.iaWin{fill:var(--back)}
+.iaWin2{fill:var(--back-2)}
+.iaSil{fill:var(--urushi);opacity:.62}
+/* 暗い地の上に立つ影。**`iaSil` と同じ色にしないこと**——地に溶けて消える */
+.iaSilU{fill:var(--gold-dim);opacity:.5}
+.iaDim{fill:var(--gold-dim)}
+.iaGold{fill:var(--gold)}
+.iaIv{fill:var(--ivory)}
+.iaPaper{fill:var(--ivory-2)}
+.iaMut{fill:var(--muted)}
+.iaVer{fill:var(--vermilion)}
+.iaFelt{fill:var(--felt)}
+.iaInk{fill:var(--ink)}
+.iaStIv,.iaStDim,.iaStMut,.iaStDk,.iaStGold{fill:none;stroke-width:1.2;stroke-linecap:round}
+.iaStIv{stroke:var(--ivory)}
+.iaStDim{stroke:var(--gold-dim)}
+.iaStMut{stroke:var(--muted)}
+.iaStDk{stroke:var(--urushi)}
+.iaStGold{stroke:var(--gold)}
+/* 絵に出てよい文字は数字とラテン文字だけ（`idol-art.js` の錠） */
+.iaNum{fill:var(--muted);font-family:var(--sans);font-size:7px}
+
 .ofSecNote{font-size:10.5px;letter-spacing:0;color:var(--muted);margin-left:8px;font-weight:400}
 
 /* ---------- 届いている話（spec.md §8） ---------- */

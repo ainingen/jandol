@@ -50,6 +50,7 @@
      id / name / days / min / max          いつものやつ
      pop / pay / favor                     効き目（pop 2〜8・pay 3万〜25万の幅）
      match                                 対局付きなら true
+     art                                   夜の結果カードの枠（下を読むこと）
      fit                                   向いている `chara`（4つ）
      when                                  省くと「所属2人から」
      res                                   **結果の文面。下を読むこと**
@@ -70,6 +71,20 @@
    - **名前を焼き込まない**（`textOf` と同じ作法）。名前は表示側が添える
    - **`serifu.js` から引かない。**あちらは性格19種×場面で、
      案件ごとに固有の言葉（「巻頭に載った」）を出す形と合わない
+
+   **`art` は絵の枠**（`src/idol-art.js`・段E）。案件ごとに一つ:
+
+     tv / latenight / magazine / photobook / radio /
+     school / stream / team / event / cm
+
+   **絵に文字を持たせない。**枠は「テレビの画面」「雑誌の表紙」「黒板の前」
+   のような**場所**だけを描き、そこに `thumb/` の顔をはめる。
+   案件の名前も見出しも一言も、絵の側には一字も書かない
+   （名鑑で案件名を書き写さなかったのと同じ話）。
+   **書き忘れても落ちない**——`IdolArt.frame` が汎用の枠を返す。
+   ただし絵と案件が噛み合わないので、`tools/test-office.js` が
+   「10件すべてに `art` があり、`IdolArt` が知っている kind であること」を
+   錠にしている。**新しい枠が要るなら `idol-art.js` に一つ描いてから足すこと。**
 
    **見出しの語彙を、ほかの案件とかぶらせないこと。**
    「話題になった」「顔が売れた」の類が散ると、増やしたのに同じに見える。
@@ -193,21 +208,21 @@ const Offers = (() => {
      送った子が `simulateTable` で打ち、勝てば `pop` が跳ねる。
   ------------------------------------------------------------ */
   const IDOL_OFFERS = [
-    { id: 'idol-local-tv', name: '地方局の深夜番組', days: 1, min: 1, max: 2,
+    { id: 'idol-local-tv', name: '地方局の深夜番組', art: 'latenight', days: 1, min: 1, max: 2,
       pop: 2, pay: 30000, favor: 2, fit: ['明るい元気娘', 'ギャル', 'さばさば姉御', '小悪魔'],
       text: '地方局から「雀荘特集に出てほしい」と話が来た。深夜の三十分。',
       res: {
         hit:  { head: '深夜なのに反響があった', line: 'カメラ、思ったより怖くないですね' },
         miss: { head: '無難にこなした', line: '……何を喋ればいいのか、分からなくて' },
       } },
-    { id: 'idol-photo', name: '雑誌のグラビア', days: 1, min: 1, max: 1,
+    { id: 'idol-photo', name: '雑誌のグラビア', art: 'magazine', days: 1, min: 1, max: 1,
       pop: 3, pay: 80000, favor: 3, fit: ['クール', 'ミステリアス', 'お嬢様', 'お姉さん系'],
       text: '麻雀雑誌の巻頭を一枚。「顔が知られていない子のほうがいい」とのこと。',
       res: {
         hit:  { head: '巻頭に載った', line: '写真の人、私じゃないみたい' },
         miss: { head: '隅に一枚だけ載った', line: '……あれ、本当に載るんですか' },
       } },
-    { id: 'idol-event', name: 'ファン対局会', days: 1, min: 2, max: 3,
+    { id: 'idol-event', name: 'ファン対局会', art: 'event', days: 1, min: 2, max: 3,
       pop: 4, pay: 50000, favor: 4, match: true, fit: ['明るい元気娘', '庶民派努力家', 'おっとり', '天然'],
       text: 'デパートの催事場でファンと打つ会。勝てば話題になる。',
       res: {
@@ -216,7 +231,7 @@ const Offers = (() => {
         missWin: { head: '勝ってしまった', line: '勝つ気は、無かったんですけど' },
         miss:    { head: '握手だけして帰った', line: '人が多いのは、少し苦手です' },
       } },
-    { id: 'idol-tv-match', name: 'テレビ対局', days: 2, min: 1, max: 1,
+    { id: 'idol-tv-match', name: 'テレビ対局', art: 'tv', days: 2, min: 1, max: 1,
       pop: 8, pay: 200000, favor: 5, match: true, fit: ['負けず嫌い', '真面目委員長', '職人肌', '無口だけど熱い'],
       /* **条件を足した（2026年9月11日・段B の直し）。**
          足す前は `roster.length >= 2` だけで、**いちばん大きい案件が序盤から来ていた**
@@ -250,7 +265,7 @@ const Offers = (() => {
        人見知り・生意気な後輩・毒舌・中二病気質の4種に出番が無かった。
        10件で 19種が2件ずつ（明るい元気娘とおっとりだけ3件）になる。 */
 
-    { id: 'idol-radio', name: 'ラジオのゲスト', days: 1, min: 1, max: 2,
+    { id: 'idol-radio', name: 'ラジオのゲスト', art: 'radio', days: 1, min: 1, max: 2,
       pop: 2, pay: 30000, favor: 3,
       /* **声だけの仕事。**人前が苦手な子に最初の出番が来る */
       fit: ['人見知り', '毒舌', '天然', 'さばさば姉御'],
@@ -259,7 +274,7 @@ const Offers = (() => {
         hit:  { head: 'ハガキが読み切れなかった', line: 'しゃべるだけなら、まだ平気です' },
         miss: { head: '相槌だけで終わった', line: '……間が持たなくて、すみません' },
       } },
-    { id: 'idol-school', name: '麻雀教室の講師', days: 1, min: 1, max: 2,
+    { id: 'idol-school', name: '麻雀教室の講師', art: 'school', days: 1, min: 1, max: 2,
       /* **人気より好感度が伸びる。**派手ではないが、続けると効く */
       pop: 2, pay: 40000, favor: 6,
       fit: ['真面目委員長', '職人肌', 'お姉さん系', 'おっとり'],
@@ -269,7 +284,7 @@ const Offers = (() => {
         hit:  { head: '生徒が次も申し込んだ', line: '教えるのは、打つのと別の頭を使いますね' },
         miss: { head: '黒板の前で固まった', line: '……何から話せばいいのか' },
       } },
-    { id: 'idol-stream', name: 'ネット配信の対局', days: 1, min: 1, max: 1,
+    { id: 'idol-stream', name: 'ネット配信の対局', art: 'stream', days: 1, min: 1, max: 1,
       pop: 3, pay: 40000, favor: 3, match: true,
       fit: ['生意気な後輩', '中二病気質', 'ギャル', '小悪魔'],
       text: '配信者から共演の打診。打ちながら喋れる子がいい、とのこと。',
@@ -279,7 +294,7 @@ const Offers = (() => {
         missWin: { head: '切り抜きが回った', line: '……配信、向いてないと思ってました' },
         miss:    { head: '静かな配信だった', line: 'しゃべりながら打つのは、無理です' },
       } },
-    { id: 'idol-team', name: '団体戦のゲスト参加', days: 2, min: 2, max: 3,
+    { id: 'idol-team', name: '団体戦のゲスト参加', art: 'team', days: 2, min: 2, max: 3,
       pop: 5, pay: 120000, favor: 4, match: true,
       fit: ['負けず嫌い', '無口だけど熱い', '庶民派努力家', '明るい元気娘'],
       /* **人数が要る仕事。**所属が増え、事務所が二段目に上がってから */
@@ -291,7 +306,7 @@ const Offers = (() => {
         missWin: { head: '助っ人が大将を倒した', line: '……勝ってしまいました' },
         miss:    { head: '一本も取れなかった', line: '団体戦は、間合いが違いますね' },
       } },
-    { id: 'idol-cm', name: 'CM 撮影', days: 1, min: 1, max: 1,
+    { id: 'idol-cm', name: 'CM 撮影', art: 'cm', days: 1, min: 1, max: 1,
       pop: 6, pay: 150000, favor: 3,
       fit: ['クール', 'お嬢様', 'ミステリアス', '毒舌'],
       /* **人気のある子がいて初めて話が来る。**序盤には届かない。
@@ -303,7 +318,7 @@ const Offers = (() => {
         hit:  { head: 'スタジオで一発だった', line: 'はい、と言うだけで半日でした' },
         miss: { head: '十五秒に半日かかった', line: '……立っているだけなのに、疲れます' },
       } },
-    { id: 'idol-photobook', name: '写真集', days: 2, min: 1, max: 1,
+    { id: 'idol-photobook', name: '写真集', art: 'photobook', days: 2, min: 1, max: 1,
       /* **報酬はここがいちばん大きい。**`pop` はテレビ対局と同じ8だが、
          あちらは勝てば倍になる（`match`）ので、伸びの天井は向こうが上 */
       pop: 8, pay: 220000, favor: 5,
@@ -333,7 +348,10 @@ const Offers = (() => {
     when: e.when || ((st, roster) => roster.length >= 2),
     text: e.text,
     payload: { name: e.name, pop: e.pop, pay: e.pay, favor: e.favor,
-               match: !!e.match, fit: e.fit || [], res: e.res },
+               match: !!e.match, fit: e.fit || [], res: e.res,
+               /* 夜の結果カードの枠（`src/idol-art.js`）。
+                  **知らない値でも落ちない**——`IdolArt.frame` が汎用の枠を返す */
+               art: e.art || '' },
   }));
 
   /* ------------------------------------------------------------

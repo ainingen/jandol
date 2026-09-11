@@ -139,6 +139,8 @@ src/
   office.js/.css    事務所ハブ。朝と夜、本拠地の選択、所属一覧、配置、遠征、依頼
   offers.js         届く依頼21件（大会5・契約イベント6・アイドル案件10）と発火判定。
                     **案件を足すときの手順は、この表の頭のコメントが正**
+  idol-art.js       アイドル案件の結果の絵（枠10種を SVG で描き、thumb/ の顔を入れる）。
+                    **絵の側に文字を持たせない**（文面は offers.js の payload.res）
   scoutshop.js      遠征先の雀荘（型4種・パレット・誰がいるか）
 
   theme.css         全画面に効く「華」の層（金箔・漆・朱）
@@ -297,6 +299,8 @@ src/debug.js        その中身。build.py は読まない（配布から外す
 | 一日に声をかけられる回数 | `src/scoutshop.js` の `CALLS_PER_DAY` |
 | 依頼の中身と発火条件 | `src/offers.js` の `TABLE`（大会・契約イベント・アイドル案件） |
 | 事務所に溜まる依頼の上限 | `src/offers.js` の `MAX_OPEN` |
+| 結果の絵の枠（案件ごと） | `src/offers.js` の `art` と `src/idol-art.js` の `FRAMES` |
+| 結果の絵の色 | `src/office.css` の `.ia*`（SVG に直書きしない） |
 | 遠さの段階ごとの距離 | `src/geo.js` の `FAR_KM` |
 
 ## 実対局
