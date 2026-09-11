@@ -1922,21 +1922,46 @@ function sameJ(a, b, name) {
   const rs = (n, pop, favor) => Array.from({ length: n }, (_, i) =>
     ({ id: i + 1, pop: i === 0 ? pop : 50, favor: i === 0 ? favor : 10 }));
   const on = (st, roster) => idol.filter((o) => o.when(st, roster)).map((o) => o.id);
-  const early = on({ agency: 1 }, rs(2, 50, 0));
-  const mid = on({ agency: 2 }, rs(4, 72, 20));
-  const late = on({ agency: 4 }, rs(8, 85, 70));
+  const early = on({ agency: 1, records: {} }, rs(2, 50, 0));
+  const mid = on({ agency: 2, records: { rookie: { entries: 2, best: 'ベスト16' } } },
+    rs(4, 72, 20));
+  const late = on({ agency: 4, records: { rookie: { entries: 5, best: '優勝' } } },
+    rs(8, 85, 70));
   ok(early.indexOf('idol-radio') >= 0, '序盤からラジオは来る');
   ok(early.indexOf('idol-stream') >= 0, '序盤からネット配信は来る');
   ok(early.indexOf('idol-school') < 0, '序盤に麻雀教室は来ない（所属3人から）');
   ok(early.indexOf('idol-team') < 0, '序盤に団体戦は来ない');
   ok(early.indexOf('idol-cm') < 0, '**序盤に CM は来ない**（人気のある子が要る）');
   ok(early.indexOf('idol-photobook') < 0, '**序盤に写真集は来ない**');
+  /* **いちばん大きい二件が序盤に来ないこと**（2026年9月11日に直した）。
+     テレビ対局は足す前 `roster.length >= 2` だけで、序盤から来ていた */
+  ok(early.indexOf('idol-tv-match') < 0,
+    '**序盤にテレビ対局は来ない**（事務所の格と大会実績が要る）');
   ok(mid.indexOf('idol-cm') >= 0 && mid.indexOf('idol-team') >= 0,
     '中盤で CM と団体戦が開く');
+  ok(mid.indexOf('idol-tv-match') >= 0, '中盤でテレビ対局が開く');
   ok(mid.indexOf('idol-photobook') < 0, '写真集は中盤でもまだ来ない（好感度が要る）');
   eq(late.length, 10, '終盤には10件とも来る');
   ok(early.length < mid.length && mid.length < late.length,
     '序盤 < 中盤 < 終盤 と増える', early.length + ' < ' + mid.length + ' < ' + late.length);
+
+  /* --- **大きい二件は別の軸で開くこと。**同じ条件だと二つ同時に解禁されて偏る --- */
+  const tvSrc = String(Offers.byId('idol-tv-match').when);
+  const pbSrc = String(Offers.byId('idol-photobook').when);
+  ok(/records/.test(tvSrc) && /agency/.test(tvSrc),
+    'テレビ対局は事務所の格の軸（ランクと大会実績）で見る', tvSrc);
+  ok(/pop/.test(pbSrc) && /favor/.test(pbSrc),
+    '写真集は人の軸（人気と好感度）で見る', pbSrc);
+  ok(!/pop|favor/.test(tvSrc), 'テレビ対局は人の軸を見ていない');
+  ok(!/records|agency/.test(pbSrc), '写真集は事務所の格を見ていない');
+  /* 実際に、片方だけが開く状態が存在すること */
+  const onlyTv = on({ agency: 3, records: { rookie: { entries: 1, best: '—' } } },
+    rs(5, 50, 0));
+  ok(onlyTv.indexOf('idol-tv-match') >= 0 && onlyTv.indexOf('idol-photobook') < 0,
+    '事務所を育てただけならテレビ対局だけが開く');
+  const onlyPb = on({ agency: 1, records: {} }, rs(2, 85, 70));
+  ok(onlyPb.indexOf('idol-photobook') >= 0 && onlyPb.indexOf('idol-tv-match') < 0,
+    '子を育てただけなら写真集だけが開く');
 
   /* --- 同じ日に大量に届かない（§8.3 の重みづけ） --- */
   const roster8 = rs(8, 85, 70);
