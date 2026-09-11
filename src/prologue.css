@@ -86,3 +86,38 @@
    `el.hidden` で出し入れするものには、必ずこれを対で書くこと */
 .plGo[hidden]{display:none}
 .plGo:focus-visible{outline:2px solid var(--ivory);outline-offset:2px}
+
+/* とばす（spec §3）。**最初から出しておく**——あとから出すと、
+   飛ばしたい人が飛ばせない時間ができる。
+
+   **絶対配置にしないこと。**`.plRoot` は入りきらないときに流れるので、
+   絶対配置だと長い画面で画面の外へ送られる。流れの中に置けば
+   334px（iOS の横持ち）でも必ず画面の中にいる
+   （`tools/drive-prologue.js` が 334px / 812px の両方で見ている）。 */
+.plSkip{
+  flex:none;align-self:flex-end;
+  padding:5px 12px;cursor:pointer;border-radius:3px;
+  font-family:var(--maru);font-weight:700;font-size:11.5px;letter-spacing:.08em;
+  border:1px solid var(--gold-dim);background:rgba(0,0,0,.3);color:var(--muted);
+}
+.plSkip:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
+
+/* 進みぐあいの点。画面数ぶん出して、いまの画面を強調する */
+.plDots{
+  flex:none;display:flex;justify-content:center;gap:7px;
+  margin-top:14px;pointer-events:none;
+}
+.plDot{
+  width:5px;height:5px;border-radius:50%;
+  background:var(--gold-dim);opacity:.5;
+  transition:background 180ms ease,opacity 180ms ease;
+}
+.plDot.on{background:var(--gold);opacity:1}
+
+/* 動きを減らす設定（spec §3）。**行を浮かび上がらせない。**
+   出す順は prologue.js の `reduced()` が見て、一画面ぶんを一度に出す。
+   **進みかたは変えない**——画面の数も、押して次へ進むことも同じ。 */
+@media (prefers-reduced-motion:reduce){
+  .plLine{transition:none;transform:none}
+  .plText,.plGo,.plDot{transition:none}
+}

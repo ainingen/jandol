@@ -88,6 +88,21 @@ const Prologue = (() => {
      ——誤爆でプロローグが終わるのを、そこだけは防ぐ */
   const GO_LABEL = 'はじめる';
 
+  /* **最初から出しておく**（spec §3）。あとから出すと、
+     飛ばしたい人が飛ばせない時間ができる */
+  const SKIP_LABEL = 'とばす';
+
+  /* 動きを減らす設定（spec §3）。**押した時点で一画面ぶんを全部出す。**
+     進みかたは変えない——画面の数も、押して次へ進むことも同じ。
+     **毎回引くこと。**play() の一度きりで見ると、途中で端末の設定を
+     変えた人に効かない */
+  function reduced() {
+    try {
+      return !!(window.matchMedia
+        && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+    } catch (e) { return false; }
+  }
+
   function play(done) {
     const finish = (typeof done === 'function') ? done : function () {};
     /* 単体ページは prologue.js を読まないので、ここへは来ない。
@@ -99,6 +114,16 @@ const Prologue = (() => {
     root.setAttribute('role', 'dialog');
     root.setAttribute('aria-label', 'プロローグ');
 
+    /* **釦は本文より前、流れの中に置く**（絶対配置にしない）。
+       `.plRoot` は入りきらないときに流れるので、絶対配置だと
+       長い画面で画面の外へ送られる。流れの中なら場所を取るぶん、
+       本文の中央寄せもそのぶんを見込んで決まる */
+    const skip = document.createElement('button');
+    skip.type = 'button';
+    skip.className = 'plSkip';
+    skip.textContent = SKIP_LABEL;
+    root.append(skip);
+
     const text = document.createElement('div');
     text.className = 'plText';
     root.append(text);
@@ -109,6 +134,17 @@ const Prologue = (() => {
     go.textContent = GO_LABEL;
     go.hidden = true;
     root.append(go);
+
+    /* 進みぐあいの点。画面数ぶん（spec §3） */
+    const dots = document.createElement('div');
+    dots.className = 'plDots';
+    dots.setAttribute('aria-hidden', 'true');
+    PROLOGUE.forEach(() => {
+      const d = document.createElement('span');
+      d.className = 'plDot';
+      dots.append(d);
+    });
+    root.append(dots);
 
     document.body.append(root);
 
@@ -140,6 +176,12 @@ const Prologue = (() => {
         if (last && i === PROLOGUE[n].length - 1) p.classList.add('plKin');
         text.append(p);
       });
+
+      Array.prototype.forEach.call(dots.children,
+        (d, i) => d.classList.toggle('on', i === n));
+
+      /* 動きを減らす設定のときは、浮かび上がらせずに最初から全部出す */
+      if (reduced()) { fillAll(); return; }
 
       filling = true;
       const ns = lines();
@@ -184,6 +226,8 @@ const Prologue = (() => {
 
     root.addEventListener('click', (e) => {
       if (e.target.closest('.plGo')) { close(); return; }
+      /* **とばすは即 done()。**読み終わったのと同じ出口を通る */
+      if (e.target.closest('.plSkip')) { close(); return; }
       if (filling) { fillAll(); return; }
       /* **最後の画面は押しても進まない**（spec §3）。釦を押させる */
       if (page < PROLOGUE.length - 1) next();
@@ -193,7 +237,7 @@ const Prologue = (() => {
     return { close: close };
   }
 
-  return { play, STAGGER_MS, FADE_MS, GO_LABEL };
+  return { play, reduced, STAGGER_MS, FADE_MS, GO_LABEL, SKIP_LABEL };
 })();
 
 if (typeof module !== 'undefined') module.exports = { PROLOGUE, Prologue };
