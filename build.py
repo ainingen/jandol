@@ -75,12 +75,15 @@ CSS = ['style.css', 'theme.css', 'maru.css', 'title.css', 'prologue.css', 'meika
 # idol-art.js（夜の結果カードの枠）は office.js が「あれば使う」（呼ぶときだけ）。
 # 単体ページ（office.html）はわざと読まない——無くても落ちないことの検証を兼ねる
 # sound.js は ui.js が「あれば使う」（読み込み時には触らない）。audio/ は ZIP に含めること
+# ui-sound.js（釦の音の委譲。spec.md §2.7）は document に listener を一つ置くだけ。
+# **Node からは読まれない**ので document を直に触ってよい——tools/*.js から
+# require しないこと（require した瞬間にヘッドレスで落ちる）
 # resume.js は match.js より前に置く。match.js が `typeof Resume` で見るのは
 # 呼ぶときだけなので順序は効かないが、taikai.js も読むので依存を先に並べておく
 # prologue.js は title.js より前。title.js は `typeof PROLOGUE` で
 # 「呼ぶときにだけ」見るので順序は効かないが、依存を先に並べる慣わしに合わせる
 # （docs/design/title/prologue-spec.md §5）
-JS = ['engine.js', 'ai.js', 'game.js', 'sound.js', 'ui.js', 'resume.js', 'match.js',
+JS = ['engine.js', 'ai.js', 'game.js', 'sound.js', 'ui-sound.js', 'ui.js', 'resume.js', 'match.js',
       'characters.js', 'geo.js', 'tournament.js', 'offers.js', 'idol-art.js', 'office.js',
       'prologue.js', 'title.js', 'meikan.js',
       'team.js', 'taikai.js', 'scout.js',

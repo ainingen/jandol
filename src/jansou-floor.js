@@ -2213,6 +2213,14 @@ const JansouFloor = (() => {
           }
           applyEvent(e, hooksRef);
           if (hooksRef.onEvent) hooksRef.onEvent(e);
+          /* 営業中の牌の音（spec.md §2.7）。**合図を出すだけ。**
+             鳴らすかどうか・何回まで鳴らすかは `src/ui-sound.js` が決める
+             ——このファイルは test-jansou / test-office / test-scout が
+             **Node で読んでいる**ので、`Sound` をここに書くと落ちる。
+             **スキップ中は合図も出さない**（skip は一フレームで残り全部を
+             飲み干すので、ここで出すと数百本ぶんが一度に飛ぶ）。
+             `UiSound` は「あれば使う」——単体ページには無い */
+          if (!live.skipping && typeof UiSound !== 'undefined') UiSound.floor(e.kind, live.speed);
         }
       } finally { consuming = false; }
     }

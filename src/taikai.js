@@ -904,6 +904,11 @@ const Taikai = (() => {
     function renderBridge(info) {
       clearEntrance();
       holdChrome(true);
+      /* 勝ち上がった音（spec.md §2.7）。**一回戦では鳴らさない**
+         ——`info.prev` が無い＝まだ何も勝ち上がっていない。
+         **どの音かはここでは知らない**（場面の名前だけ渡す）。
+         このファイルは `tools/test-taikai-field.js` が Node で読んでいる */
+      if (info.prev && typeof UiSound !== 'undefined') UiSound.cue('advance');
       root.dataset.tier = prepared.tierId;
       /* **自分が先頭、あとは `table` の順**（§4③）。`makeTables` は席を
          シャッフルするので、そのまま並べると自分がどこに出るか毎回変わる */

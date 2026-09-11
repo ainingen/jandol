@@ -826,6 +826,179 @@ const winData = (winnerSeat, loserSeat, total, payments, sticks) => ({
     '--ebh は 132px / 168px のまま');
 }
 
+/* ============================================================
+   §12 対局の外の音（`src/ui-sound.js`。spec.md §2.7）
+
+   **画面ごとに `Sound.play` を書き足さないための錠。**
+   対局の外はぜんぶ無音だったので、`document` に委譲の listener を
+   一つだけ置いた。散らすと、押し忘れと、**Node で落ちる**危険が出る。
+
+     (A) 釦の音 … `tap`。ブラウザで押す側は `tools/check-tap.js`
+     (B) 営業中の店の牌の音 … `discard` / `draw` をまばらに。
+         上限は `FLOOR_MAX_PER_SEC` **一箇所**。実測は `tools/check-floor-sound.js`
+     (C) 事務所・大会の要所 … 場面 → 音の表（`CUE`）が**一箇所**。
+         呼ぶ側は場面の名前しか知らない
+
+   ここは形だけ。
+   ============================================================ */
+{
+  const fs = require('fs'), path = require('path');
+  const rd = (f) => fs.readFileSync(path.join(__dirname, '..', f), 'utf8');
+  const strip = (t) => t.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/[^\n]*/g, '$1');
+  const us = rd('src/ui-sound.js');
+  const ub = strip(us);
+
+  /* **委譲は一本。**`document` に置く listener はここだけ */
+  ok((ub.match(/document\.addEventListener\(/g) || []).length === 1,
+    'ui-sound.js が document に置く listener は一つだけ');
+  ok(/'pointerdown'/.test(ub), '拾うのは pointerdown（click ではない）');
+
+  /* **`Sound.play('tap')` を書くのは一箇所。**
+     `ui.js` の `UI.buttons`（対局中の釦）と `taikai.js` の音量の見本は
+     「対局の外の釦」ではないので、別の口として数に入れない */
+  ok((ub.match(/Sound\.play\('tap'\)/g) || []).length === 1,
+    '**tap を鳴らすのは ui-sound.js の一行だけ**');
+  /* 鳴らす口は三つだけ（釦の tap・営業中の牌・要所の CUE）。
+     増やすときは spec に書くこと */
+  ok((ub.match(/Sound\.play\(/g) || []).length === 3,
+    'ui-sound.js が Sound.play を呼ぶのは三箇所（tap / 営業の牌 / 要所）');
+
+  /* ---- (B) 営業中の店の牌の音 ---- */
+  /* **上限は一箇所の定数。**倍速で機械銃にならないための唯一の栓 */
+  ok((ub.match(/FLOOR_MAX_PER_SEC/g) || []).length === 3,
+    'FLOOR_MAX_PER_SEC は定義1・使用1・export1 の三回だけ（数を散らさない）');
+  ok(/const FLOOR_MAX_PER_SEC = \d+;/.test(ub), 'FLOOR_MAX_PER_SEC は定数として一度だけ書く');
+  const fl = (ub.match(/function floor\([\s\S]*?\n  \}/) || [''])[0];
+  ok(/FLOOR_MAX_PER_SEC \/ Math\.max\(1, speed/.test(fl),
+    '**倍速のときは減らす**（上限を速さで割る）');
+  ok(/document\.hidden/.test(fl), 'タブが隠れているあいだは鳴らさない');
+  ok(/FLOOR_SOUND\[kind\]/.test(fl) && /if \(!name\) return false/.test(fl),
+    '表に無い節目では鳴らさない（FLOOR_SOUND がすべて）');
+  /* **新しい音源は足していない。**使うのは既存の13本のうち二つだけ。
+     **`src/sound.js` も `src/ui-sound.js` も require しない**
+     ——ここで読むと下の SOUND_REFS の数え上げに自分で名前を足すことになる
+     （`ui-sound.js` は読んだ瞬間に document を触って落ちる。実際に落とした） */
+  const fs2 = strip(rd('src/sound.js'));
+  const nm = (fs2.match(/const NAMES = \[([^\]]*)\]/) || [, ''])[1];
+  ok(/'discard'/.test(nm) && /'draw'/.test(nm),
+    '当てた二つは Sound.NAMES にある（新しい音源を足していない）');
+  ok(/arrive: 'draw'/.test(ub) && /pay: 'discard'/.test(ub),
+    '営業で鳴らすのは arrive→draw と pay→discard');
+  ok(!/FLOOR_SOUND = \{[^}]*(agari|riichi|ryuukyoku|deal|dora|call|tap)/.test(ub),
+    '営業に和了・リーチ・流局などを当てていない（音の性格が違う）');
+
+  /* ---- (C) 事務所・大会の要所 ---- */
+  /* **場面 → 音の表は一箇所。**呼ぶ側は場面の名前しか知らない */
+  ok(/const CUE = \{/.test(ub), '場面 → 音の表（CUE）がある');
+  const cue = (ub.match(/const CUE = \{[\s\S]*?\n  \};/) || [''])[0];
+  ok(/find: 'dora'/.test(cue), '発見は dora（伏せてあった牌がめくれる音）');
+  ok(/advance: 'agari'/.test(cue), '勝ち上がりは agari（一番派手にしてよい音）');
+  ok(/report: 'ryuukyoku'/.test(cue), '日報は ryuukyoku（13本で唯一の連続音）');
+  ok(Object.keys({}).length === 0 && (cue.match(/:/g) || []).length === 3,
+    'CUE は三つだけ（合わないものには当てていない）');
+  /* **当てていないもの。**契約と招待は既存の13本に合う音が無い（spec.md §2.7）
+     ——新しい音源が要る。当てた形跡が無いことを錠にしておく */
+  ok(!/contract|invite|offer/.test(cue),
+    '契約・招待には当てていない（新しい音源が要る。spec.md §2.7）');
+  const cf = (ub.match(/function cue\([\s\S]*?\n  \}/) || [''])[0];
+  ok(/CUE\[name\]/.test(cf) && /if \(!n\) return false/.test(cf),
+    '表に無い場面では鳴らさない');
+  ok(!/gain|rate/.test(cf),
+    '要所の音は大きさを振らない（一本ずつの目標は prep-sfx.py の target_db が正）');
+
+  /* 呼ぶ側（`office.js` / `taikai.js`）。**どちらも Node から読まれている** */
+  const oj = strip(rd('src/office.js')), tj = strip(rd('src/taikai.js'));
+  ok((oj.match(/UiSound\.cue\(/g) || []).length === 2,
+    'office.js が UiSound.cue を呼ぶのは二箇所（発見・日報）');
+  ok(/UiSound\.cue\('find'\)/.test(oj) && /UiSound\.cue\('report'\)/.test(oj),
+    'office.js が渡すのは場面の名前だけ（find / report）');
+  ok((tj.match(/UiSound\.cue\(/g) || []).length === 1,
+    'taikai.js が UiSound.cue を呼ぶのは一箇所（勝ち上がり）');
+  ok(/info\.prev && typeof UiSound !== 'undefined'/.test(tj),
+    '**一回戦では鳴らさない**（info.prev が無い＝まだ勝ち上がっていない）');
+  [['office.js', oj], ['taikai.js', tj]].forEach(([n, b]) => {
+    ok(!/UiSound\.cue\('(?!find|report|advance)/.test(b), n + ' が表に無い場面を渡さない');
+    /* **論理名を呼ぶ側に書き写さない。**写すと、当てる音を変えたときに
+       二か所を直すことになる（`RULES.event` で一度通った話） */
+    ok(!/UiSound\.cue\('(dora|agari|ryuukyoku|discard|draw|tap|call|riichi|deal)'/.test(b),
+      n + ' が論理名ではなく場面の名前を渡している');
+    ok((b.match(/typeof UiSound !== 'undefined'/g) || []).length
+       === (b.match(/UiSound\.cue\(/g) || []).length,
+      n + ' の UiSound は呼ぶ口ごとに typeof で守ってある');
+  });
+
+  /* **時計を増やさない。**四人卓で落ちた件と同じ土地 */
+  ok(!/setInterval|setTimeout|requestAnimationFrame/.test(ub),
+    'ui-sound.js は時計を持たない（営業の進行に相乗りしている）');
+
+  /* **除きかたは一箇所（`muted`）で決める。**画面ごとに条件を散らさない */
+  ok(/function muted\(/.test(ub), '除きかたは muted() 一つ');
+  const mu = (ub.match(/function muted\([\s\S]*?\n  \}/) || [''])[0];
+  ok(/inMatch\(\)/.test(mu), 'muted() が inMatch() を見る（tap と discard の二重を避ける）');
+  ok(/data-nosound/.test(mu), 'muted() が [data-nosound] を見る（逃げ道）');
+  /* **対局中かどうかを判じるのは一行だけ。**(A)(B)(C) の三つがこれを通る */
+  ok((ub.match(/classList\.contains\('inMatch'\)/g) || []).length === 1,
+    "対局中かどうかを判じる式は一箇所（classList.contains('inMatch')）");
+  ok((ub.match(/if \(inMatch\(\)\)/g) || []).length === 3,
+    '(A)(B)(C) の三つとも inMatch() を通る');
+
+  /* **初期化はここで前に出す。**いままでは大会の「卓に着く」だけが解除の口で、
+     表紙から入って事務所を触っても AudioContext が無かった。**二度目は呼ばない** */
+  ok(/Sound\.init\(\)/.test(ub) && /Sound\.load\(\)/.test(ub),
+    '最初の pointerdown で init と load を呼ぶ');
+  ok(/if \(started\) return;/.test(ub), '二度目からは呼ばない（started の錠）');
+
+  /* ---- 呼ぶ側（`src/jansou-floor.js` の再生層） ----
+     **あちらは Node から読まれている**ので、`Sound` を書いてはいけない。
+     書けるのは `UiSound` を「あれば使う」一行だけ */
+  const jf = strip(rd('src/jansou-floor.js'));
+  ok(!/\bSound\b/.test(jf), '**jansou-floor.js に Sound の参照が無い**（Node で読まれる）');
+  ok((jf.match(/UiSound\.floor\(/g) || []).length === 1,
+    'UiSound.floor を呼ぶのは一箇所だけ');
+  ok(/typeof UiSound !== 'undefined'/.test(jf), "UiSound は「あれば使う」（typeof で守る）");
+  /* **スキップ中は合図も出さない。**skip は一フレームで残りを全部飲み干す */
+  ok(/!live\.skipping && typeof UiSound !== 'undefined'/.test(jf),
+    '**スキップ中は合図を出さない**（一フレームで数百本ぶんが飛ぶ）');
+  ok(/UiSound\.floor\(e\.kind, live\.speed\)/.test(jf),
+    '節目の種類と速さを渡す（policy は ui-sound.js 側）');
+
+  /* **build.py に入っていること。**入れ忘れると index.html で一度も読まれない */
+  const bp = rd('build.py');
+  ok(/'ui-sound\.js'/.test(bp), "build.py の JS に 'ui-sound.js' がある");
+
+  /* **音量は起動時に入れる。**落とすと、音量0にしていても釦だけ既定の1で鳴る */
+  ok(/Sound\.volume\(state\.sfxVolume\)/.test(strip(rd('shell.html'))),
+    'shell.html が起動時に Sound.volume(state.sfxVolume) を入れる');
+
+  /* ------------------------------------------------------------
+     **Node から読まれるモジュールに Sound の参照を増やさないこと。**
+     `tools/*.js` が require している src は、参照した瞬間に
+     ヘッドレスで落ちうる（`typeof` で守れば落ちないが、
+     守り忘れが効くのは実行するまで分からない）。**数で固定する。**
+
+     いま Sound を見てよいのは二つだけ。
+       ui.js    … 対局の io 層（spec.md §2.3）
+       taikai.js … 音量の設定と「卓に着く」の解除。どれも typeof で守ってある
+     `ui-sound.js` は**どの tools からも require されていない**ので、
+     この表に出てこないのが正しい
+     ------------------------------------------------------------ */
+  const SOUND_REFS = { 'ui.js': 2, 'taikai.js': 13 };
+  const mods = new Set();
+  fs.readdirSync(path.join(__dirname)).filter((f) => f.endsWith('.js')).forEach((f) => {
+    const t = fs.readFileSync(path.join(__dirname, f), 'utf8');
+    (t.match(/require\(['"]\.\.\/src\/[a-z-]+\.js['"]\)/g) || [])
+      .forEach((m) => mods.add(m.match(/src\/([a-z-]+\.js)/)[1]));
+  });
+  ok(mods.size > 15, 'tools が require している src を数え上げられた（' + mods.size + '本）');
+  ok(!mods.has('ui-sound.js'),
+    '**ui-sound.js はどの tools からも require されていない**（document を直に触ってよい根拠）');
+  [...mods].sort().forEach((m) => {
+    const n = (strip(rd('src/' + m)).match(/\bSound\b/g) || []).length;
+    ok(n === (SOUND_REFS[m] || 0),
+      'Node から読まれる ' + m + ' の Sound の参照は ' + (SOUND_REFS[m] || 0) + '（got ' + n + '）');
+  });
+}
+
 /* ---------------- 結果 ---------------- */
 console.log('対局まわりの純関数テスト');
 console.log('通過 ' + pass + ' 件' + (fails.length ? ' / 失敗 ' + fails.length + ' 件' : ''));

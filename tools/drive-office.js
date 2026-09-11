@@ -118,13 +118,21 @@ const log = (...a) => { process.stdout.write(a.join(' ') + '\n'); };
   const browser = await chromium.launch();
   const ctx = await browser.newContext({ viewport: { width: WIDTH, height: HEIGHT }, deviceScaleFactor: 2 });
   const page = await ctx.newPage();
-  /* 音は聞けないので、Sound.play が何を何回呼ばれたかを数える（--real の (c)） */
+  /* 音は聞けないので、Sound.play が何を何回呼ばれたかを数える（--real の (c)）。
+     **対局の外のぶんは別に数える**——釦の音（`src/ui-sound.js`。spec.md §2.7）が
+     入ってから、対局の外も鳴るようになった。鳴ってよい名前は下の OUTSIDE_OK */
   await page.addInitScript(() => {
-    window.__sfx = {};
+    window.__sfx = {}; window.__sfxOut = {};
     const hook = () => {
       if (typeof Sound === 'undefined' || Sound.__hooked) return;
       const orig = Sound.play;
-      Sound.play = function (n, o) { window.__sfx[n] = (window.__sfx[n] || 0) + 1; return orig.call(Sound, n, o); };
+      Sound.play = function (n, o) {
+        window.__sfx[n] = (window.__sfx[n] || 0) + 1;
+        if (!document.body.classList.contains('inMatch')) {
+          window.__sfxOut[n] = (window.__sfxOut[n] || 0) + 1;
+        }
+        return orig.call(Sound, n, o);
+      };
       Sound.__hooked = true;
     };
     document.addEventListener('DOMContentLoaded', hook);
@@ -405,8 +413,32 @@ const log = (...a) => { process.stdout.write(a.join(' ') + '\n'); };
     if (M.speeds.some((v) => v !== MATCH_SPEED)) {
       log('！対局の速さがセーブの matchSpeed と違う'); process.exitCode = 2;
     }
-    if (total !== M.sfxIn) {
-      log('！対局の外で音が鳴っている（' + (total - M.sfxIn) + ' 回）'); process.exitCode = 2;
+    /* **対局の外で鳴ってよい名前**（spec.md §2.7）。鳴らしているのは
+       `src/ui-sound.js` だけで、出どころは三つ。
+
+         tap              釦の音（委譲。(A)）
+         discard / draw   営業中の店の牌（(B)）
+         dora             遠征で雀ドルを見つけた（(C) find）
+         ryuukyoku        夜の日報が開いた（(C) report）
+         agari            大会で勝ち上がった（(C) advance）
+
+       残る三つ（call / riichi / deal）は**対局の中だけの音**。
+       ここに出てきたら、どこかが場面を取り違えている。
+
+       **一秒あたりの回数はここでは測らない**——この道具は毎日スキップを
+       押すので、営業の音はほとんど鳴らない。測るのは
+       `tools/check-floor-sound.js`。ここに名前が増えるときは、
+       どこから鳴らしているかを spec に書くこと */
+    const OUTSIDE_OK = ['tap', 'discard', 'draw', 'dora', 'ryuukyoku', 'agari'];
+    const out = await page.evaluate(() => window.__sfxOut || {});
+    log('  対局の外 ' + JSON.stringify(out));
+    const bad = Object.keys(out).filter((k) => OUTSIDE_OK.indexOf(k) < 0);
+    if (bad.length) {
+      log('！対局の外で鳴ってはいけない音が鳴っている（' + bad.join(' / ') + '）'); process.exitCode = 2;
+    }
+    if (!out.tap) {
+      log('！対局の外で釦の音が一度も鳴っていない（ui-sound.js の委譲が効いていない）');
+      process.exitCode = 2;
     }
   }
   await browser.close();
