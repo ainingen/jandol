@@ -319,11 +319,12 @@ function sameJ(a, b, name) {
   /* **課題（A4.5-3）は雀ドル一人につき一件。**`fire` は引かないが表には載る
      （`byId` で引けないと `st.offers` から戻せない。`scout/spec.md` §5.2） */
   const CHARA_N = JANDOLS.concat(FREE_AGENTS).length;
-  eq(Offers.TABLE.length, 15 + CHARA_N, '大会5・契約6・アイドル4 ＋ 課題は雀ドルの数だけ');
+  eq(Offers.TABLE.length, 21 + CHARA_N,
+    '大会5・契約6・アイドル10 ＋ 課題は雀ドルの数だけ');
   const kinds = Offers.TABLE.reduce((a, o) => { a[o.kind] = (a[o.kind] || 0) + 1; return a; }, {});
   eq(kinds.tournament, 5, '大会は既存の5つ');
   eq(kinds.contract, 6, "契約イベントは contract === 'event' の6人ぶん");
-  eq(kinds.idol, 4, 'アイドル案件は4種');
+  eq(kinds.idol, 10, 'アイドル案件は10種（2026年9月11日に4→10）');
   eq(kinds.quest, CHARA_N, '課題は雀ドル一人につき一件（相手ごとに一枠）');
 
   eq(new Set(Offers.TABLE.map((o) => o.id)).size, Offers.TABLE.length, 'id が重複していない');
@@ -1823,6 +1824,150 @@ function sameJ(a, b, name) {
   ok(/onerror="this\.remove\(\)"/.test(cardHtml),
     '顔が無ければ消える（シルエットが下から出る。再取得しない）');
   ok(/mkFace sil/.test(cardHtml), 'シルエットの下地（.mkFace.sil）を敷いている');
+}
+
+/* ============================================================
+   アイドル案件を10件に増やした（段B・2026年9月11日）
+
+   **足すのは表の一行だけ**という設計（§1.3）をそのまま使う。
+   ここで見るのは、その一行に何が要るか——id・`when`・`fit`・`res`。
+   ============================================================ */
+{
+  const idol = Offers.TABLE.filter((o) => o.kind === 'idol');
+  eq(idol.length, 10, 'アイドル案件は10件');
+
+  /* --- id は重複しない（セーブに残るので、あとから変えない） --- */
+  const ids = idol.map((o) => o.id);
+  eq(new Set(ids).size, ids.length, 'id に重複が無い');
+  /* 表ぜんぶ（大会・契約・課題も含めて）で重複が無いこと */
+  const allIds = Offers.TABLE.map((o) => o.id);
+  eq(new Set(allIds).size, allIds.length, '表ぜんぶで id に重複が無い');
+
+  /* --- fit は characters.js の chara だけ。新しい分類を作らない --- */
+  const CHARAS = new Set(JANDOLS.concat(FREE_AGENTS).map((c) => c.chara));
+  const strays = [];
+  idol.forEach((o) => (o.payload.fit || []).forEach((f) => {
+    if (!CHARAS.has(f)) strays.push(o.id + ':' + f);
+  }));
+  eq(strays.length, 0, 'fit は characters.js に実在する chara だけ', strays.join(' '));
+  /* **19種が偏らないこと。**足す前は4種に出番が無かった */
+  const use = {};
+  CHARAS.forEach((c) => { use[c] = 0; });
+  idol.forEach((o) => o.payload.fit.forEach((f) => { use[f] += 1; }));
+  const zero = Object.keys(use).filter((c) => !use[c]);
+  eq(zero.length, 0, '出番の無い性格が一つも無い', zero.join('、'));
+  const counts = Object.keys(use).map((c) => use[c]);
+  ok(Math.max.apply(null, counts) - Math.min.apply(null, counts) <= 1,
+    'いちばん多い性格といちばん少ない性格の差は1件まで',
+    Math.min.apply(null, counts) + '〜' + Math.max.apply(null, counts));
+
+  /* --- すべての案件が res を持つ（match は四通り、そうでなければ二通り） --- */
+  idol.forEach((o) => {
+    const r = o.payload.res || {};
+    ok(!!r.hit && !!r.miss, o.payload.name + ' に hit / miss がある');
+    ok(!!(r.hit && r.hit.head && r.hit.line), o.payload.name + ' の hit に見出しと一言がある');
+    if (o.payload.match) {
+      ok(!!r.hitWin && !!r.missWin, o.payload.name + '（対局あり）に hitWin / missWin がある');
+    } else {
+      ok(!r.hitWin && !r.missWin,
+        o.payload.name + '（対局なし）に「勝った側」を書いていない');
+    }
+  });
+
+  /* --- 見出しは28本すべて別。**語彙もかぶらせない** --- */
+  const heads = [];
+  idol.forEach((o) => Object.keys(o.payload.res)
+    .forEach((k) => heads.push(o.payload.res[k].head)));
+  eq(new Set(heads).size, heads.length, '見出しが28本とも別の文', String(heads.length));
+  const lines = [];
+  idol.forEach((o) => Object.keys(o.payload.res)
+    .forEach((k) => lines.push(o.payload.res[k].line)));
+  eq(new Set(lines).size, lines.length, '一言も全部別の文');
+  /* **案件をまたいで同じ語を使わない。**「話題になった」「顔が売れた」の類が
+     散ると、増やしたのに同じに見える。案件ごとの固有名詞で分けること。
+     同じ案件の中で繰り返すのは可（テレビ対局の「全国」） */
+  const owner = {};
+  const shared = [];
+  idol.forEach((o) => {
+    const seen = new Set();
+    Object.keys(o.payload.res).forEach((k) => {
+      o.payload.res[k].head
+        .split(/[はがをにでのとも、。ないたっるれてくしま]+/)
+        .filter((w) => w.length >= 2)
+        .forEach((w) => seen.add(w));
+    });
+    seen.forEach((w) => {
+      if (owner[w] && owner[w] !== o.id) shared.push(w + '（' + owner[w] + ' と ' + o.id + '）');
+      owner[w] = o.id;
+    });
+  });
+  eq(shared.length, 0, '見出しの語が案件をまたいでかぶっていない', shared.join(' / '));
+
+  /* --- 名前を表に焼き込んでいない（textOf と同じ作法） --- */
+  const names = JANDOLS.concat(FREE_AGENTS).map((c) => c.name);
+  const baked = [];
+  idol.forEach((o) => Object.keys(o.payload.res).forEach((k) => {
+    const t = o.payload.res[k];
+    names.forEach((n) => { if (t.head.indexOf(n) >= 0 || t.line.indexOf(n) >= 0) baked.push(o.id); });
+  }));
+  eq(baked.length, 0, 'res に雀ドルの名前を焼き込んでいない');
+
+  /* --- when はプレイヤーの状態だけ。`parlor.day` を見ない（§8.1） --- */
+  idol.forEach((o) => {
+    const src = String(o.when);
+    ok(!/parlor|\.day\b/.test(src), o.id + ' の when が parlor.day を見ていない', src);
+  });
+
+  /* --- 狙った時期に発火すること（序盤・中盤・終盤） --- */
+  const rs = (n, pop, favor) => Array.from({ length: n }, (_, i) =>
+    ({ id: i + 1, pop: i === 0 ? pop : 50, favor: i === 0 ? favor : 10 }));
+  const on = (st, roster) => idol.filter((o) => o.when(st, roster)).map((o) => o.id);
+  const early = on({ agency: 1 }, rs(2, 50, 0));
+  const mid = on({ agency: 2 }, rs(4, 72, 20));
+  const late = on({ agency: 4 }, rs(8, 85, 70));
+  ok(early.indexOf('idol-radio') >= 0, '序盤からラジオは来る');
+  ok(early.indexOf('idol-stream') >= 0, '序盤からネット配信は来る');
+  ok(early.indexOf('idol-school') < 0, '序盤に麻雀教室は来ない（所属3人から）');
+  ok(early.indexOf('idol-team') < 0, '序盤に団体戦は来ない');
+  ok(early.indexOf('idol-cm') < 0, '**序盤に CM は来ない**（人気のある子が要る）');
+  ok(early.indexOf('idol-photobook') < 0, '**序盤に写真集は来ない**');
+  ok(mid.indexOf('idol-cm') >= 0 && mid.indexOf('idol-team') >= 0,
+    '中盤で CM と団体戦が開く');
+  ok(mid.indexOf('idol-photobook') < 0, '写真集は中盤でもまだ来ない（好感度が要る）');
+  eq(late.length, 10, '終盤には10件とも来る');
+  ok(early.length < mid.length && mid.length < late.length,
+    '序盤 < 中盤 < 終盤 と増える', early.length + ' < ' + mid.length + ' < ' + late.length);
+
+  /* --- 同じ日に大量に届かない（§8.3 の重みづけ） --- */
+  const roster8 = rs(8, 85, 70);
+  let seed = 1;
+  const rng = () => ((seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff);
+  let worst = 0;
+  ['tokyo', 'tottori'].forEach((pref) => {
+    const st = { agency: 4, playerRank: 'B', officePref: pref,
+                 team: [1, 2, 3], offers: [], offerFired: [], records: {} };
+    for (let d = 0; d < 30; d++) {
+      const add = Offers.fire(st, roster8, rng);
+      worst = Math.max(worst, add.length);
+      st.offers = st.offers.concat(add).slice(-Offers.MAX_OPEN);
+      if (d % 3 === 2) st.offers = st.offers.slice(1);
+    }
+  });
+  ok(worst <= 3, '一日に届くのは3件まで（案件を10件に増やしても変わらない）', String(worst));
+
+  /* --- 報酬と伸びが既存の幅から外れていない --- */
+  const pops = idol.map((o) => o.payload.pop);
+  const pays = idol.map((o) => o.payload.pay);
+  ok(Math.min.apply(null, pops) >= 2 && Math.max.apply(null, pops) <= 8,
+    'pop は 2〜8 の幅に収まっている');
+  ok(Math.min.apply(null, pays) >= 30000 && Math.max.apply(null, pays) <= 250000,
+    'pay は 3万〜25万 の幅に収まっている');
+  /* 人数と日数が定義どおり */
+  idol.forEach((o) => {
+    ok(o.members.min >= 1 && o.members.max >= o.members.min,
+      o.id + ' の members が min <= max');
+    ok(o.days >= 1, o.id + ' は日を使う');
+  });
 }
 
 /* ============================================================ */
