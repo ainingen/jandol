@@ -1710,6 +1710,121 @@ function sameJ(a, b, name) {
     'C級には届く');
 }
 
+/* ============================================================
+   アイドル案件の結果カード（spec.md §8.2 の追補・2026年9月11日）
+
+   **四分岐**（向いていた × 勝った）が全部引けること。
+   **`match` でない案件で「勝った側」を選ばないこと**
+   ——存在しない勝負を書くことになる。
+   文面は `offers.js` の表が正で、`serifu.js` からは引かない。
+   ============================================================ */
+{
+  const tv = Offers.byId('idol-tv-match');     // match: true
+  const ph = Offers.byId('idol-photo');        // match: false
+  ok(!!tv && !!ph, 'アイドル案件が引ける');
+
+  const fitChara = tv.payload.fit[0];
+  const missChara = '人見知り';
+  ok(tv.payload.fit.indexOf(missChara) < 0, 'テレビ対局に向いていない性格を選べている');
+
+  const hit = { id: 101, name: '向いてる子', chara: fitChara };
+  const mis = { id: 102, name: '向いてない子', chara: missChara };
+  const won = { 101: 1, 102: 1 };
+  const lost = { 101: 3, 102: 3 };
+
+  /* --- 四分岐 --- */
+  const k = (c, pl) => Office.idolTell(tv, c, pl).key;
+  eq(k(hit, won), 'hitWin', '向いていて勝った → hitWin');
+  eq(k(hit, lost), 'hit', '向いていて負けた → hit');
+  eq(k(mis, won), 'missWin', '向いていなくて勝った → missWin');
+  eq(k(mis, lost), 'miss', '向いていなくて負けた → miss');
+
+  /* 四通りとも別の文面であること（同じものを四回書いていない） */
+  const heads = [k(hit, won), k(hit, lost), k(mis, won), k(mis, lost)]
+    .map((key) => tv.payload.res[key].head);
+  ok(new Set(heads).size === 4, '四分岐の見出しが四通りとも別', heads.join(' / '));
+  const lines = [k(hit, won), k(hit, lost), k(mis, won), k(mis, lost)]
+    .map((key) => tv.payload.res[key].line);
+  ok(new Set(lines).size === 4, '四分岐の一言が四通りとも別');
+
+  /* --- match でない案件は「勝った側」を使わない --- */
+  const phFit = { id: 103, name: 'グラビア向き', chara: ph.payload.fit[0] };
+  const phMis = { id: 104, name: 'そうでもない', chara: missChara };
+  ok(ph.payload.fit.indexOf(missChara) < 0, 'グラビアに向いていない性格を選べている');
+  eq(Office.idolTell(ph, phFit, { 103: 1 }).key, 'hit',
+    '**match でない案件は、着順を渡しても hitWin にならない**');
+  eq(Office.idolTell(ph, phMis, { 104: 1 }).key, 'miss',
+    '**match でない案件は、着順を渡しても missWin にならない**');
+  ok(!Office.idolTell(ph, phFit, { 103: 1 }).won, 'match でなければ won が立たない');
+  ok(!ph.payload.res.hitWin && !ph.payload.res.missWin,
+    'match でない案件の表に「勝った側」を書いていない');
+
+  /* --- カードの組み立て --- */
+  const res = Office.idolResult(tv, [hit, mis], lost);
+  const card = Office.idolCard(tv, [hit, mis], res, lost);
+  eq(card.pay, tv.payload.pay, 'カードの報酬は案件の pay');
+  eq(card.rows.length, 2, '送った人数ぶん行がある');
+  /* **見出しは代表の一人**＝いちばん pop が伸びた子。向いているほうが伸びる */
+  eq(card.head, tv.payload.res.hit.head, '見出しは代表（pop がいちばん伸びた子）のもの');
+  eq(card.rows[0].name, hit.name, '代表を先頭に置く');
+  ok(card.rows[0].pop > card.rows[1].pop, '向いていた子のほうが人気が伸びる');
+  /* 同点なら送った順（並びが揺れない） */
+  const tie = Office.idolCard(tv, [mis, hit], Office.idolResult(tv, [mis, hit], null), null);
+  ok(tie.rows.length === 2, '同点でも人数ぶん出る');
+
+  /* --- 純関数のまま（`idolResult` は st を触らない） --- */
+  const before = JSON.stringify(tv.payload);
+  Office.idolCard(tv, [hit, mis], res, lost);
+  eq(JSON.stringify(tv.payload), before, 'カードを組んでも表を書き換えない');
+
+  /* --- 文面を `serifu.js` から引いていないこと（本文の錠） --- */
+  const fs = require('fs'), path = require('path');
+  const src = fs.readFileSync(path.join(__dirname, '../src/office.js'), 'utf8');
+  const tell = (src.match(/function idolTell\([\s\S]*?\n  \}/) || [''])[0];
+  ok(tell && !/LINES|SERIFU/.test(tell),
+    'idolTell は serifu.js（LINES / SERIFU）を読まない');
+  ok(/payload[\s\S]{0,40}res/.test(tell), '文面は payload.res から引く');
+
+  /* --- `noDay` の依頼（契約イベント）にカードは付かない --- */
+  const ev = Offers.byId('event-001');
+  ok(ev && ev.days === 0 && ev.kind === 'contract', '契約イベントは日を使わない');
+  ok(!/kind === 'contract'[\s\S]{0,700}runJobDays/.test(src),
+    '契約イベントの枝は runJobDays（カードを載せる経路）を通らない');
+
+  /* --- 同じ一言を並べない（三人送っても「また打ちましょうね」が三行続かない） --- */
+  const three = [
+    { id: 201, name: 'あ', chara: fitChara },
+    { id: 202, name: 'い', chara: fitChara },
+    { id: 203, name: 'う', chara: fitChara },
+  ];
+  const c3 = Office.idolCard(tv, three, Office.idolResult(tv, three, null), null);
+  eq(c3.rows.filter((r) => r.line).length, 1,
+    '同じ分岐の子が並んでも、一言は一度だけ');
+  /* 分岐が割れたら両方出る */
+  const mixed = [{ id: 204, name: 'あ', chara: fitChara },
+                 { id: 205, name: 'い', chara: missChara }];
+  const cm = Office.idolCard(tv, mixed, Office.idolResult(tv, mixed, null), null);
+  eq(cm.rows.filter((r) => r.line).length, 2,
+    '向いていた子と違う子では、別の一言が二つ出る');
+
+  /* --- 四人以上は畳む（縦に伸ばさない） --- */
+  ok(/const IDOL_SHOWN = 3;/.test(src), '並べるのは三人まで');
+  ok(/rows\.slice\(0, IDOL_SHOWN\)/.test(src), '三人までで切っている');
+  ok(/rows\.length > IDOL_SHOWN[\s\S]{0,90}ほか \$\{card\.rows\.length - IDOL_SHOWN\}人/.test(src),
+    '溢れたぶんは「ほか N人」で畳む（黙って消さない）');
+  const four = [1, 2, 3, 4].map((i) => ({ id: 300 + i, name: 'x' + i, chara: fitChara }));
+  const c4 = Office.idolCard(tv, four, Office.idolResult(tv, four, null), null);
+  eq(c4.rows.length, 4, 'カードのほうは人数ぶん持つ（畳むのは描く側）');
+
+  /* --- 顔は thumb/。img/ の 768×1024 は読まない --- */
+  const cardHtml = (src.match(/const cardBody = card \? `[\s\S]*?` : '';/) || [''])[0];
+  ok(/thumb\/\$\{pad3/.test(cardHtml), '結果カードの顔は thumb/ を読む');
+  ok(!/img\/\$\{pad3/.test(cardHtml), '結果カードで img/ を読んでいない');
+  ok(/onerror="this\.remove\(\)"/.test(cardHtml),
+    '顔が無ければ消える（シルエットが下から出る。再取得しない）');
+  ok(/mkFace sil/.test(cardHtml), 'シルエットの下地（.mkFace.sil）を敷いている');
+}
+
 /* ============================================================ */
 console.log('通過 ' + pass + ' 件');
 if (fails.length) {

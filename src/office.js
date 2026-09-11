@@ -417,6 +417,63 @@ const Office = (() => {
   }
 
   /* ------------------------------------------------------------
+     結果の文面を選ぶ（純関数・§8.2 の追補）
+
+     **四分岐。**向いていたか（`fit` に `chara` があるか）× 勝ったか
+     （`places[c.id] === 1`）。同じ「テレビ対局」でも、向いている子が
+     勝ったのと向いていない子が負けたのとで違う言葉が返らないと、
+     受けた手応えにならない。
+
+     **`match` が偽の案件で「勝った側」を選ばないこと。**
+     存在しない勝負を書くことになる。`payload.match` を見て、
+     偽なら `won` を立てない（`hitWin` / `missWin` は引かれない）。
+
+     **文面は `offers.js` の表が正。`serifu.js` から引かない。**
+     性格19種×場面ではなく、案件ごとに固有の言葉（「巻頭に載った」）を
+     出したいので、性格から引く形と合わない。表に置いておけば
+     案件を足すのは表の一行で済む（§1.3 の運営型）。
+
+     **名前は焼き込まない**（`textOf` と同じ作法）。`line` は
+     その子の言葉だけで、名前は表示側が添える */
+  function idolTell(def, c, places) {
+    const p = (def && def.payload) || {};
+    const res = p.res || {};
+    const fits = (p.fit || []).indexOf(c.chara) >= 0;
+    const won = !!(p.match && places && places[c.id] === 1);
+    const key = fits ? (won ? 'hitWin' : 'hit') : (won ? 'missWin' : 'miss');
+    /* 表に無ければ勝ち負けの無いほうへ落とす（古い表・足し忘れへの保険） */
+    const t = res[key] || res[fits ? 'hit' : 'miss'] || {};
+    return { key, fits, won, head: t.head || '', line: t.line || '' };
+  }
+
+  /* 結果カードの中身（純関数）。描くのは `reportHtml`。
+     **見出しは代表の一人**——いちばん `pop` が伸びた子のものを使い、
+     その子を先頭に置く。同点なら送った順（並びが揺れない） */
+  function idolCard(def, members, res, places) {
+    const rows = (members || []).map((c) => {
+      const t = idolTell(def, c, places);
+      return { id: c.id, name: c.name, key: t.key, fits: t.fits, won: t.won,
+               head: t.head, line: t.line,
+               pop: (res.pop || {})[c.id] | 0, favor: (res.favor || {})[c.id] | 0,
+               place: places ? (places[c.id] || null) : null };
+    });
+    let lead = 0;
+    rows.forEach((r, i) => { if (r.pop > rows[lead].pop) lead = i; });
+    const head = rows.length ? rows[lead].head : '';
+    const order = rows.length ? [rows[lead]].concat(rows.filter((_, i) => i !== lead)) : [];
+    /* **同じ一言を並べない。**分岐が同じ子は同じ言葉を返すので、三人送ると
+       「また打ちましょうね」が三行続く（実機の絵で見た）。
+       二人目からは、まだ出ていない言葉のときだけ出す
+       ——分岐が割れた（一人は向いていた、一人は違った）ときは両方出る */
+    const said = new Set();
+    order.forEach((r) => {
+      if (!r.line || said.has(r.line)) { r.line = ''; return; }
+      said.add(r.line);
+    });
+    return { name: (def.payload || {}).name || '', pay: res.pay | 0, head, rows: order };
+  }
+
+  /* ------------------------------------------------------------
      遠征先の店（docs/design/scout/spec.md）— A4.5-1
   ------------------------------------------------------------ */
   /* その日の店を用意する。**朝に一度だけ引く**（`scout/spec.md` §6.2）。
@@ -1569,15 +1626,12 @@ const Office = (() => {
       });
       store.set({ money: (st.money || 0) + res.pay, popUp, favor });
 
-      /* セリフを一言だけ（§8.2「日報一行とセリフだけ」） */
-      const say = typeof LINES !== 'undefined'
-        ? (LINES[members[0].chara] || {}) : {};
-      const line = (say.idle || say.start || [])[0] || null;
-
-      await runJobDays(def, res.lines.concat(
-        [`報酬 ${yen(res.pay)}`, res.won ? '勝って話題になった' : null,
-         line ? `${members[0].name}「${line}」` : null].filter(Boolean)),
-        Offers.titleOf({ id }), members.map((c) => c.id));
+      /* **平たい行ではなく結果カードで返す**（§8.2 の追補・2026年9月11日）。
+         見出しも一言も結果で変わる（`idolTell` の四分岐）。
+         `res.lines` はもうここでは使わない——同じ数字がカードの中に入るので、
+         並べると二度言うことになる */
+      await runJobDays(def, [], Offers.titleOf({ id }),
+        members.map((c) => c.id), idolCard(def, members, res, places));
     }
 
     /* 大会から帰ってきたところ。日数ぶんを消化して夜へ */
@@ -1596,7 +1650,7 @@ const Office = (() => {
     /* 依頼の拘束日数ぶん、店を回して日を進める。
        **代表は依頼に出ているので、留守の日として回す**（§7.4 と同じ扱い）。
        日ごとの再生はしない。夜にまとめて出す */
-    async function runJobDays(def, lines, title, busyIds) {
+    async function runJobDays(def, lines, title, busyIds, card) {
       const acc = { days: 0, guests: 0, sales: 0, profit: 0 };
       const busy = busyIds || [];
       for (let i = 0; i < (def.days || 0); i++) {
@@ -1616,7 +1670,8 @@ const Office = (() => {
           acc.days += 1;
         }
       }
-      night = { offer: { title, lines, store: def.days ? acc : null, noDay: !def.days } };
+      night = { offer: { title, lines, store: def.days ? acc : null, noDay: !def.days,
+                         card: card || null } };
       screen = 'night';
       render();
     }
@@ -2206,12 +2261,47 @@ const Office = (() => {
       const back = night && night.back;
       const job = night && night.offer;
 
+      /* アイドル案件の結果カード（§8.2 の追補・2026年9月11日）。
+         **新しい画面は作らない。夜の日報の中の一区画。**
+         見出し・数・一言は `Office.idolCard` が組んだものをそのまま描く
+         ——ここで文面を選ばないこと（四分岐は `idolTell` が持っている）。
+
+         **顔は `thumb/`（176×234）。`img/` の 768×1024 は読まない**
+         （`CLAUDE.md`「カードのサムネイル」）。無い子は `onerror` で消えて
+         `.mkFace.sil` のシルエットが下から出る。
+
+         **三人までは並べ、それ以上は畳む**——夜の日報は店の収支と同居するので、
+         人数ぶん縦に伸ばすと収支が画面の外へ出る。
+         **`noDay` の依頼（契約イベント）にカードは付かない**
+         ——`takeOffer` の `contract` の枝は `runJobDays` を通らない */
+      const IDOL_SHOWN = 3;
+      const card = job && job.card;
+      const cardBody = card ? `
+        <div class="ofIdol">
+          ${card.head ? `<div class="ofIdolHead">${esc(card.head)}</div>` : ''}
+          ${card.rows.slice(0, IDOL_SHOWN).map((r) => `
+            <div class="ofIdolRow">
+              <span class="ofIdolFace mkFace sil"><img src="thumb/${pad3(r.id)}.webp"
+                alt="" loading="lazy" onerror="this.remove()"></span>
+              <span class="ofIdolBody">
+                <span class="ofIdolName">${esc(r.name)}${r.place
+                  ? `<i>${r.place}着</i>` : ''}${r.fits ? '<em>向いていた</em>' : ''}</span>
+                <span class="ofIdolNum">人気 <b>+${r.pop}</b>　好感度 <b>+${r.favor}</b></span>
+                ${r.line ? `<span class="ofIdolSay">「${esc(r.line)}」</span>` : ''}
+              </span>
+            </div>`).join('')}
+          ${card.rows.length > IDOL_SHOWN
+            ? `<div class="ofIdolMore">ほか ${card.rows.length - IDOL_SHOWN}人</div>` : ''}
+          <div class="ofRepRow"><span>報酬</span><b>${yen(card.pay)}</b></div>
+        </div>` : '';
+
       /* 日を使わない依頼（契約イベント）は、店の収支を出さない */
       const jobBody = job ? `
         <div class="ofRep">
           <div class="ofRepRow"><span>${esc(job.title)}</span>
             <b>${job.store ? job.store.days + '日' : '受けた'}</b></div>
           ${job.lines.map((l) => `<div class="ofRepEv">${esc(l)}</div>`).join('')}
+          ${cardBody}
           ${job.store ? `
             <div class="ofRepRow" style="margin-top:6px"><span>そのあいだの店</span>
               <b>客 ${job.store.guests}人</b></div>
@@ -2346,6 +2436,7 @@ const Office = (() => {
            roomPeopleOf, anyAwayOf, markMailRead, tiredOf, eightSlotsOf, overtimeOf, boardCountsOf,
            planTrip, deputyOf, tripOf, tripStart, regionOfPref,
            fireOffers, dismissOffer, acceptOffer, dropQuest, dropAccepted, popOf, idolResult,
+           idolTell, idolCard,
            ensureShop, callOn, negotiate, favorGain, addFavor, FAVOR_GAIN,
            LOCAL_GAIN, LOCAL_MAX, localOf, addLocal,
            eightTable, eightNext, powerOf, mightOf, charaTitle, rivalOf, RIVALS,

@@ -140,19 +140,35 @@ const Offers = (() => {
     { id: 'idol-local-tv', name: '地方局の深夜番組', days: 1, min: 1, max: 2,
       pop: 2, pay: 30000, favor: 2, fit: ['明るい元気娘', 'ギャル', 'さばさば姉御', '小悪魔'],
       text: '地方局から「雀荘特集に出てほしい」と話が来た。深夜の三十分。',
-      payload: {} },
+      res: {
+        hit:  { head: '深夜なのに反響があった', line: 'カメラ、思ったより怖くないですね' },
+        miss: { head: '無難にこなした', line: '……何を喋ればいいのか、分からなくて' },
+      } },
     { id: 'idol-photo', name: '雑誌のグラビア', days: 1, min: 1, max: 1,
       pop: 3, pay: 80000, favor: 3, fit: ['クール', 'ミステリアス', 'お嬢様', 'お姉さん系'],
       text: '麻雀雑誌の巻頭を一枚。「顔が知られていない子のほうがいい」とのこと。',
-      payload: {} },
+      res: {
+        hit:  { head: '巻頭に載った', line: '写真の人、私じゃないみたい' },
+        miss: { head: '隅に一枚だけ載った', line: '……あれ、本当に載るんですか' },
+      } },
     { id: 'idol-event', name: 'ファン対局会', days: 1, min: 2, max: 3,
       pop: 4, pay: 50000, favor: 4, match: true, fit: ['明るい元気娘', '庶民派努力家', 'おっとり', '天然'],
       text: 'デパートの催事場でファンと打つ会。勝てば話題になる。',
-      payload: {} },
+      res: {
+        hitWin:  { head: '会場がどよめいた', line: 'いちばん楽しい卓でした' },
+        hit:     { head: '列が途切れなかった', line: 'また打ちましょうね' },
+        missWin: { head: '勝ってしまった', line: '勝つ気は、無かったんですけど' },
+        miss:    { head: '握手だけして帰った', line: '人が多いのは、少し苦手です' },
+      } },
     { id: 'idol-tv-match', name: 'テレビ対局', days: 2, min: 1, max: 1,
       pop: 8, pay: 200000, favor: 5, match: true, fit: ['負けず嫌い', '真面目委員長', '職人肌', '無口だけど熱い'],
       text: 'ケーブルの対局番組から指名が来た。全国に流れる。',
-      payload: {} },
+      res: {
+        hitWin:  { head: '全国に顔が出た', line: '見ていましたか。次も出ます' },
+        hit:     { head: '全国に流れた', line: '思ったより、静かな卓でした' },
+        missWin: { head: '番狂わせと書かれた', line: '……たまたまです' },
+        miss:    { head: '名前だけ覚えられた', line: 'カメラの前は、もういいです' },
+      } },
   ].map((e) => ({
     id: e.id,
     kind: 'idol',
@@ -164,7 +180,7 @@ const Offers = (() => {
     when: (st, roster) => roster.length >= 2,
     text: e.text,
     payload: { name: e.name, pop: e.pop, pay: e.pay, favor: e.favor,
-               match: !!e.match, fit: e.fit || [] },
+               match: !!e.match, fit: e.fit || [], res: e.res },
   }));
 
   /* ------------------------------------------------------------
