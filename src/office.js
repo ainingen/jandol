@@ -474,6 +474,50 @@ const Office = (() => {
   }
 
   /* ------------------------------------------------------------
+     出演歴（§8.2 の追補・2026年9月11日）
+
+     一回ごとの手応えは夜の結果カードが返す。**ここは積み上がりのほう**
+     ——「テレビ出演2回・グラビア1回」と数えられないと、育てている感じにならない。
+
+     形は `st.works = { [charaId]: [{ id: 依頼id, day, won }] }`。
+     **既存の項目は消さない・意味を変えない。**`works` が無い古いセーブは
+     空として扱う（`worksOf` が `|| {}` で受ける）。
+
+     **上限を付けない。**50回こなしても一人ぶん 50件（JSON で2KB足らず）で、
+     `localStorage` には遠く届かない。**切ると回数が嘘になる**ので、
+     縦に伸びるのは表示側で畳む（`worksOf` が依頼ごとに畳んで返す）。
+  ------------------------------------------------------------ */
+
+  /* 一件ぶん積む（純関数。書くのは呼ぶ側）。戻り値は新しい `works` */
+  function addWork(st, def, members, places, day) {
+    const works = Object.assign({}, st.works || {});
+    (members || []).forEach((c) => {
+      const won = !!(def.payload && def.payload.match && places && places[c.id] === 1);
+      works[c.id] = (works[c.id] || []).concat([{ id: def.id, day: day | 0, won }]);
+    });
+    return works;
+  }
+
+  /* 依頼ごとに畳んで返す（純関数）。多い順、同数なら id で固定
+     ——**並びが揺れると、名鑑を開くたび違う表に見える**（雀エイト表と同じ理由） */
+  function worksOf(st, charaId) {
+    const list = ((st || {}).works || {})[charaId] || [];
+    const by = {};
+    list.forEach((w) => {
+      const e = by[w.id] || (by[w.id] = { id: w.id, n: 0, won: 0 });
+      e.n += 1;
+      if (w.won) e.won += 1;
+    });
+    return Object.keys(by).map((k) => by[k])
+      .sort((a, b) => b.n - a.n || (a.id < b.id ? -1 : 1));
+  }
+
+  /* 出演の総数（`worksOf` を数え直さずに済ませるため） */
+  function workCount(st, charaId) {
+    return (((st || {}).works || {})[charaId] || []).length;
+  }
+
+  /* ------------------------------------------------------------
      遠征先の店（docs/design/scout/spec.md）— A4.5-1
   ------------------------------------------------------------ */
   /* その日の店を用意する。**朝に一度だけ引く**（`scout/spec.md` §6.2）。
@@ -1624,7 +1668,10 @@ const Office = (() => {
       Object.keys(res.favor).forEach((k) => {
         favor[k] = Math.min(100, (favor[k] || 0) + res.favor[k]);
       });
-      store.set({ money: (st.money || 0) + res.pay, popUp, favor });
+      /* **出演歴を積む**（§8.2 の追補）。積み上がりは名鑑の詳細で数える。
+         日は `parlor.day`——**新しい日カウンタを作らない**（§1.2） */
+      const works = addWork(st, def, members, places, parlorOf(st).day);
+      store.set({ money: (st.money || 0) + res.pay, popUp, favor, works });
 
       /* **平たい行ではなく結果カードで返す**（§8.2 の追補・2026年9月11日）。
          見出しも一言も結果で変わる（`idolTell` の四分岐）。
@@ -2436,7 +2483,7 @@ const Office = (() => {
            roomPeopleOf, anyAwayOf, markMailRead, tiredOf, eightSlotsOf, overtimeOf, boardCountsOf,
            planTrip, deputyOf, tripOf, tripStart, regionOfPref,
            fireOffers, dismissOffer, acceptOffer, dropQuest, dropAccepted, popOf, idolResult,
-           idolTell, idolCard,
+           idolTell, idolCard, addWork, worksOf, workCount,
            ensureShop, callOn, negotiate, favorGain, addFavor, FAVOR_GAIN,
            LOCAL_GAIN, LOCAL_MAX, localOf, addLocal,
            eightTable, eightNext, powerOf, mightOf, charaTitle, rivalOf, RIVALS,

@@ -1995,6 +1995,100 @@ function sameJ(a, b, name) {
   });
 }
 
+/* ============================================================
+   出演歴（spec.md §8.2 の追補・段C・2026年9月11日）
+
+   一回ごとの手応えは結果カードが返す。**ここは積み上がりのほう。**
+   `st.works = { [charaId]: [{ id, day, won }] }`。
+   **既存の項目は消さない・意味を変えない。**無い古いセーブは空として扱う。
+   ============================================================ */
+{
+  const tv = Offers.byId('idol-tv-match');     // match: true
+  const ph = Offers.byId('idol-photo');        // match: false
+  const a = { id: 401, name: 'あ', chara: tv.payload.fit[0] };
+  const b = { id: 402, name: 'い', chara: tv.payload.fit[1] };
+
+  /* --- works が無い古いセーブでも落ちない --- */
+  eq(Office.worksOf({}, 401).length, 0, 'works が無いセーブで worksOf が空を返す');
+  eq(Office.workCount({}, 401), 0, 'works が無いセーブで workCount が 0');
+  eq(Office.worksOf({ works: {} }, 401).length, 0, 'works が空でも落ちない');
+  eq(Office.worksOf(undefined, 401).length, 0, 'st ごと無くても落ちない');
+  eq(Office.worksOf({ works: { 401: [] } }, 401).length, 0, '履歴が空の子でも落ちない');
+
+  /* --- 一件積む --- */
+  let st = { works: {} };
+  st = { works: Office.addWork(st, tv, [a, b], { 401: 1, 402: 3 }, 12) };
+  eq(st.works[401].length, 1, '送った子に一件積まれる');
+  eq(st.works[402].length, 1, 'もう一人にも積まれる');
+  eq(st.works[401][0].id, 'idol-tv-match', '積むのは依頼の id');
+  eq(st.works[401][0].day, 12, '日は parlor.day');
+  eq(st.works[401][0].won, true, '一着なら won');
+  eq(st.works[402][0].won, false, '一着でなければ won ではない');
+  /* **match でない案件では won が立たない**（結果カードと同じ決め） */
+  const st2 = { works: Office.addWork({ works: {} }, ph, [a], { 401: 1 }, 3) };
+  eq(st2.works[401][0].won, false, 'match でない案件は、着順を渡しても won にならない');
+
+  /* --- 単調増加（消えない・減らない） --- */
+  let acc = { works: {} };
+  for (let i = 0; i < 10; i++) {
+    const before = Office.workCount(acc, 401);
+    acc = { works: Office.addWork(acc, tv, [a], null, i) };
+    eq(Office.workCount(acc, 401), before + 1, '一回こなすたび一件ずつ増える');
+  }
+  /* 別の案件を混ぜても、前のぶんは残る */
+  acc = { works: Office.addWork(acc, ph, [a], null, 20) };
+  eq(Office.workCount(acc, 401), 11, '別の案件を足しても前のぶんは残る');
+  /* **純関数。**元の `st` を書き換えない */
+  const frozen = { works: { 401: [{ id: 'idol-photo', day: 1, won: false }] } };
+  const snapshot = JSON.stringify(frozen);
+  Office.addWork(frozen, tv, [a], null, 9);
+  eq(JSON.stringify(frozen), snapshot, 'addWork は渡された st を書き換えない');
+
+  /* --- 依頼ごとに畳む。多い順、同数なら id で固定（並びが揺れない） --- */
+  const folded = Office.worksOf(acc, 401);
+  eq(folded.length, 2, '10回＋1回でも行は依頼の種類ぶん（2行）');
+  eq(folded[0].id, 'idol-tv-match', '多いほうが先');
+  eq(folded[0].n, 10, '回数を数えている');
+  eq(folded[1].n, 1, '少ないほうも残る');
+  eq(JSON.stringify(Office.worksOf(acc, 401)), JSON.stringify(folded),
+    '同じセーブなら並びが揺れない');
+  /* 同数のときは id で固定 */
+  let tie = { works: {} };
+  tie = { works: Office.addWork(tie, ph, [a], null, 1) };
+  tie = { works: Office.addWork(tie, tv, [a], null, 2) };
+  const t1 = Office.worksOf(tie, 401).map((w) => w.id);
+  eq(JSON.stringify(t1), JSON.stringify(['idol-photo', 'idol-tv-match']),
+    '同数なら id の順（毎回同じ表になる）');
+
+  /* --- 50回こなしても崩れない（畳むので行は増えない） --- */
+  let many = { works: {} };
+  for (let i = 0; i < 50; i++) many = { works: Office.addWork(many, tv, [a], { 401: 1 }, i) };
+  eq(Office.workCount(many, 401), 50, '50回ぶん積まれる');
+  eq(Office.worksOf(many, 401).length, 1, '50回でも行は1行（依頼の種類ぶん）');
+  eq(Office.worksOf(many, 401)[0].won, 50, '勝った回数も数える');
+
+  /* --- 名鑑は Office / Offers を「あれば使う」。名前を書き写さない --- */
+  const fs = require('fs'), path = require('path');
+  const mk = fs.readFileSync(path.join(__dirname, '../src/meikan.js'), 'utf8');
+  const wh = (mk.match(/function worksHTML[\s\S]*?\n    \}/) || [''])[0];
+  ok(/typeof Office === 'undefined'/.test(wh) && /typeof Offers === 'undefined'/.test(wh),
+    '名鑑は Office / Offers を「あれば使う」（単体ページで落ちない）');
+  ok(/Offers\.titleOf/.test(wh), '案件の名前は Offers.titleOf から引く（書き写さない）');
+  const NAMES = Offers.TABLE.filter((o) => o.kind === 'idol').map((o) => o.payload.name);
+  const baked = NAMES.filter((n) => mk.indexOf(n) >= 0);
+  eq(baked.length, 0, '名鑑に案件の名前を書き写していない', baked.join('、'));
+
+  /* --- セーブの三箇所（blankState / loadState / onStart） --- */
+  const sh = fs.readFileSync(path.join(__dirname, '../shell.html'), 'utf8');
+  ok(/works: \{\},/.test(sh), 'blankState に works がある');
+  ok(/works: s\.works && typeof s\.works === 'object' \? s\.works : \{\}/.test(sh),
+    'loadState が works を受ける（無ければ空）');
+  ok(/keep\.works = \{\};/.test(sh), 'onStart にも works がある');
+  /* **既存の項目を消していないこと** */
+  ['popUp', 'wins', 'favor', 'local', 'mailRead', 'offerFired', 'offerAccepted']
+    .forEach((k) => ok(sh.indexOf(k) >= 0, 'セーブの ' + k + ' が残っている'));
+}
+
 /* ============================================================ */
 console.log('通過 ' + pass + ' 件');
 if (fails.length) {
