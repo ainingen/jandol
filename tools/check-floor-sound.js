@@ -69,18 +69,29 @@ function peak(times) {
   const br = await chromium.launch();
   const ctx = await br.newContext({ viewport: { width: 380, height: 740 } });
   const p = await ctx.newPage();
-  /* 営業の音だけを、鳴った時刻ごと控える（対局の中は数えない） */
+  /* **営業の音だけ**を、鳴った時刻ごと控える。
+
+     **「対局の外の音」で数えないこと。**釦の `tap` はもちろん、
+     夜の日報（`UiSound.cue('report')` → `ryuukyoku`）も対局の外で鳴るので、
+     名前で振り分けると日報がまぎれ込む（実際にまぎれ込んで、
+     「スキップ中に1回鳴った」と言われた）。
+     **`UiSound.floor` の中で鳴ったものだけ**を数える。 */
   await p.addInitScript(() => {
-    window.__floor = []; window.__names = {};
+    window.__floor = []; window.__names = {}; window.__inFloor = false;
     const hook = () => {
-      if (typeof Sound === 'undefined' || Sound.__hooked) return;
+      if (typeof Sound === 'undefined' || typeof UiSound === 'undefined' || Sound.__hooked) return;
       const orig = Sound.play;
       Sound.play = function (n, o) {
-        if (!document.body.classList.contains('inMatch') && n !== 'tap') {
+        if (window.__inFloor) {
           window.__floor.push(performance.now());
           window.__names[n] = (window.__names[n] || 0) + 1;
         }
         return orig.call(Sound, n, o);
+      };
+      const of = UiSound.floor;
+      UiSound.floor = function (k, sp) {
+        window.__inFloor = true;
+        try { return of.call(UiSound, k, sp); } finally { window.__inFloor = false; }
       };
       Sound.__hooked = true;
     };

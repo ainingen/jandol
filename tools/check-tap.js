@@ -20,6 +20,11 @@
     5. `[data-nosound]` の下では鳴らないこと（逃げ道が効くこと）
     6. **音量0では一度も鳴らない**こと（`Sound.play` の `vol <= 0`）
     7. 連打（20回）で取りこぼさず、`AudioContext` が一つのままであること
+    8. **事務所・大会の要所**（`UiSound.cue`）が、場面の名前だけで鳴ること。
+       表に無い場面では鳴らないこと、対局中は鳴らないこと。
+       **実際に出る場面まで押す側**は、夜の日報（`report`）をここで通す
+       ——発見（`find`）は遠征を何日も回すので `drive-office.js --real`、
+       勝ち上がり（`advance`）は大会を打つので `drive-taikai-round.js` の土地
 
   `Sound.play` は実際に鳴らすところまで通す（headless でも `AudioContext` は
   作れる）。数えるのは `window.__sfx`——`tools/drive-office.js` と同じ仕掛け。
@@ -203,6 +208,71 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   eq((await taps()) - b0, 20, '20連打で20回（取りこぼさない）');
   const one = await p.evaluate(() => window.__init);
   eq(one, 1, 'AudioContext は一つのまま');
+
+  console.log('\n[8] 事務所・大会の要所（UiSound.cue）');
+  const cues = await p.evaluate(() => {
+    const before = Object.assign({}, window.__sfx);
+    const n = (k) => (window.__sfx[k] || 0) - (before[k] || 0);
+    const out = {};
+    out.find = [UiSound.cue('find'), n('dora')];
+    out.advance = [UiSound.cue('advance'), n('agari')];
+    out.report = [UiSound.cue('report'), n('ryuukyoku')];
+    out.unknown = UiSound.cue('taiya');
+    out.none = UiSound.cue();
+    document.body.classList.add('inMatch');
+    out.inMatch = UiSound.cue('find');
+    document.body.classList.remove('inMatch');
+    out.table = Object.keys(UiSound.CUE).sort();
+    return out;
+  });
+  eq(cues.find, [true, 1], "'find'（遠征で見つけた）が dora を鳴らす");
+  eq(cues.advance, [true, 1], "'advance'（勝ち上がり）が agari を鳴らす");
+  eq(cues.report, [true, 1], "'report'（夜の日報）が ryuukyoku を鳴らす");
+  eq(cues.unknown, false, '表に無い場面では鳴らない');
+  eq(cues.none, false, '名前を渡さなければ鳴らない');
+  eq(cues.inMatch, false, '対局中は鳴らない（(A)(B) と同じ muted の判じ方）');
+  eq(cues.table, ['advance', 'find', 'report'], 'CUE は三つだけ');
+
+  console.log('\n[8b] 夜の日報が開いたら、実際に鳴ること');
+  /* 朝 →「今日を始める」→ 営業（スキップ）→ 夜。日報はシートが開いた最初の一度だけ */
+  await p.evaluate(() => { window.__sfx = {}; });
+  await realPress('[data-go="office"]'); await sleep(400);
+  {
+    const t0 = Date.now();
+    let ran = false;
+    for (;;) {
+      const st = await p.evaluate(() => {
+        const vis = (s) => { const e = document.querySelector(s); return !!e && !e.hidden && e.offsetParent !== null; };
+        const skip = document.querySelector('[data-skip]');
+        return {
+          popup: !!document.querySelector('.popup'),
+          pick: !!document.querySelector('.popup [data-pick]'),
+          skipVisible: !!skip && !skip.hidden,
+          run: vis('#ofBand #ofRun'),
+          nextSheet: vis('.ofSheet #ofNext'), nextBand: vis('#ofBand #ofNext'),
+          ryuukyoku: (window.__sfx || {}).ryuukyoku || 0,
+        };
+      });
+      if (st.nextSheet || st.nextBand) { ran = st.ryuukyoku > 0; break; }
+      if (st.run) await p.click('#ofBand #ofRun').catch(() => {});
+      else if (st.pick) await p.click('.popup [data-pick]').catch(() => {});
+      else if (st.popup) await p.click('.popup [data-key]:not([disabled])').catch(() => {});
+      else if (st.skipVisible) await p.click('[data-skip]:not([hidden])').catch(() => {});
+      await sleep(200);
+      if (Date.now() - t0 > 120000) break;
+    }
+    ok(ran, '**夜の日報が開いた一度だけ鳴る**（一日を回して確認）');
+    /* 日報を閉じて開き直しても、その晩はもう鳴らない */
+    const again = await p.evaluate(() => {
+      const b = document.querySelector('.ofSheetClose');
+      if (b) b.click();
+      const n0 = (window.__sfx || {}).ryuukyoku || 0;
+      const d = document.querySelector('.ofRoomHit[data-tap="desk"]');
+      if (d) d.click();
+      return ((window.__sfx || {}).ryuukyoku || 0) - n0;
+    });
+    eq(again, 0, '同じ晩に開き直しても鳴らない');
+  }
 
   await br.close(); srv.close();
   console.log('\n通過 ' + pass + ' 件');

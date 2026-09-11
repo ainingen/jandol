@@ -6,7 +6,10 @@
 
      (A) 釦の音 … 表紙・事務所・雀荘・大会・遠征・名鑑・名簿。押しても無音だった
      (B) 営業中の店の牌の音 … 「客が打っている気配」。既存の discard / draw を
-         **まばらに**鳴らす。新しい音源は足していない
+         **まばらに**鳴らす
+     (C) 事務所・大会の要所 … 場面に一本ずつ（下の CUE）
+
+   **新しい音源は足していない。**(A)〜(C) とも既存の13本だけで組んである。
 
    **画面ごとに Sound.play('tap') を書き足さないこと。**
    `document` に**一つだけ**委譲の listener を置いて、押されたものが釦なら鳴らす。
@@ -47,8 +50,11 @@ const UiSound = (() => {
        鳴きやリーチの釦は `UI.buttons` が自分で `tap` を鳴らしている。
        ここで鳴らすと二重になる。**対局の音は ui.js の持ち物**（spec.md §2.3）
      - `[data-nosound]` … 個別に黙らせる逃げ道。自分か先祖に付いていれば鳴らない */
+  function inMatch() {
+    return !!(document.body && document.body.classList.contains('inMatch'));
+  }
   function muted(el) {
-    if (document.body && document.body.classList.contains('inMatch')) return true;
+    if (inMatch()) return true;
     return !!el.closest('[data-nosound]');
   }
 
@@ -109,6 +115,7 @@ const UiSound = (() => {
   /* 呼ぶのは `jansou-floor.js` の再生層だけ。**鳴らしたら true** */
   function floor(kind, speed) {
     if (typeof Sound === 'undefined') return false;
+    if (inMatch()) return false;
     const name = FLOOR_SOUND[kind];
     if (!name) return false;
     /* タブが隠れているあいだは鳴らさない。戻っても溜まらない
@@ -124,5 +131,46 @@ const UiSound = (() => {
     });
   }
 
-  return { floor, FLOOR_MAX_PER_SEC, FLOOR_SOUND };
+  /* ============================================================
+     (C) 事務所・大会の要所（spec.md §2.7）
+
+     呼ぶ側は場面の名前だけを渡す（`UiSound.cue('find')`）。
+     **どの音を当てるかを知っているのはこの表だけ。**
+     呼ぶ側（`office.js` / `taikai.js`）は Node から読まれているので、
+     `Sound` も論理名もあちらには書かない。
+
+     **既存の音の性格から外れる使い方をしない**（`sound.js` の表）。
+     合わないものには当てていない——足りないぶんは新しい音源が要る
+     （`docs/design/match/spec.md` §2.7 の「当てなかったもの」）。
+
+       find    遠征で雀ドルを見つけた → dora
+               ドラめくりは「擦れ＋着地」＝**伏せてあった牌がめくれる**音。
+               発見の札は「この客は雀ドルだった」そのものなので、性格が合う
+       advance 大会で勝ち上がった     → agari
+               `sound.js` が「局が終わるので一番派手にしてよい」と置いた音。
+               回戦を勝ち抜けた瞬間はまさにそれ。**一回戦では鳴らさない**
+               （まだ何も勝ち上がっていない。呼ぶ側が `info.prev` で見る）
+       report  夜の日報が開いた       → ryuukyoku
+               13本で**唯一の連続音**（洗牌・770ms）で、**毎日出るものに
+               敷くのに向いている**——単発の打鍵音だと30日で耳につく。
+               意味も「局が閉じる」→「一日が閉じる」で外れていない
+
+     **大きさはここで振らない。**一本ずつの聞こえの大きさは素材側で
+     決めてある（`tools/prep-sfx.py` の `target_db`）。ここで重ねると二重になる。 */
+  const CUE = {
+    find: 'dora',
+    advance: 'agari',
+    report: 'ryuukyoku',
+  };
+
+  /* 場面の名前で鳴らす。**表に無い名前では鳴らさない**（黙って false） */
+  function cue(name) {
+    if (typeof Sound === 'undefined') return false;
+    const n = CUE[name];
+    if (!n) return false;
+    if (inMatch()) return false;
+    return !!Sound.play(n);
+  }
+
+  return { floor, cue, FLOOR_MAX_PER_SEC, FLOOR_SOUND, CUE };
 })();

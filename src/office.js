@@ -1778,6 +1778,11 @@ const Office = (() => {
       shopNote = r.found
         ? `${r.found.name} を見つけた。名鑑に載った。　あと ${r.calls} 回`
         : `ただの客だった。　あと ${r.calls} 回`;
+      /* 見つけた音（spec.md §2.7）。**どの音かはここでは知らない**
+         ——このファイルは `tools/test-office.js` が Node で読んでいるので、
+         `Sound` も論理名も書かない。場面の名前だけを渡す。
+         `UiSound` は「あれば使う」——単体ページには無い */
+      if (r.found && typeof UiSound !== 'undefined') UiSound.cue('find');
       /* 見つけたら遠征の記録にも残す（帰った日の夜にまとめて出る） */
       if (r.found) {
         const st2 = store.get();
@@ -2432,7 +2437,12 @@ const Office = (() => {
         <p class="ofNote">日はもう進んでいます。畳んで朝に戻るだけの釦です。机の日報を読んでから。</p>`;
       band.querySelector('#ofNext').addEventListener('click', toMorning);
       /* 日報は開いた状態で出る（一度だけ。閉じたあと部屋を触れる） */
-      if (!reportShown) { reportShown = true; sheet = 'report'; sheetScroll = 0; }
+      if (!reportShown) {
+        reportShown = true; sheet = 'report'; sheetScroll = 0;
+        /* 一日が閉じる音（spec.md §2.7）。**開いた最初の一度だけ**
+           ——`renderNight` は部屋を触るたびに走るので、ここに置かないと毎回鳴る */
+        if (typeof UiSound !== 'undefined') UiSound.cue('report');
+      }
       renderSheet();
     }
 

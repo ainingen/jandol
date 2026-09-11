@@ -836,6 +836,8 @@ const winData = (winnerSeat, loserSeat, total, payments, sticks) => ({
      (A) 釦の音 … `tap`。ブラウザで押す側は `tools/check-tap.js`
      (B) 営業中の店の牌の音 … `discard` / `draw` をまばらに。
          上限は `FLOOR_MAX_PER_SEC` **一箇所**。実測は `tools/check-floor-sound.js`
+     (C) 事務所・大会の要所 … 場面 → 音の表（`CUE`）が**一箇所**。
+         呼ぶ側は場面の名前しか知らない
 
    ここは形だけ。
    ============================================================ */
@@ -856,9 +858,10 @@ const winData = (winnerSeat, loserSeat, total, payments, sticks) => ({
      「対局の外の釦」ではないので、別の口として数に入れない */
   ok((ub.match(/Sound\.play\('tap'\)/g) || []).length === 1,
     '**tap を鳴らすのは ui-sound.js の一行だけ**');
-  /* 鳴らす口は二つだけ（釦の tap と、営業中の牌）。増やすときは spec に書くこと */
-  ok((ub.match(/Sound\.play\(/g) || []).length === 2,
-    'ui-sound.js が Sound.play を呼ぶのは二箇所（tap と 営業の牌）');
+  /* 鳴らす口は三つだけ（釦の tap・営業中の牌・要所の CUE）。
+     増やすときは spec に書くこと */
+  ok((ub.match(/Sound\.play\(/g) || []).length === 3,
+    'ui-sound.js が Sound.play を呼ぶのは三箇所（tap / 営業の牌 / 要所）');
 
   /* ---- (B) 営業中の店の牌の音 ---- */
   /* **上限は一箇所の定数。**倍速で機械銃にならないための唯一の栓 */
@@ -884,6 +887,46 @@ const winData = (winnerSeat, loserSeat, total, payments, sticks) => ({
   ok(!/FLOOR_SOUND = \{[^}]*(agari|riichi|ryuukyoku|deal|dora|call|tap)/.test(ub),
     '営業に和了・リーチ・流局などを当てていない（音の性格が違う）');
 
+  /* ---- (C) 事務所・大会の要所 ---- */
+  /* **場面 → 音の表は一箇所。**呼ぶ側は場面の名前しか知らない */
+  ok(/const CUE = \{/.test(ub), '場面 → 音の表（CUE）がある');
+  const cue = (ub.match(/const CUE = \{[\s\S]*?\n  \};/) || [''])[0];
+  ok(/find: 'dora'/.test(cue), '発見は dora（伏せてあった牌がめくれる音）');
+  ok(/advance: 'agari'/.test(cue), '勝ち上がりは agari（一番派手にしてよい音）');
+  ok(/report: 'ryuukyoku'/.test(cue), '日報は ryuukyoku（13本で唯一の連続音）');
+  ok(Object.keys({}).length === 0 && (cue.match(/:/g) || []).length === 3,
+    'CUE は三つだけ（合わないものには当てていない）');
+  /* **当てていないもの。**契約と招待は既存の13本に合う音が無い（spec.md §2.7）
+     ——新しい音源が要る。当てた形跡が無いことを錠にしておく */
+  ok(!/contract|invite|offer/.test(cue),
+    '契約・招待には当てていない（新しい音源が要る。spec.md §2.7）');
+  const cf = (ub.match(/function cue\([\s\S]*?\n  \}/) || [''])[0];
+  ok(/CUE\[name\]/.test(cf) && /if \(!n\) return false/.test(cf),
+    '表に無い場面では鳴らさない');
+  ok(!/gain|rate/.test(cf),
+    '要所の音は大きさを振らない（一本ずつの目標は prep-sfx.py の target_db が正）');
+
+  /* 呼ぶ側（`office.js` / `taikai.js`）。**どちらも Node から読まれている** */
+  const oj = strip(rd('src/office.js')), tj = strip(rd('src/taikai.js'));
+  ok((oj.match(/UiSound\.cue\(/g) || []).length === 2,
+    'office.js が UiSound.cue を呼ぶのは二箇所（発見・日報）');
+  ok(/UiSound\.cue\('find'\)/.test(oj) && /UiSound\.cue\('report'\)/.test(oj),
+    'office.js が渡すのは場面の名前だけ（find / report）');
+  ok((tj.match(/UiSound\.cue\(/g) || []).length === 1,
+    'taikai.js が UiSound.cue を呼ぶのは一箇所（勝ち上がり）');
+  ok(/info\.prev && typeof UiSound !== 'undefined'/.test(tj),
+    '**一回戦では鳴らさない**（info.prev が無い＝まだ勝ち上がっていない）');
+  [['office.js', oj], ['taikai.js', tj]].forEach(([n, b]) => {
+    ok(!/UiSound\.cue\('(?!find|report|advance)/.test(b), n + ' が表に無い場面を渡さない');
+    /* **論理名を呼ぶ側に書き写さない。**写すと、当てる音を変えたときに
+       二か所を直すことになる（`RULES.event` で一度通った話） */
+    ok(!/UiSound\.cue\('(dora|agari|ryuukyoku|discard|draw|tap|call|riichi|deal)'/.test(b),
+      n + ' が論理名ではなく場面の名前を渡している');
+    ok((b.match(/typeof UiSound !== 'undefined'/g) || []).length
+       === (b.match(/UiSound\.cue\(/g) || []).length,
+      n + ' の UiSound は呼ぶ口ごとに typeof で守ってある');
+  });
+
   /* **時計を増やさない。**四人卓で落ちた件と同じ土地 */
   ok(!/setInterval|setTimeout|requestAnimationFrame/.test(ub),
     'ui-sound.js は時計を持たない（営業の進行に相乗りしている）');
@@ -891,10 +934,13 @@ const winData = (winnerSeat, loserSeat, total, payments, sticks) => ({
   /* **除きかたは一箇所（`muted`）で決める。**画面ごとに条件を散らさない */
   ok(/function muted\(/.test(ub), '除きかたは muted() 一つ');
   const mu = (ub.match(/function muted\([\s\S]*?\n  \}/) || [''])[0];
-  ok(/inMatch/.test(mu), 'muted() が body.inMatch を見る（tap と discard の二重を避ける）');
+  ok(/inMatch\(\)/.test(mu), 'muted() が inMatch() を見る（tap と discard の二重を避ける）');
   ok(/data-nosound/.test(mu), 'muted() が [data-nosound] を見る（逃げ道）');
-  ok((ub.match(/inMatch/g) || []).length === 1,
-    'inMatch を見るのは muted() の中だけ（分岐を増やさない）');
+  /* **対局中かどうかを判じるのは一行だけ。**(A)(B)(C) の三つがこれを通る */
+  ok((ub.match(/classList\.contains\('inMatch'\)/g) || []).length === 1,
+    "対局中かどうかを判じる式は一箇所（classList.contains('inMatch')）");
+  ok((ub.match(/if \(inMatch\(\)\)/g) || []).length === 3,
+    '(A)(B)(C) の三つとも inMatch() を通る');
 
   /* **初期化はここで前に出す。**いままでは大会の「卓に着く」だけが解除の口で、
      表紙から入って事務所を触っても AudioContext が無かった。**二度目は呼ばない** */
